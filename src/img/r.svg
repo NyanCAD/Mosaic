@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+<svg xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="50" height="100" id="svg2" version="1.1" inkscape:version="0.48.0 r9654" sodipodi:docname="resistor.svg">
+  <defs id="defs4">
+    <inkscape:path-effect effect="skeletal" id="path-effect2997" is_visible="true" pattern="M 0,0 0,10 10,5 z" copytype="single_stretched" prop_scale="1" scale_y_rel="false" spacing="0" normal_offset="0" tang_offset="0" prop_units="false" vertical_pattern="false" fuse_tolerance="0"/>
+    <inkscape:path-effect effect="skeletal" id="path-effect2993" is_visible="true" pattern="M 0,0 0,10 10,5 z" copytype="single_stretched" prop_scale="1" scale_y_rel="false" spacing="0" normal_offset="0" tang_offset="0" prop_units="false" vertical_pattern="false" fuse_tolerance="0"/>
+    <inkscape:path-effect effect="skeletal" id="path-effect2989" is_visible="true" pattern="M 0,0 0,10 10,5 z" copytype="single_stretched" prop_scale="1" scale_y_rel="false" spacing="0" normal_offset="0" tang_offset="0" prop_units="false" vertical_pattern="false" fuse_tolerance="0"/>
+  </defs>
+  <sodipodi:namedview id="base" pagecolor="#ffffff" bordercolor="#666666" borderopacity="1.0" inkscape:pageopacity="0.0" inkscape:pageshadow="2" inkscape:zoom="1.979899" inkscape:cx="213.14474" inkscape:cy="25.700069" inkscape:document-units="px" inkscape:current-layer="layer1" showgrid="false" inkscape:window-width="1280" inkscape:window-height="968" inkscape:window-x="-4" inkscape:window-y="-4" inkscape:window-maximized="1" width="80px" inkscape:snap-bbox="true" inkscape:snap-global="false"/>
+  <metadata id="metadata7">
+    <rdf:RDF>
+      <cc:Work rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+        <dc:title/>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g inkscape:label="Capa 1" inkscape:groupmode="layer" id="layer1" transform="translate(0,-952.3621)">
+    <path style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1" d="m 10.728433,967.56765 0.505076,14.64721 17.67767,8.5863 -17.172594,7.57614 17.172593,8.0812 -16.667517,7.0711 17.172594,7.0711 -17.67767,7.071 0,15.1524" id="path3001" inkscape:connector-curvature="0" sodipodi:nodetypes="ccccccccc"/>
+    <path sodipodi:type="arc" style="fill:#e6e6e6;stroke:#000000" id="path3013" sodipodi:cx="22.728432" sodipodi:cy="19.437784" sodipodi:rx="4.0406103" sodipodi:ry="4.2931485" d="m 26.769042,19.437784 a 4.0406103,4.2931485 0 1 1 -8.081221,0 4.0406103,4.2931485 0 1 1 8.081221,0 z" transform="translate(-12,946.3621)"/>
+    <path sodipodi:type="arc" style="fill:#e6e6e6;stroke:#000000" id="path3015" sodipodi:cx="23.486046" sodipodi:cy="94.694145" sodipodi:rx="3.7880721" sodipodi:ry="3.7880721" d="m 27.274118,94.694145 a 3.7880721,3.7880721 0 1 1 -7.576144,0 3.7880721,3.7880721 0 1 1 7.576144,0 z" transform="translate(-12,946.3621)"/>
+    <flowRoot xml:space="preserve" id="flowRoot2988" style="font-size:40px;font-style:normal;font-weight:normal;line-height:125%;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;font-family:Sans" transform="translate(0,952.3621)"><flowRegion id="flowRegion2990"><rect id="rect2992" width="28.789347" height="54.548237" x="33.840111" y="31.309628"/></flowRegion><flowPara id="flowPara2994">Rrd</flowPara></flowRoot>    <text xml:space="preserve" style="font-size:40px;font-style:normal;font-weight:normal;line-height:125%;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;font-family:Sans" x="34.345188" y="1002.8646" id="text2996" sodipodi:linespacing="125%"><tspan sodipodi:role="line" id="tspan2998" x="34.345188" y="1002.8646" style="font-size:18px">R</tspan></text>
+  </g>
+</svg>
