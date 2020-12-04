@@ -18,7 +18,42 @@
    inkscape:export-xdpi="75"
    inkscape:export-ydpi="75">
   <defs
-     id="defs2" />
+     id="defs2">
+    <inkscape:path-effect
+       effect="fillet_chamfer"
+       id="path-effect907"
+       is_visible="true"
+       lpeversion="1"
+       satellites_param="F,0,0,1,0,5.0270833,0,7 @ F,0,0,1,0,5.0270833,0,7 @ F,0,0,1,0,5.0270833,0,7 @ F,0,0,1,0,5.0270833,0,7 @ F,0,0,1,0,5.0270833,0,7 @ F,0,0,1,0,5.0270833,0,7 @ F,0,0,1,0,5.0270833,0,7 @ F,0,0,1,0,5.0270833,0,7"
+       unit="px"
+       method="auto"
+       mode="F"
+       radius="19"
+       chamfer_steps="7"
+       flexible="false"
+       use_knot_distance="true"
+       apply_no_radius="true"
+       apply_with_radius="true"
+       only_selected="false"
+       hide_knots="false" />
+    <inkscape:path-effect
+       effect="fillet_chamfer"
+       id="path-effect905"
+       is_visible="true"
+       lpeversion="1"
+       satellites_param="C,0,0,1,0,2.6458333,0,1 @ C,0,0,1,0,2.6458333,0,1 @ C,0,0,1,0,2.6458333,0,1 @ C,0,0,1,0,2.6458333,0,1 @ C,0,0,1,0,2.6458333,0,1 @ C,0,0,1,0,2.6458333,0,1 @ C,0,0,1,0,2.6458333,0,1 @ C,0,0,1,0,2.6458333,0,1"
+       unit="px"
+       method="auto"
+       mode="F"
+       radius="10"
+       chamfer_steps="1"
+       flexible="false"
+       use_knot_distance="true"
+       apply_no_radius="true"
+       apply_with_radius="true"
+       only_selected="false"
+       hide_knots="false" />
+  </defs>
   <sodipodi:namedview
      id="base"
      pagecolor="#ffffff"
@@ -82,49 +117,22 @@
      inkscape:groupmode="layer"
      id="layer1"
      transform="translate(-56.319592,-87.490746)">
-    <rect
-       style="fill:#7e7e7e;fill-opacity:1;stroke:#7e7e7e;stroke-width:5;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-       id="rect833"
-       width="101.13613"
-       height="101.13613"
-       x="58.819592"
-       y="89.990746" />
-    <path
-       style="fill:none;stroke:#7e7e7e;stroke-width:5;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-       d="M 109.38765,89.990738 V 191.12687"
-       id="path851" />
-    <path
-       style="fill:none;stroke:#7e7e7e;stroke-width:5;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-       d="M 58.819589,140.55881 H 109.38765"
-       id="path853" />
-    <path
-       style="fill:none;stroke:#7e7e7e;stroke-width:5;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-       d="M 159.95572,89.990738 109.38765,140.55881"
-       id="path855" />
     <path
        style="fill:none;stroke:#7e7e7e;stroke-width:0;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
        d="M 159.95572,191.12687 109.38765,140.55881"
        id="path857" />
     <path
-       style="fill:none;stroke:#7e7e7e;stroke-width:5;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-       d="m 159.95572,164.92153 -26.20534,26.20534"
-       id="path859" />
-    <path
-       style="fill:none;stroke:#7e7e7e;stroke-width:5;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-       d="m 109.38765,140.55881 37.4654,37.46539"
-       id="path861" />
-    <path
-       style="fill:#6a46b7;fill-opacity:1;stroke:none;stroke-width:18.3597;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       style="fill:#466bb7;fill-opacity:1;stroke:none;stroke-width:18.3597;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
        d="m 231.99402,626.71706 v -85.98054 h 85.98055 85.98054 v 85.98054 85.98054 h -85.98054 -85.98055 z"
        id="path863"
        transform="scale(0.26458333)" />
     <path
-       style="fill:#46b762;fill-opacity:1;stroke:none;stroke-width:18.3597;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       style="fill:#466bb7;fill-opacity:1;stroke:none;stroke-width:18.3597;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
        d="m 231.99402,435.81111 v -85.49478 h 85.98055 85.98054 v 85.49478 85.49478 h -85.98054 -85.98055 z"
        id="path865"
        transform="scale(0.26458333)" />
     <path
-       style="fill:#b746ab;fill-opacity:1;stroke:none;stroke-width:18.3597;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       style="fill:#b74646;fill-opacity:1;stroke:none;stroke-width:18.3597;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
        d="m 423.38574,428.52462 v -78.20829 h 78.44891 78.44891 l -78.20376,78.20829 c -43.01207,43.01456 -78.31408,78.20829 -78.44891,78.20829 -0.13483,0 -0.24515,-35.19373 -0.24515,-78.20829 z"
        id="path867"
        transform="scale(0.26458333)" />
@@ -134,14 +142,16 @@
        id="path869"
        transform="scale(0.26458333)" />
     <path
-       style="fill:#b3b746;fill-opacity:1;stroke:none;stroke-width:18.3597;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       style="fill:#b74646;fill-opacity:1;stroke:none;stroke-width:18.3597;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
        d="m 423.38574,633.76166 v -78.93594 l 59.0156,59.0156 59.01559,59.0156 -19.90256,19.92034 -19.90257,19.92034 h -39.11303 -39.11303 z"
        id="path871"
        transform="scale(0.26458333)" />
     <path
-       style="fill:#46b2b7;fill-opacity:1;stroke:none;stroke-width:18.3597;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       style="fill:#466bb7;fill-opacity:1;stroke:none;stroke-width:18.3597;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
        d="m 561.34322,680.1513 c 17.89449,-17.90047 32.64718,-32.54631 32.78375,-32.54631 0.13658,0 0.24832,14.64584 0.24832,32.54631 v 32.5463 h -32.78375 -32.78375 z"
        id="path873"
-       transform="scale(0.26458333)" />
+       transform="scale(0.26458333)"
+       inkscape:export-xdpi="75"
+       inkscape:export-ydpi="75" />
   </g>
 </svg>
