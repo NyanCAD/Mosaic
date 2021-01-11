@@ -5,7 +5,11 @@ authors = ["Pepijn de Vos <pepijndevos@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-vgtk = { path = "../vgtk/vgtk" }
+vgtk = "0.3"
 ngspice = { path = "../rust-ngspice/ngspice" }
 cairo-rs = "0.9.0"
 pretty_env_logger = "0.4"
+
+[patch.crates-io]
+vgtk = { path = "../vgtk/vgtk" }
+vgtk-macros = { path = "../vgtk/macros" }

@@ -1,10 +1,10 @@
 #![recursion_limit = "1024"]
 use cairo;
-use ngspice::{Callbacks, NgSpice, NgSpiceError};
+use ngspice::{Callbacks, NgSpice, NgSpiceError, Simulator};
 use std::collections::HashMap;
 use vgtk::ext::*;
 use vgtk::lib::gdk_pixbuf::Pixbuf;
-use vgtk::lib::gdk::EventMask;
+//use vgtk::lib::gdk::EventMask;
 use vgtk::lib::gio::{ApplicationFlags, Cancellable, MemoryInputStream, SeekableExt};
 use vgtk::lib::glib::{SeekType, Bytes};
 use vgtk::lib::gtk::*;
@@ -27,20 +27,7 @@ impl Callbacks for Cb {
     }
 }
 
-fn spice_op(spice: &std::sync::Arc<NgSpice<Cb>>) -> Result<HashMap<String, f64>, NgSpiceError> {
-        spice.command("op")?;
-        let plot = spice.current_plot()?;
-        let vecs = spice.all_vecs(&plot)?;
-        let mut results = HashMap::new();
-        for vec in vecs {
-            let vecinfo = spice.vector_info(&format!("{}.{}", plot, vec))?;
-            let val = vecinfo.data.first().unwrap_or(&0.);
-            results.insert(vec, *val);
-        }
-        Ok(results)
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct Model {
     nmos: Pixbuf,
     open_small: Pixbuf,
@@ -85,7 +72,15 @@ impl Default for Model {
                 "V2 /gate GND dc(2)",
                 ".end",
             ]).expect("circuit failed");
-        let results = spice_op(&spice).expect("op failed");
+        let results = spice.op().expect("op failed");
+        let results = results.data.iter().map(|(k, v)| {
+            if let ngspice::ComplexSlice::Real(num) = v.data {
+                (k.clone(), num.first().unwrap_or(&0.0).clone())
+            } else {
+                (k.clone(), 0.0)
+            }
+        }
+        ).collect();
         Model {
             nmos: nmos,
             open_small: open_small,
@@ -108,7 +103,13 @@ enum Message {
     None,
 }
 
-fn draw_layout(_l: &Layout, cr: &cairo::Context) -> Inhibit {
+impl IntoSignalReturn<Inhibit> for Message {
+    fn into_signal_return(&self) -> Inhibit {
+        Inhibit(false)
+    }
+}
+
+fn draw_layout( _l: &Layout, cr: &cairo::Context) {
     cr.set_line_width(1.5);
     cr.set_source_rgb(0., 0., 0.);
     cr.move_to(45., 400.);
@@ -128,7 +129,7 @@ fn draw_layout(_l: &Layout, cr: &cairo::Context) -> Inhibit {
     cr.line_to(125., 300.);
     cr.line_to(245., 300.);
     cr.stroke();
-    Inhibit(false)
+    //Inhibit(false)
 }
 
 impl Component for Model {
@@ -147,8 +148,15 @@ impl Component for Model {
                 if self.spice.command(&cmd).is_err() {
                     return UpdateAction::None;
                 }
-                if let Ok(results) = spice_op(&self.spice) {
-                    self.results = results;
+                if let Ok(results) = self.spice.op() {
+                    self.results = results.data.iter().map(|(k, v)| {
+                        if let ngspice::ComplexSlice::Real(num) = v.data {
+                            (k.clone(), num.first().unwrap_or(&0.0).clone())
+                        } else {
+                            (k.clone(), 0.0)
+                        }
+                    }
+                    ).collect();
                     return UpdateAction::Render;
                 }
                 UpdateAction::None
@@ -165,10 +173,7 @@ impl Component for Model {
             <Application::new_unwrap(Some("nl.pepijndevos.mosaic"), ApplicationFlags::empty())>
                 <Window default_width=500 default_height=500
                         border_width=20 on destroy=|_| Message::Exit>
-                    <Layout on realize=|l| {
-                        //l.add_events(EventMask::POINTER_MOTION_MASK);
-                        l.connect_draw(draw_layout);
-                        Message::None }
+                    <Layout on draw=|l, cr| { draw_layout(l, cr); Message::None }
                             /*on motion_notify_event=|l, e| Message::Coord(e.get_coords().unwrap())*/>
                         <Image Layout::x=220 Layout::y=200 pixbuf=Some(self.nmos.clone())/>
                         <Image Layout::x=240 Layout::y=220
