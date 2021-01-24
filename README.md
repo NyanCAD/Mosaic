@@ -1,2 +1,2 @@
 # Mosaic
-A modern scehmatic entry and simulation program
+A modern schematic entry and simulation program
