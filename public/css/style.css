@@ -8,3 +8,69 @@ html, body, #root {
   height: 100%;
   overflow: hidden;
 }
+
+svg {
+  overflow: visible;
+}
+
+svg.device rect.tetris {
+  fill: rgb(216, 243, 226);
+  stroke: rgb(226, 226, 226);
+}
+
+svg.device.nmos rect.tetris {
+  fill: rgb(216, 236, 243);
+}
+
+svg.device.pmos rect.tetris {
+  fill: rgb(243, 231, 216);
+}
+
+svg.device.pmos polygon.arrow {
+  transform: rotate(180deg);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+svg.device > g {
+  transform-box: border-box;
+  transform-origin: center;
+}
+
+svg.device.cw > g {
+  transform: rotate(90deg);
+}
+
+svg.device.ccw > g {
+  transform: rotate(-90deg);
+}
+
+svg.device.mirror > g {
+  transform: scale(-1);
+}
+
+
+svg.device circle.port {
+  fill: rgb(145, 0, 0);
+  stroke: rgb(53, 0, 0);
+  display: none;
+}
+
+svg.device:hover circle.port {
+  display: block;
+}
+
+svg.device polyline {
+  stroke: black;
+  stroke-width: 2px;
+  fill: none;
+}
+
+@keyframes rotation {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
