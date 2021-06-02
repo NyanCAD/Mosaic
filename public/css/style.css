@@ -11,11 +11,16 @@ html, body, #root {
 
 svg {
   overflow: visible;
+  stroke-linecap: square;
 }
 
 svg.device rect.tetris {
   fill: rgb(216, 243, 226);
   stroke: rgb(226, 226, 226);
+}
+
+svg.device.selected rect.tetris {
+  fill: rgb(224, 216, 243) !important;
 }
 
 svg.device.nmos rect.tetris {
@@ -37,18 +42,17 @@ svg.device > g {
   transform-origin: center;
 }
 
-svg.device.cw > g {
+svg.device.r90 > g {
   transform: rotate(90deg);
 }
 
-svg.device.ccw > g {
-  transform: rotate(-90deg);
+svg.device.r270 > g {
+  transform: rotate(270deg);
 }
 
-svg.device.mirror > g {
-  transform: scale(-1);
+svg.device.r180 > g {
+  transform: rotate(180deg);
 }
-
 
 svg.device circle.port {
   fill: rgb(145, 0, 0);

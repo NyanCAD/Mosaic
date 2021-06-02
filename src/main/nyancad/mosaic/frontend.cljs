@@ -4,7 +4,28 @@
 
 (def grid-size 50)
 
-(defonce state (r/atom {::zoom [0 0 1000 500]}))
+(defonce state
+  (r/atom
+   {
+    ::zoom [0 0 500 500],
+    ::schematic {
+                 :mos1 {:x (+ 0  0), :y (+ 0 0), :r 270, :cell :pmos}
+                 :mos2 {:x (+ 2 0), :y (+ 1 0), :r 0, :cell :nmos}
+                 :mos3 {:x (+ 1 0), :y (+ 3 0), :r 90, :cell :pmos}
+                 :mos4 {:x (+ -1 0), :y (+ 2 0), :r 180, :cell :nmos}
+                 :mos5 {:x (+ 0  4), :y (+ 0 0), :r 270, :cell :pmos}
+                 :mos6 {:x (+ 2 4), :y (+ 1 0), :r 0, :cell :nmos}
+                 :mos7 {:x (+ 1 4), :y (+ 3 0), :r 90, :cell :pmos}
+                 :mos8 {:x (+ -1 4), :y (+ 2 0), :r 180, :cell :nmos}
+                 :mos1a {:x (+ 0  0), :y (+ 0 4), :r 270, :cell :pmos}
+                 :mos2a {:x (+ 2 0), :y (+ 1 4), :r 0, :cell :nmos}
+                 :mos3a {:x (+ 1 0), :y (+ 3 4), :r 90, :cell :pmos}
+                 :mos4a {:x (+ -1 0), :y (+ 2 4), :r 180, :cell :nmos}
+                 :mos5a {:x (+ 0  4), :y (+ 0 4), :r 270, :cell :pmos}
+                 :mos6a {:x (+ 2 4), :y (+ 1 4), :r 0, :cell :nmos}
+                 :mos7a {:x (+ 1 4), :y (+ 3 4), :r 90, :cell :pmos}
+                 :mos8a {:x (+ -1 4), :y (+ 2 4), :r 180, :cell :nmos}
+    }}))
 
 (defn sign [n] (if (> n 0) 1 -1))
 
@@ -37,14 +58,21 @@
          (+ w dx)
          (+ h dy)]))))
 
-(defn drag-schematic [e]
-  (when (::dragging @state)
+(defn drag [e]
+  (if (= ::view (::dragging @state))
     (swap! state update-in [::zoom]
            (fn [[x y w h]]
              (let [[dx dy] (viewbox-movement e)]
                [(- x dx)
                 (- y dy)
-                w h])))))
+                w h])))
+    (when-let [k (::dragging @state)]
+    (swap! state (fn [st]
+      (update-in st [::schematic k] (fn [d]
+        (let [[x y] (map #(/ % grid-size) (viewbox-coord e))]
+          (assoc d
+                 :x (- x (::offsetx st))
+                 :y (- y (::offsety st)))))))))))
 
 (defn tetris [pattern]
   [:g
@@ -63,7 +91,7 @@
 (defn lines [arcs]
   [:g
    (for [arc arcs]
-     [:polyline {:points (map #(* % grid-size) (flatten arc))}])])
+     ^{:key arc} [:polyline {:points (map #(* % grid-size) (flatten arc))}])])
 
 (defn arrow [x y size]
    [:polygon.arrow {:points 
@@ -72,37 +100,64 @@
        (+ x size) (+ y size)
        (+ x size) (- y size)])}])
 
-(defn mosfet [x y & flags]
-  (let [t [" #"
-           "##"
-           " #"]
-        p [" #"
-           "##"
-           " #"]
-        arcs [
-    [[0.5 1.5]
-     [1 1.5]]
-    [[1 1]
-     [1 2]]
-    [[1.5 0.5]
-     [1.5 1]
-     [1.1 1]
-     [1.1 2]
-     [1.5 2]
-     [1.5 2.5]]
-    [[1.5 1.5]
-     [1.1 1.5]]]]
-  [:svg.device.mosfet {:x (* x grid-size),
-                       :y (* y grid-size),
-                       :width (* 3 grid-size),
-                       :height (* 3 grid-size),
-                       :class flags}
-   [:g {:width (* 3 grid-size),
-        :height (* 3 grid-size)}
-    [tetris t]
-    [lines arcs]
-    [arrow 1.2 1.5 0.15]
-    [ports p]]]))
+(defn drag-start-device [k v e]
+  (when (= (.-button e) 0)
+    (let [[x y] (map #(/ % grid-size) (viewbox-coord e))]
+      (swap! state assoc
+             ::dragging k
+             ::offsetx (- x (:x v))
+             ::offsety (- y (:y v))))))
+
+(defn drag-end [e]
+  (swap! state
+    (fn [st]
+      (if-let [target (::dragging st)]
+        (if (= target ::view)
+          (assoc st ::dragging nil)
+          (-> st
+              (assoc ::dragging nil)
+              (update-in [::schematic target :x] #(.round js/Math %))
+              (update-in [::schematic target :y] #(.round js/Math %))))
+        st))))
+
+(defn device [size shape conn k v & elements]
+  [:svg.device {:x (* (:x v) grid-size)
+                :y (* (:y v) grid-size)
+                :width (* size grid-size)
+                :height (* size grid-size)
+                :class [(:cell v) (symbol (str "r" (:r v))) (when (= k (::selected @state)) :selected)]
+                :on-mouse-down #(drag-start-device k v %)
+                ;; :on-mouse-up #(drag-end-device k %)
+                :on-mouse-move drag
+                :on-click #(swap! state assoc ::selected k)}
+   [:g {:width (* size grid-size)
+        :height (* size grid-size)}
+    [tetris shape]
+    (into [:<>] elements) ; avoid :key warning
+    [ports conn]]])
+
+(defn mosfet [k v]
+  (let [shape [" #"
+               "##"
+               " #"]
+        conn [" #"
+              "##"
+              " #"]
+        arcs [[[0.5 1.5]
+               [1 1.5]]
+              [[1 1]
+               [1 2]]
+              [[1.5 0.5]
+               [1.5 1]
+               [1.1 1]
+               [1.1 2]
+               [1.5 2]
+               [1.5 2.5]]
+              [[1.5 1.5]
+               [1.1 1.5]]]]
+    [device 3 shape conn k v
+     [lines arcs]
+     [arrow 1.2 1.5 0.15]]))
 
 (defn schematic-canvas []
   [:svg {:xmlns "http://www.w3.org/2000/svg"
@@ -110,25 +165,12 @@
          :width "100%"
          :view-box (::zoom @state)
          :on-wheel zoom-schematic
-         :on-mouse-down #(when (= (.-button %) 1) (swap! state assoc ::dragging true))
-         :on-mouse-up #(when (= (.-button %) 1) (swap! state assoc ::dragging false))
-         :on-mouse-move drag-schematic}
-   [mosfet 0 0 :pmos :ccw]
-   [mosfet 2 1 :nmos]
-   [mosfet 1 3 :pmos :cw]
-   [mosfet -1 2 :nmos :mirror]
-   [mosfet 4 0 :pmos :ccw]
-   [mosfet 6 1 :nmos]
-   [mosfet 5 3 :pmos :cw]
-   [mosfet 3 2 :nmos :mirror]
-   [mosfet 0 4 :pmos :ccw]
-   [mosfet 2 5 :nmos]
-   [mosfet 1 7 :pmos :cw]
-   [mosfet -1 6 :nmos :mirror]
-   [mosfet 4 4 :pmos :ccw]
-   [mosfet 6 5 :nmos]
-   [mosfet 5 7 :pmos :cw]
-   [mosfet 3 6 :nmos :mirror]
+         :on-click #(when (= (.-target %) (.-currentTarget %)) (swap! state assoc ::selected nil))
+         :on-mouse-down #(when (= (.-button %) 1) (swap! state assoc ::dragging ::view))
+         :on-mouse-up drag-end
+         :on-mouse-move drag}
+   (for [[k v] (::schematic @state)]
+     ^{:key k} [mosfet k v])
    ])
 
 (defn ^:dev/after-load init []
