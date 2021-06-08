@@ -57,11 +57,11 @@ svg.device.r180 > g {
 svg.device circle.port {
   fill: rgb(145, 0, 0);
   stroke: rgb(53, 0, 0);
-  display: none;
+  opacity: 0;
 }
 
-svg.device:hover circle.port {
-  display: block;
+svg.device circle.port:hover, svg.device.selected circle.port {
+  opacity: 1;
 }
 
 svg.device polyline {

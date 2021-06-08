@@ -75,21 +75,21 @@
                  :y (- y (::offsety st)))))))))))
 
 (defn tetris [pattern]
-  [:g
+  [:<>
   (for [[y s] (map-indexed #(vector (* grid-size %1) %2) pattern)
         [x c] (map-indexed #(vector (* grid-size %1) %2) s)
         :when (not= c " ")]
     [:rect.tetris {:x x, :y y, :width grid-size, :height grid-size, :key [x y]}])])
 
 (defn ports [pattern]
-  [:g
+  [:<>
   (for [[y s] (map-indexed #(vector (* grid-size %1) %2) pattern)
         [x c] (map-indexed #(vector (* grid-size %1) %2) s)
         :when (not= c " ")]
     [:circle.port {:cx (+ x (/ grid-size 2)), :cy (+ y (/ grid-size 2)), :r (/ grid-size 10), :key [x y]}])])
 
 (defn lines [arcs]
-  [:g
+  [:<>
    (for [arc arcs]
      ^{:key arc} [:polyline {:points (map #(* % grid-size) (flatten arc))}])])
 
@@ -103,6 +103,7 @@
 (defn drag-start-device [k v e]
   (when (= (.-button e) 0)
     (let [[x y] (map #(/ % grid-size) (viewbox-coord e))]
+      (println x y v)
       (swap! state assoc
              ::dragging k
              ::offsetx (- x (:x v))
@@ -120,30 +121,33 @@
               (update-in [::schematic target :y] #(.round js/Math %))))
         st))))
 
-(defn device [size shape conn k v & elements]
+(defn device [size k v & elements]
   [:svg.device {:x (* (:x v) grid-size)
                 :y (* (:y v) grid-size)
                 :width (* size grid-size)
                 :height (* size grid-size)
                 :class [(:cell v) (symbol (str "r" (:r v))) (when (= k (::selected @state)) :selected)]
-                :on-mouse-down #(drag-start-device k v %)
-                ;; :on-mouse-up #(drag-end-device k %)
-                :on-mouse-move drag
-                :on-click #(swap! state assoc ::selected k)}
-   [:g {:width (* size grid-size)
-        :height (* size grid-size)}
-    [tetris shape]
-    (into [:<>] elements) ; avoid :key warning
-    [ports conn]]])
+                :on-mouse-down (fn [e]
+                                 (swap! state assoc ::selected k)
+                                 (drag-start-device k v e))}
+   (into [:g {:width (* size grid-size)
+              :height (* size grid-size)}]
+         elements)])
 
-(defn mosfet [k v]
+(defn mosfet-bg [k v]
   (let [shape [" #"
                "##"
-               " #"]
-        conn [" #"
-              "##"
-              " #"]
-        arcs [[[0.5 1.5]
+               " #"]]
+    [device 3 k v [tetris shape]]))
+
+(defn mosfet-conn [k v]
+  (let [shape [" #"
+               "##"
+               " #"]]
+    [device 3 k v [ports shape]]))
+
+(defn mosfet-sym [k v]
+  (let [shape [[[0.5 1.5]
                [1 1.5]]
               [[1 1]
                [1 2]]
@@ -155,9 +159,22 @@
                [1.5 2.5]]
               [[1.5 1.5]
                [1.1 1.5]]]]
-    [device 3 shape conn k v
-     [lines arcs]
+    [device 3 k v
+     [lines shape]
      [arrow 1.2 1.5 0.15]]))
+
+; should probably be in state eventually
+(def models {::bg {:pmos mosfet-bg
+                   :nmos mosfet-bg}
+             ::conn {:pmos mosfet-conn
+                     :nmos mosfet-conn}
+             ::sym {:pmos mosfet-sym
+                    :nmos mosfet-sym}})
+
+(defn split-layers [elem]
+  (reduce (fn [d [k v]] (update-in d [k] conj v))
+          {}
+          (apply concat elem)))
 
 (defn schematic-canvas []
   [:svg {:xmlns "http://www.w3.org/2000/svg"
@@ -170,7 +187,11 @@
          :on-mouse-up drag-end
          :on-mouse-move drag}
    (for [[k v] (::schematic @state)]
-     ^{:key k} [mosfet k v])
+     ^{:key k} [(get (::bg models) (:cell v)) k v])
+   (for [[k v] (::schematic @state)]
+     ^{:key k} [(get (::sym models) (:cell v)) k v])
+   (for [[k v] (::schematic @state)]
+     ^{:key k} [(get (::conn models) (:cell v)) k v])
    ])
 
 (defn ^:dev/after-load init []
