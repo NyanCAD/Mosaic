@@ -37,20 +37,20 @@ svg.device.pmos polygon.arrow {
   transform-origin: center;
 }
 
-svg.device > g {
+svg.device g.transform {
   transform-box: border-box;
   transform-origin: center;
 }
 
-svg.device.r90 > g {
+svg.device.r90 g.transform {
   transform: rotate(90deg);
 }
 
-svg.device.r270 > g {
+svg.device.r270 g.transform {
   transform: rotate(270deg);
 }
 
-svg.device.r180 > g {
+svg.device.r180 g.transform {
   transform: rotate(180deg);
 }
 

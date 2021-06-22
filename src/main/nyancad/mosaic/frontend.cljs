@@ -103,11 +103,10 @@
 (defn drag-start-device [k v e]
   (when (= (.-button e) 0)
     (let [[x y] (map #(/ % grid-size) (viewbox-coord e))]
-      (println x y v)
       (swap! state assoc
              ::dragging k
-             ::offsetx (- x (:x v))
-             ::offsety (- y (:y v))))))
+             ::offsetx x
+             ::offsety y))))
 
 (defn drag-end [e]
   (swap! state
@@ -127,12 +126,14 @@
                 :width (* size grid-size)
                 :height (* size grid-size)
                 :class [(:cell v) (symbol (str "r" (:r v))) (when (= k (::selected @state)) :selected)]
-                :on-mouse-down (fn [e]
-                                 (swap! state assoc ::selected k)
-                                 (drag-start-device k v e))}
-   (into [:g {:width (* size grid-size)
-              :height (* size grid-size)}]
-         elements)])
+                }
+   [:g.position
+    {:on-mouse-down (fn [e]
+                      (swap! state assoc ::selected k)
+                      (drag-start-device k v e))}
+    (into [:g.transform {:width (* size grid-size)
+               :height (* size grid-size)}]
+          elements)]])
 
 (defn mosfet-bg [k v]
   (let [shape [" #"
@@ -170,11 +171,6 @@
                      :nmos mosfet-conn}
              ::sym {:pmos mosfet-sym
                     :nmos mosfet-sym}})
-
-(defn split-layers [elem]
-  (reduce (fn [d [k v]] (update-in d [k] conj v))
-          {}
-          (apply concat elem)))
 
 (defn schematic-canvas []
   [:svg {:xmlns "http://www.w3.org/2000/svg"
