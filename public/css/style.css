@@ -14,58 +14,82 @@ svg {
   stroke-linecap: square;
 }
 
-rect.tetris {
-  fill: rgb(216, 243, 226);
-  stroke: rgb(226, 226, 226);
-}
-
-svg.device.selected rect.tetris {
-  fill: rgb(224, 216, 243) !important;
-}
-
-svg.device.nmos rect.tetris {
-  fill: rgb(216, 236, 243);
-}
-
-svg.device.pmos rect.tetris {
-  fill: rgb(243, 231, 216);
-}
-
 svg.device g.transform {
   transform-box: border-box;
   transform-origin: center;
-}
-
-svg.device circle.port {
-  fill: rgb(145, 0, 0);
-  stroke: rgb(53, 0, 0);
-  opacity: 0;
 }
 
 svg.device circle.port:hover, svg.device.selected circle.port {
   opacity: 1;
 }
 
-svg.device polyline {
+/* tetris theme */
+.tetris rect.tetris {
+  fill: rgb(216, 243, 226);
+  stroke: rgb(226, 226, 226);
+}
+
+.tetris svg.device.selected rect.tetris {
+  fill: rgb(224, 216, 243) !important;
+}
+
+.tetris svg.device.nmos rect.tetris {
+  fill: rgb(216, 236, 243);
+}
+
+.tetris svg.device.pmos rect.tetris {
+  fill: rgb(243, 231, 216);
+}
+
+.tetris svg.device circle.port {
+  fill: rgb(145, 0, 0);
+  stroke: rgb(53, 0, 0);
+  opacity: 0;
+}
+
+.tetris svg.device polyline {
   stroke: black;
   stroke-width: 2px;
   fill: none;
 }
 
-line.wire {
+.tetris line.wire {
   stroke: black;
   stroke-width: 2px;
   fill: none;
 }
-circle.wire {
+.tetris circle.wire {
   fill: black;
 }
 
-@keyframes rotation {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* eyesore theme */
+
+.eyesore svg {
+  shape-rendering: crispEdges;
+  background-color: black;
+}
+
+.eyesore rect.tetris {
+  fill: transparent;
+}
+
+.eyesore svg.device circle.port {
+  fill: red;
+}
+
+.eyesore svg.device polyline, .eyesore svg.device polygon {
+  stroke: #00cc66;
+  stroke-width: 1px;
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.eyesore line.wire {
+  stroke: #39bfff;
+  stroke-width: 1px;
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+.eyesore circle.wire {
+  fill: #39bfff;
 }

@@ -13,6 +13,7 @@
   (r/atom
    {
     ::zoom [0 0 500 500],
+    ::theme :eyesore
     ::wires #{}
     ::schematic {
                  :mos1 {:x (+ 0  0), :y (+ 0 0), :transform (.rotate I 270), :cell :pmos}
@@ -176,12 +177,7 @@
     [apply device size k v
      (for [[y s] (map-indexed #(vector (* grid-size %1) %2) pattern)
            [x c] (map-indexed #(vector (* grid-size %1) %2) s)
-           :when (not= c " ")
-           :let [gx (* (:x v) grid-size)
-                 gy (* (:y v) grid-size)
-                 p (.transformPoint (:transform v) (point (- x mid) (- y mid)))
-                 nx (+ (.-x p) mid)
-                 ny (+ (.-y p) mid)]]
+           :when (not= c " ")]
          ^{:key [x y]} [prim x y k v])]))
 
 
@@ -244,27 +240,27 @@
        [arrow 1.35 1.5 -0.15])]))
 
 (defn schematic-canvas []
-  [:svg {:xmlns "http://www.w3.org/2000/svg"
-         :height "100%"
-         :width "100%"
-         :view-box (::zoom @state)
-         :on-wheel zoom-schematic
-         :on-click #(when (= (.-target %) (.-currentTarget %)) (swap! state assoc ::selected nil))
-         :on-mouse-down #(when (= (.-button %) 1) (swap! state assoc ::dragging ::view))
-         :on-mouse-up drag-end
-         :on-mouse-move drag}
-   (for [[x y] (::wires @state)]
-     ^{:key [x y]} [wire-bg x y])
-   (for [[k v] (::schematic @state)]
-     ^{:key k} [draw-pattern (get (::bg models) (:cell v)) tetris k v])
-   (let [wires (::wires @state)]
-     (for [[x y] wires]
-       ^{:key [x y]} [draw-wire x y wires]))
-   (for [[k v] (::schematic @state)]
-     ^{:key k} [(get (::sym models) (:cell v)) k v])
-   (for [[k v] (::schematic @state)]
-     ^{:key k} [draw-pattern (get (::conn models) (:cell v)) port k v])
-   ])
+  [:div {:class (::theme @state)}
+   [:svg {:xmlns "http://www.w3.org/2000/svg"
+          :height "100%"
+          :width "100%"
+          :view-box (::zoom @state)
+          :on-wheel zoom-schematic
+          :on-click #(when (= (.-target %) (.-currentTarget %)) (swap! state assoc ::selected nil))
+          :on-mouse-down #(when (= (.-button %) 1) (swap! state assoc ::dragging ::view))
+          :on-mouse-up drag-end
+          :on-mouse-move drag}
+    (for [[x y] (::wires @state)]
+      ^{:key [x y]} [wire-bg x y])
+    (for [[k v] (::schematic @state)]
+      ^{:key k} [draw-pattern (get (::bg models) (:cell v)) tetris k v])
+    (let [wires (::wires @state)]
+      (for [[x y] wires]
+        ^{:key [x y]} [draw-wire x y wires]))
+    (for [[k v] (::schematic @state)]
+      ^{:key k} [(get (::sym models) (:cell v)) k v])
+    (for [[k v] (::schematic @state)]
+      ^{:key k} [draw-pattern (get (::conn models) (:cell v)) port k v])]])
 
 (defn ^:dev/after-load init []
   (rd/render [schematic-canvas]
