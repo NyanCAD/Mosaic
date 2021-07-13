@@ -1,6 +1,7 @@
 (ns nyancad.mosaic.frontend
   (:require [reagent.core :as r]
-            [reagent.dom :as rd]))
+            [reagent.dom :as rd]
+            [react-bootstrap-icons :as icons]))
 
 (def grid-size 50)
 
@@ -13,7 +14,7 @@
   (r/atom
    {
     ::zoom [0 0 500 500],
-    ::theme :eyesore
+    ::theme :tetris
     ::wires #{}
     ::schematic {
                  :mos1 {:x (+ 0  0), :y (+ 0 0), :transform (.rotate I 270), :cell :pmos}
@@ -64,18 +65,24 @@
         tp (.matrixTransform p m)] ; local movement
     [(.-x tp) (.-y tp)]))
 
-(defn zoom-schematic [e]
+(defn zoom-schematic [direction ex ey]
   (swap! state update-in [::zoom]
     (fn [[x y w h]]
-      (let [dx (* (sign (.-deltaY e)) w 0.1)
-            dy (* (sign (.-deltaY e)) h 0.1)
-            [ex ey] (viewbox-coord e)
+      (let [dx (* direction w 0.1)
+            dy (* direction h 0.1)
             rx (/ (- ex x) w)
             ry (/ (- ey y) h)]
         [(- x (* dx rx))
          (- y (* dy ry))
          (+ w dx)
          (+ h dy)]))))
+
+(defn scroll-zoom [e]
+  (apply zoom-schematic (sign (.-deltaY e)) (viewbox-coord e)))
+
+(defn button-zoom [dir]
+  (let [[x y w h] (::zoom @state)]
+    (zoom-schematic dir (+ x (/ w 2)) (+ y (/ h 2)))))
 
 (defn port-locations [pattern v]
   (let [size (apply max (count pattern) (map count pattern))
@@ -117,10 +124,11 @@
                    :y (- y (::offsety st)))))))))))
 
 (defn drag-start-wire [e]
-  (swap! state #(-> %
-                    update-ports
-                    (assoc ::dragging ::wire)))
-  (.stopPropagation e))
+  (when (= (.-button e) 0)
+    (swap! state #(-> %
+                      update-ports
+                      (assoc ::dragging ::wire)))
+    (.stopPropagation e)))
     
 (defn drag-start-device [k v e]
   (when (= (.-button e) 0)
@@ -172,8 +180,7 @@
           elements)]])
 
 (defn draw-pattern [pattern prim k v]
-  (let [size (apply max (count pattern) (map count pattern))
-        mid (* (.floor js/Math (/ size 2)) grid-size)]
+  (let [size (apply max (count pattern) (map count pattern))]
     [apply device size k v
      (for [[y s] (map-indexed #(vector (* grid-size %1) %2) pattern)
            [x c] (map-indexed #(vector (* grid-size %1) %2) s)
@@ -239,13 +246,34 @@
        [arrow 1.2 1.5 0.15]
        [arrow 1.35 1.5 -0.15])]))
 
+; icons
+(def zoom-in (r/adapt-react-class icons/ZoomIn))
+(def zoom-out (r/adapt-react-class icons/ZoomOut))
+
 (defn schematic-canvas []
-  [:div {:class (::theme @state)}
-   [:svg {:xmlns "http://www.w3.org/2000/svg"
+  [:div#app {:class (::theme @state)}
+   [:div#menu
+      [:select {:on-change #(swap! state assoc ::theme (.. % -target -value))}
+     [:option {:value "tetris"} "Tetris"]
+     [:option {:value "eyesore"} "Classic"]]
+    [:a {:title "zoom in [scroll wheel/pinch]"
+         :on-click #(button-zoom -1)}
+     [zoom-in]]
+    [:a {:title "zoom out [scroll wheel/pinch]"
+         :on-click #(button-zoom 1)}
+     [zoom-out]]]
+   [:div#sidebar
+    (when-let [sel (::selected @state)]
+      [:<>
+       [:h1 (:cell (get (::schematic @state) sel)) ": " sel]
+       [:form.properties
+        [:label {:for "width"} "width"] [:input {:name "width" :type "number"}]
+        [:label {:for "length"} "length"] [:input {:name "length" :type "number"}]]])]
+   [:svg#canvas {:xmlns "http://www.w3.org/2000/svg"
           :height "100%"
           :width "100%"
           :view-box (::zoom @state)
-          :on-wheel zoom-schematic
+          :on-wheel scroll-zoom
           :on-click #(when (= (.-target %) (.-currentTarget %)) (swap! state assoc ::selected nil))
           :on-mouse-down #(when (= (.-button %) 1) (swap! state assoc ::dragging ::view))
           :on-mouse-up drag-end
