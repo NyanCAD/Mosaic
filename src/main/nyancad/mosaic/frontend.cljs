@@ -15,6 +15,7 @@
    {
     ::zoom [0 0 500 500],
     ::theme :tetris
+    ::tool :cursor
     ::wires #{}
     ::schematic {
                  :mos1 {:x (+ 0  0), :y (+ 0 0), :transform (.rotate I 270), :cell :pmos}
@@ -249,6 +250,32 @@
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
 (def zoom-out (r/adapt-react-class icons/ZoomOut))
+(def rotatecw (r/adapt-react-class icons/ArrowClockwise))
+(def rotateccw (r/adapt-react-class icons/ArrowCounterclockwise))
+(def mirror-vertical (r/adapt-react-class icons/SymmetryVertical))
+(def mirror-horizontal (r/adapt-react-class icons/SymmetryHorizontal))
+(def cursor (r/adapt-react-class icons/Cursor))
+(def eraser (r/adapt-react-class icons/Eraser))
+
+(defn radiobuttons [key m]
+  [:<>
+   (doall (for [[icon name disp] m]
+            [:<> {:key name}
+             [:input {:type "radio"
+                      :name key
+                      :id name
+                      :value name
+                      :checked (= name (get @state key))
+                      :on-change #(swap! state assoc key name)}]
+             [:label {:for name :title disp} [icon]]]))])
+
+(defn transform-selected [tf]
+  (swap! state (fn [st]
+                 (if (::selected st)
+                   (-> st
+                       (update-in [::schematic (::selected st) :transform] tf)
+                       update-ports)
+                   st))))
 
 (defn schematic-canvas []
   [:div#app {:class (::theme @state)}
@@ -256,6 +283,21 @@
       [:select {:on-change #(swap! state assoc ::theme (.. % -target -value))}
      [:option {:value "tetris"} "Tetris"]
      [:option {:value "eyesore"} "Classic"]]
+    [radiobuttons ::tool
+     [[cursor :cursor "Cursor"]
+      [eraser :eraser "Eraser"]]]
+    [:a {:title "Rotate selected clockwise"
+         :on-click (fn [e] (transform-selected #(.rotate % -90)))}
+     [rotatecw]]
+    [:a {:title "Rotate selected counter-clockwise"
+         :on-click (fn [e] (transform-selected #(.rotate % 90)))}
+     [rotateccw]]
+    [:a {:title "Mirror selected horizontal"
+         :on-click (fn [e] (transform-selected #(.flipX %)))}
+     [mirror-horizontal]]
+    [:a {:title "Mirror selected vertical"
+         :on-click (fn [e] (transform-selected #(.flipY %)))}
+     [mirror-vertical]]
     [:a {:title "zoom in [scroll wheel/pinch]"
          :on-click #(button-zoom -1)}
      [zoom-in]]

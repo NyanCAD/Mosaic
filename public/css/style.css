@@ -30,15 +30,23 @@ html, body, #root, #app {
   justify-content: flex-end;
 }
 
-#menu > a {
+#menu a,
+#menu label {
   box-sizing: border-box;
   height: 100%;
   padding: 0.5em;
 }
 
-#menu > a:hover {
+#menu a:hover,
+#menu input[type=radio]:checked + label {
   background-color: gray;
 }
+
+#menu input[type=radio] {
+  appearance: none;
+}
+
+
 
 #sidebar {
   grid-row: 2;
