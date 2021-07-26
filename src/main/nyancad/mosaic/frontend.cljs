@@ -104,7 +104,11 @@
                        (get (::bg models) (:cell %)) %)
                      (vals (::schematic st))))))
 
-(defn drag [e]
+(defn remove-wire [e]
+  (let [coord (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))]
+    (swap! state update-in [::wires] disj coord)))
+
+(defn cursor-drag [e]
   (let [dragging (::dragging @state)]
     (case dragging
       ::view (swap! state update-in [::zoom]
@@ -124,8 +128,21 @@
                    :x (- x (::offsetx st))
                    :y (- y (::offsety st)))))))))))
 
+(defn eraser-drag [e]
+  (let [dragging (::dragging @state)]
+    (println dragging)
+    (case dragging
+      ::wire (remove-wire e)
+      nil))) ;todo remove devices?
+
+(defn drag [e]
+  (case (::tool @state)
+    :eraser (eraser-drag e)
+    :cursor (cursor-drag e)))
+  
 (defn drag-start-wire [e]
   (when (= (.-button e) 0)
+    (when (= (::tool @state) :eraser) (remove-wire e))
     (swap! state #(-> %
                       update-ports
                       (assoc ::dragging ::wire)))
@@ -133,11 +150,13 @@
     
 (defn drag-start-device [k v e]
   (when (= (.-button e) 0)
-    (let [[x y] (map #(/ % grid-size) (viewbox-coord e))]
-      (swap! state assoc
-             ::dragging k
-             ::offsetx x
-             ::offsety y))))
+    (if (= (::tool @state) :eraser)
+      (swap! state update-in [::schematic] dissoc k)
+      (let [[x y] (map #(/ % grid-size) (viewbox-coord e))]
+        (swap! state assoc
+               ::dragging k
+               ::offsetx x
+               ::offsety y)))))
 
 (defn drag-end [e]
   (swap! state
@@ -256,6 +275,7 @@
 (def mirror-horizontal (r/adapt-react-class icons/SymmetryHorizontal))
 (def cursor (r/adapt-react-class icons/Cursor))
 (def eraser (r/adapt-react-class icons/Eraser))
+(def delete (r/adapt-react-class icons/Trash))
 
 (defn radiobuttons [key m]
   [:<>
@@ -276,6 +296,10 @@
                        (update-in [::schematic (::selected st) :transform] tf)
                        update-ports)
                    st))))
+
+(defn delete-selected []
+  (swap! state (fn [st]
+                 (update-in st [::schematic] dissoc (::selected st)))))
 
 (defn schematic-canvas []
   [:div#app {:class (::theme @state)}
@@ -298,6 +322,9 @@
     [:a {:title "Mirror selected vertical"
          :on-click (fn [e] (transform-selected #(.flipY %)))}
      [mirror-vertical]]
+    [:a {:title "Delect selected"
+         :on-click (fn [e] (delete-selected))}
+     [delete]]
     [:a {:title "zoom in [scroll wheel/pinch]"
          :on-click #(button-zoom -1)}
      [zoom-in]]
