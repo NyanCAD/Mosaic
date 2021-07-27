@@ -18,22 +18,24 @@
     ::tool :cursor
     ::wires #{}
     ::schematic {
-                 :mos1 {:x (+ 0  0), :y (+ 0 0), :transform (.rotate I 270), :cell :pmos}
-                 :mos2 {:x (+ 2 0), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
-                 :mos3 {:x (+ 1 0), :y (+ 3 0), :transform (.rotate I 90), :cell :pmos}
-                 :mos4 {:x (+ -1 0), :y (+ 2 0), :transform (.rotate I 180), :cell :nmos}
-                 :mos5 {:x (+ 0  4), :y (+ 0 0), :transform (.rotate I 270), :cell :pmos}
-                 :mos6 {:x (+ 2 4), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
-                 :mos7 {:x (+ 1 4), :y (+ 3 0), :transform (.rotate I 90), :cell :pmos}
-                 :mos8 {:x (+ -1 4), :y (+ 2 0), :transform (.rotate I 180), :cell :nmos}
-                 :mos1a {:x (+ 0  0), :y (+ 0 4), :transform (.rotate I 270), :cell :pmos}
-                 :mos2a {:x (+ 2 0), :y (+ 1 4), :transform (.rotate I 0), :cell :nmos}
-                 :mos3a {:x (+ 1 0), :y (+ 3 4), :transform (.rotate I 90), :cell :pmos}
-                 :mos4a {:x (+ -1 0), :y (+ 2 4), :transform (.rotate I 180), :cell :nmos}
-                 :mos5a {:x (+ 0  4), :y (+ 0 4), :transform (.rotate I 270), :cell :pmos}
-                 :mos6a {:x (+ 2 4), :y (+ 1 4), :transform (.rotate I 0), :cell :nmos}
-                 :mos7a {:x (+ 1 4), :y (+ 3 4), :transform (.rotate I 90), :cell :pmos}
-                 :mos8a {:x (+ -1 4), :y (+ 2 4), :transform (.rotate I 180), :cell :nmos}
+                ;;  :mos1 {:x (+ 0  0), :y (+ 0 0), :transform (.rotate I 270), :cell :pmos}
+                ;;  :mos2 {:x (+ 2 0), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
+                ;;  :mos3 {:x (+ 1 0), :y (+ 3 0), :transform (.rotate I 90), :cell :pmos}
+                ;;  :mos4 {:x (+ -1 0), :y (+ 2 0), :transform (.rotate I 180), :cell :nmos}
+                ;;  :mos5 {:x (+ 0  4), :y (+ 0 0), :transform (.rotate I 270), :cell :pmos}
+                ;;  :mos6 {:x (+ 2 4), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
+                ;;  :mos7 {:x (+ 1 4), :y (+ 3 0), :transform (.rotate I 90), :cell :pmos}
+                ;;  :mos8 {:x (+ -1 4), :y (+ 2 0), :transform (.rotate I 180), :cell :nmos}
+                ;;  :mos1a {:x (+ 0  0), :y (+ 0 4), :transform (.rotate I 270), :cell :pmos}
+                ;;  :mos2a {:x (+ 2 0), :y (+ 1 4), :transform (.rotate I 0), :cell :nmos}
+                ;;  :mos3a {:x (+ 1 0), :y (+ 3 4), :transform (.rotate I 90), :cell :pmos}
+                ;;  :mos4a {:x (+ -1 0), :y (+ 2 4), :transform (.rotate I 180), :cell :nmos}
+                ;;  :mos5a {:x (+ 0  4), :y (+ 0 4), :transform (.rotate I 270), :cell :pmos}
+                ;;  :mos6a {:x (+ 2 4), :y (+ 1 4), :transform (.rotate I 0), :cell :nmos}
+                ;;  :mos7a {:x (+ 1 4), :y (+ 3 4), :transform (.rotate I 90), :cell :pmos}
+                ;;  :mos8a {:x (+ -1 4), :y (+ 2 4), :transform (.rotate I 180), :cell :nmos}
+                ;;  imos2 {:x (+ 2 0), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
+                ;;  imos2 {:x (+ 2 0), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
     }}))
 
 (def mosfet-shape
@@ -108,15 +110,18 @@
   (let [coord (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))]
     (swap! state update-in [::wires] disj coord)))
 
+(defn drag-view [e]
+  (swap! state update-in [::zoom]
+         (fn [[x y w h]]
+           (let [[dx dy] (viewbox-movement e)]
+             [(- x dx)
+              (- y dy)
+              w h]))))
+
 (defn cursor-drag [e]
   (let [dragging (::dragging @state)]
     (case dragging
-      ::view (swap! state update-in [::zoom]
-        (fn [[x y w h]]
-          (let [[dx dy] (viewbox-movement e)]
-            [(- x dx)
-             (- y dy)
-             w h])))
+      ::view (drag-view e)
       ::wire (let [coord (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))]
                (when-not (contains? (::ports @state) coord)
                  (swap! state update-in [::wires] conj coord)))
@@ -130,8 +135,8 @@
 
 (defn eraser-drag [e]
   (let [dragging (::dragging @state)]
-    (println dragging)
     (case dragging
+      ::view (drag-view e)
       ::wire (remove-wire e)
       nil))) ;todo remove devices?
 
@@ -266,6 +271,16 @@
        [arrow 1.2 1.5 0.15]
        [arrow 1.35 1.5 -0.15])]))
 
+(defn add-device [cell]
+  (swap! state
+         (fn [st]
+           (let [name (keyword (gensym))]
+             (-> st
+                 (assoc-in [::schematic name]
+                           {:x 0, :y 0, :transform I, :cell cell})
+                 (assoc ::tool :cursor)
+                 (assoc ::dragging name))))))
+
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
 (def zoom-out (r/adapt-react-class icons/ZoomOut))
@@ -276,6 +291,8 @@
 (def cursor (r/adapt-react-class icons/Cursor))
 (def eraser (r/adapt-react-class icons/Eraser))
 (def delete (r/adapt-react-class icons/Trash))
+(def nmos (r/adapt-react-class icons/Cpu))
+(def pmos (r/adapt-react-class icons/Cpu))
 
 (defn radiobuttons [key m]
   [:<>
@@ -307,9 +324,11 @@
       [:select {:on-change #(swap! state assoc ::theme (.. % -target -value))}
      [:option {:value "tetris"} "Tetris"]
      [:option {:value "eyesore"} "Classic"]]
+    [:span.sep]
     [radiobuttons ::tool
      [[cursor :cursor "Cursor"]
       [eraser :eraser "Eraser"]]]
+    [:span.sep]
     [:a {:title "Rotate selected clockwise"
          :on-click (fn [e] (transform-selected #(.rotate % -90)))}
      [rotatecw]]
@@ -325,12 +344,20 @@
     [:a {:title "Delect selected"
          :on-click (fn [e] (delete-selected))}
      [delete]]
+    [:span.sep]
     [:a {:title "zoom in [scroll wheel/pinch]"
          :on-click #(button-zoom -1)}
      [zoom-in]]
     [:a {:title "zoom out [scroll wheel/pinch]"
          :on-click #(button-zoom 1)}
-     [zoom-out]]]
+     [zoom-out]]
+    [:span.sep]
+    [:a {:title "Add N-channel mosfet"
+         :on-click #(add-device :nmos)}
+     "N"]
+    [:a {:title "Add P-channel mosfet"
+         :on-click #(add-device :pmos)}
+     "P"]]
    [:div#sidebar
     (when-let [sel (::selected @state)]
       [:<>
