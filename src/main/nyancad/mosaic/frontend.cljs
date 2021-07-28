@@ -7,6 +7,10 @@
 
 (defn sign [n] (if (> n 0) 1 -1))
 
+(defn update-keys
+  ([m keys f] (into m (map #(vector % (f (get m %)))) keys))
+  ([m keys f & args] (into m (map #(vector % (apply f (get m %) args))) keys)))
+
 (def I (js/DOMMatrixReadOnly.))
 (defn point [x y] (.fromPoint js/DOMPointReadOnly (clj->js {:x x :y y})))
 
@@ -17,25 +21,25 @@
     ::theme :tetris
     ::tool :cursor
     ::wires #{}
+    ::selected #{}
+    ;; ::dragging #{}
     ::schematic {
-                ;;  :mos1 {:x (+ 0  0), :y (+ 0 0), :transform (.rotate I 270), :cell :pmos}
-                ;;  :mos2 {:x (+ 2 0), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
-                ;;  :mos3 {:x (+ 1 0), :y (+ 3 0), :transform (.rotate I 90), :cell :pmos}
-                ;;  :mos4 {:x (+ -1 0), :y (+ 2 0), :transform (.rotate I 180), :cell :nmos}
-                ;;  :mos5 {:x (+ 0  4), :y (+ 0 0), :transform (.rotate I 270), :cell :pmos}
-                ;;  :mos6 {:x (+ 2 4), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
-                ;;  :mos7 {:x (+ 1 4), :y (+ 3 0), :transform (.rotate I 90), :cell :pmos}
-                ;;  :mos8 {:x (+ -1 4), :y (+ 2 0), :transform (.rotate I 180), :cell :nmos}
-                ;;  :mos1a {:x (+ 0  0), :y (+ 0 4), :transform (.rotate I 270), :cell :pmos}
-                ;;  :mos2a {:x (+ 2 0), :y (+ 1 4), :transform (.rotate I 0), :cell :nmos}
-                ;;  :mos3a {:x (+ 1 0), :y (+ 3 4), :transform (.rotate I 90), :cell :pmos}
-                ;;  :mos4a {:x (+ -1 0), :y (+ 2 4), :transform (.rotate I 180), :cell :nmos}
-                ;;  :mos5a {:x (+ 0  4), :y (+ 0 4), :transform (.rotate I 270), :cell :pmos}
-                ;;  :mos6a {:x (+ 2 4), :y (+ 1 4), :transform (.rotate I 0), :cell :nmos}
-                ;;  :mos7a {:x (+ 1 4), :y (+ 3 4), :transform (.rotate I 90), :cell :pmos}
-                ;;  :mos8a {:x (+ -1 4), :y (+ 2 4), :transform (.rotate I 180), :cell :nmos}
-                ;;  imos2 {:x (+ 2 0), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
-                ;;  imos2 {:x (+ 2 0), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
+                 :mos1 {:x (+ 0  0), :y (+ 0 0), :transform (.rotate I 270), :cell :pmos}
+                 :mos2 {:x (+ 2 0), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
+                 :mos3 {:x (+ 1 0), :y (+ 3 0), :transform (.rotate I 90), :cell :pmos}
+                 :mos4 {:x (+ -1 0), :y (+ 2 0), :transform (.rotate I 180), :cell :nmos}
+                 :mos5 {:x (+ 0  4), :y (+ 0 0), :transform (.rotate I 270), :cell :pmos}
+                 :mos6 {:x (+ 2 4), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
+                 :mos7 {:x (+ 1 4), :y (+ 3 0), :transform (.rotate I 90), :cell :pmos}
+                 :mos8 {:x (+ -1 4), :y (+ 2 0), :transform (.rotate I 180), :cell :nmos}
+                 :mos1a {:x (+ 0  0), :y (+ 0 4), :transform (.rotate I 270), :cell :pmos}
+                 :mos2a {:x (+ 2 0), :y (+ 1 4), :transform (.rotate I 0), :cell :nmos}
+                 :mos3a {:x (+ 1 0), :y (+ 3 4), :transform (.rotate I 90), :cell :pmos}
+                 :mos4a {:x (+ -1 0), :y (+ 2 4), :transform (.rotate I 180), :cell :nmos}
+                 :mos5a {:x (+ 0  4), :y (+ 0 4), :transform (.rotate I 270), :cell :pmos}
+                 :mos6a {:x (+ 2 4), :y (+ 1 4), :transform (.rotate I 0), :cell :nmos}
+                 :mos7a {:x (+ 1 4), :y (+ 3 4), :transform (.rotate I 90), :cell :pmos}
+                 :mos8a {:x (+ -1 4), :y (+ 2 4), :transform (.rotate I 180), :cell :nmos}
     }}))
 
 (def mosfet-shape
@@ -69,7 +73,7 @@
     [(.-x tp) (.-y tp)]))
 
 (defn zoom-schematic [direction ex ey]
-  (swap! state update-in [::zoom]
+  (swap! state update ::zoom
     (fn [[x y w h]]
       (let [dx (* direction w 0.1)
             dy (* direction h 0.1)
@@ -100,38 +104,49 @@
                  ny (+ (.-y p) mid)]]
          [(.round js/Math (+ gx nx)) (.round js/Math (+ gy ny))])))
 
+(defn get-model [layer model]
+  (let [m (get (get models layer) (:cell model))]
+    (assert m "no model")
+    m))
+
 (defn update-ports [st]
-    (assoc st ::ports
-           (set (mapcat #(port-locations
-                       (get (::bg models) (:cell %)) %)
-                     (vals (::schematic st))))))
+  (assoc st ::ports
+         (set (mapcat #(port-locations (get-model ::bg %) %)
+                      (vals (::schematic st))))))
 
 (defn remove-wire [e]
   (let [coord (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))]
-    (swap! state update-in [::wires] disj coord)))
+    (swap! state update ::wires disj coord)))
 
 (defn drag-view [e]
-  (swap! state update-in [::zoom]
+  (swap! state update ::zoom
          (fn [[x y w h]]
            (let [[dx dy] (viewbox-movement e)]
              [(- x dx)
               (- y dy)
               w h]))))
 
+(defn drag-device [e]
+  (let [[dx dy] (map #(/ % grid-size) (viewbox-movement e))]
+    (swap! state
+      (fn [st]
+        (update st ::schematic update-keys (::selected st)
+          (fn [device]
+            (-> device
+                (update :x #(+ % dx))
+                (update :y #(+ % dy)))))))))
+
+(defn drag-wire [e]
+  (let [coord (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))]
+    (when-not (contains? (::ports @state) coord)
+      (swap! state update ::wires conj coord))))
+
 (defn cursor-drag [e]
-  (let [dragging (::dragging @state)]
-    (case dragging
+    (case (::dragging @state)
       ::view (drag-view e)
-      ::wire (let [coord (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))]
-               (when-not (contains? (::ports @state) coord)
-                 (swap! state update-in [::wires] conj coord)))
-      nil nil
-      (swap! state (fn [st]
-        (update-in st [::schematic dragging] (fn [d]
-          (let [[x y] (map #(/ % grid-size) (viewbox-coord e))]
-            (assoc d
-                   :x (- x (::offsetx st))
-                   :y (- y (::offsety st)))))))))))
+      ::wire (drag-wire e)
+      ::device (drag-device e)
+      nil))
 
 (defn eraser-drag [e]
   (let [dragging (::dragging @state)]
@@ -154,27 +169,33 @@
     (.stopPropagation e)))
     
 (defn drag-start-device [k v e]
+  (if (or (contains? (::selected @state) k) (.-shiftKey e))
+    (swap! state update ::selected conj k)
+    (swap! state assoc ::selected #{k}))
   (when (= (.-button e) 0)
     (if (= (::tool @state) :eraser)
-      (swap! state update-in [::schematic] dissoc k)
+      (swap! state update ::schematic dissoc k)
       (let [[x y] (map #(/ % grid-size) (viewbox-coord e))]
         (swap! state assoc
-               ::dragging k
+               ::dragging ::device
                ::offsetx x
                ::offsety y)))))
 
 (defn drag-end [e]
-  (swap! state
-    (fn [st]
-      (update-ports
-       (if-let [target (::dragging st)]
-         (if (contains? #{::view ::wire} target)
-           (assoc st ::dragging nil)
-           (-> st
-               (assoc ::dragging nil)
-               (update-in [::schematic target :x] #(.round js/Math %))
-               (update-in [::schematic target :y] #(.round js/Math %))))
-         st)))))
+  (.log js/console e)
+  (letfn [(deselect [st e]
+            (if (= (.-target e) (.-currentTarget e))
+              (assoc st ::selected #{})
+              st))
+          (end [st]
+            (-> st
+                (assoc ::dragging nil)
+                (update ::schematic
+                           update-keys (::selected st)
+                           update-keys [:x :y] #(.round js/Math %))
+                (deselect e)
+                update-ports))]
+    (swap! state end)))
 
 (defn tetris [x y k v]
   [:rect.tetris {:x x, :y y
@@ -193,10 +214,9 @@
                 :y (* (:y v) grid-size)
                 :width (* size grid-size)
                 :height (* size grid-size)
-                :class [(:cell v) (when (= k (::selected @state)) :selected)]}
+                :class [(:cell v) (when (contains? (::selected @state) k) :selected)]}
    [:g.position
     {:on-mouse-down (fn [e]
-                      (swap! state assoc ::selected k)
                       (drag-start-device k v e))}
     (into [:g.transform
            {:width (* size grid-size)
@@ -278,8 +298,9 @@
              (-> st
                  (assoc-in [::schematic name]
                            {:x 0, :y 0, :transform I, :cell cell})
-                 (assoc ::tool :cursor)
-                 (assoc ::dragging name))))))
+                 (assoc ::tool :cursor
+                        ::dragging ::device
+                        ::selected #{name}))))))
 
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
@@ -307,16 +328,15 @@
              [:label {:for name :title disp} [icon]]]))])
 
 (defn transform-selected [tf]
-  (swap! state (fn [st]
-                 (if (::selected st)
-                   (-> st
-                       (update-in [::schematic (::selected st) :transform] tf)
-                       update-ports)
-                   st))))
+  (swap! state
+         (fn [st]
+           (-> st
+               (update ::schematic update-keys (::selected st) update :transform tf)
+               update-ports))))
 
 (defn delete-selected []
   (swap! state (fn [st]
-                 (update-in st [::schematic] dissoc (::selected st)))))
+                 (apply update st ::schematic dissoc (::selected st)))))
 
 (defn schematic-canvas []
   [:div#app {:class (::theme @state)}
@@ -359,32 +379,31 @@
          :on-click #(add-device :pmos)}
      "P"]]
    [:div#sidebar
-    (when-let [sel (::selected @state)]
-      [:<>
-       [:h1 (:cell (get (::schematic @state) sel)) ": " sel]
-       [:form.properties
-        [:label {:for "width"} "width"] [:input {:name "width" :type "number"}]
-        [:label {:for "length"} "length"] [:input {:name "length" :type "number"}]]])]
+    (doall (for [sel (::selected @state)]
+             [:<> {:key sel}
+              [:h1 (:cell (get (::schematic @state) sel)) ": " sel]
+              [:form.properties
+               [:label {:for "width"} "width"] [:input {:name "width" :type "number"}]
+               [:label {:for "length"} "length"] [:input {:name "length" :type "number"}]]]))]
    [:svg#canvas {:xmlns "http://www.w3.org/2000/svg"
           :height "100%"
           :width "100%"
           :view-box (::zoom @state)
           :on-wheel scroll-zoom
-          :on-click #(when (= (.-target %) (.-currentTarget %)) (swap! state assoc ::selected nil))
           :on-mouse-down #(when (= (.-button %) 1) (swap! state assoc ::dragging ::view))
           :on-mouse-up drag-end
           :on-mouse-move drag}
     (for [[x y] (::wires @state)]
       ^{:key [x y]} [wire-bg x y])
     (for [[k v] (::schematic @state)]
-      ^{:key k} [draw-pattern (get (::bg models) (:cell v)) tetris k v])
+      ^{:key k} [draw-pattern (get-model ::bg v) tetris k v])
     (let [wires (::wires @state)]
       (for [[x y] wires]
         ^{:key [x y]} [draw-wire x y wires]))
     (for [[k v] (::schematic @state)]
-      ^{:key k} [(get (::sym models) (:cell v)) k v])
+      ^{:key k} [(get-model ::sym v) k v])
     (for [[k v] (::schematic @state)]
-      ^{:key k} [draw-pattern (get (::conn models) (:cell v)) port k v])]])
+      ^{:key k} [draw-pattern (get-model ::conn v) port k v])]])
 
 (defn ^:dev/after-load init []
   (rd/render [schematic-canvas]
