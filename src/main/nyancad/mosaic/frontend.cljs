@@ -19,7 +19,7 @@
    {
     ::zoom [0 0 500 500],
     ::theme :tetris
-    ::tool :cursor
+    ::tool ::cursor
     ::wires #{}
     ::selected #{}
     ;; ::dragging #{}
@@ -127,19 +127,26 @@
               w h]))))
 
 (defn drag-device [e]
-  (let [[dx dy] (map #(/ % grid-size) (viewbox-movement e))]
+  (let [[dx dy] (map #(/ % grid-size) (viewbox-movement e))
+        [nx ny] (map #(/ % grid-size) (viewbox-coord e))]
     (swap! state
       (fn [st]
         (update st ::schematic update-keys (::selected st)
           (fn [device]
             (-> device
-                (update :x #(+ % dx))
-                (update :y #(+ % dy)))))))))
+                (update :x #(+ (or % nx) dx))
+                (update :y #(+ (or % ny) dy)))))))))
 
 (defn drag-wire [e]
   (let [coord (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))]
     (when-not (contains? (::ports @state) coord)
       (swap! state update ::wires conj coord))))
+
+(defn wire-drag [e]
+    (case (::dragging @state)
+      ::view (drag-view e)
+      ::wire (drag-wire e)
+      nil))
 
 (defn cursor-drag [e]
     (case (::dragging @state)
@@ -157,32 +164,42 @@
 
 (defn drag [e]
   (case (::tool @state)
-    :eraser (eraser-drag e)
-    :cursor (cursor-drag e)))
+    ::eraser (eraser-drag e)
+    ::wire (wire-drag e)
+    ::cursor (cursor-drag e)))
   
 (defn drag-start-wire [e]
   (when (= (.-button e) 0)
-    (when (= (::tool @state) :eraser) (remove-wire e))
+    (when (= (::tool @state) ::eraser) (remove-wire e))
     (swap! state #(-> %
                       update-ports
                       (assoc ::dragging ::wire)))
     (.stopPropagation e)))
     
 (defn drag-start-device [k v e]
-  (if (or (contains? (::selected @state) k) (.-shiftKey e))
-    (swap! state update ::selected conj k)
-    (swap! state assoc ::selected #{k}))
-  (when (= (.-button e) 0)
-    (if (= (::tool @state) :eraser)
-      (swap! state update ::schematic dissoc k)
-      (let [[x y] (map #(/ % grid-size) (viewbox-coord e))]
-        (swap! state assoc
-               ::dragging ::device
-               ::offsetx x
-               ::offsety y)))))
+  (.stopPropagation e)
+  (when-not (::dragging @state) ; skip the button press from a drag initiated from a toolbar button
+    (if (or (contains? (::selected @state) k) (.-shiftKey e))
+      (swap! state update ::selected conj k)
+      (swap! state assoc ::selected #{k}))
+    (when (= (.-button e) 0)
+      (if (= (::tool @state) ::eraser)
+        (swap! state #(-> %
+                          (update ::schematic dissoc k)
+                          (update ::selected disj k)))
+        (let [[x y] (map #(/ % grid-size) (viewbox-coord e))]
+          (swap! state assoc
+                 ::dragging ::device
+                 ::offsetx x
+                 ::offsety y))))))
 
+(defn drag-start-background [e]
+  (swap! state assoc ::dragging
+         (cond
+           (= (.-button e) 1) ::view
+           (= ::wire (::tool @state)) ::wire)))
+  
 (defn drag-end [e]
-  (.log js/console e)
   (letfn [(deselect [st e]
             (if (= (.-target e) (.-currentTarget e))
               (assoc st ::selected #{})
@@ -216,8 +233,7 @@
                 :height (* size grid-size)
                 :class [(:cell v) (when (contains? (::selected @state) k) :selected)]}
    [:g.position
-    {:on-mouse-down (fn [e]
-                      (drag-start-device k v e))}
+    {:on-mouse-down (fn [e] (drag-start-device k v e))}
     (into [:g.transform
            {:width (* size grid-size)
             :height (* size grid-size)
@@ -294,11 +310,11 @@
 (defn add-device [cell]
   (swap! state
          (fn [st]
-           (let [name (keyword (gensym))]
+           (let [name (keyword (gensym cell))]
              (-> st
-                 (assoc-in [::schematic name]
-                           {:x 0, :y 0, :transform I, :cell cell})
-                 (assoc ::tool :cursor
+                 (assoc-in [::schematic name] ; X/Y will be set on drag
+                           {:transform I, :cell cell})
+                 (assoc ::tool ::cursor
                         ::dragging ::device
                         ::selected #{name}))))))
 
@@ -309,11 +325,10 @@
 (def rotateccw (r/adapt-react-class icons/ArrowCounterclockwise))
 (def mirror-vertical (r/adapt-react-class icons/SymmetryVertical))
 (def mirror-horizontal (r/adapt-react-class icons/SymmetryHorizontal))
-(def cursor (r/adapt-react-class icons/Cursor))
+(def cursor (r/adapt-react-class icons/HandIndex))
 (def eraser (r/adapt-react-class icons/Eraser))
+(def wire (r/adapt-react-class icons/Pencil))
 (def delete (r/adapt-react-class icons/Trash))
-(def nmos (r/adapt-react-class icons/Cpu))
-(def pmos (r/adapt-react-class icons/Cpu))
 
 (defn radiobuttons [key m]
   [:<>
@@ -336,7 +351,8 @@
 
 (defn delete-selected []
   (swap! state (fn [st]
-                 (apply update st ::schematic dissoc (::selected st)))))
+                 (-> (apply update st ::schematic dissoc (::selected st))
+                     (assoc ::selected #{})))))
 
 (defn schematic-canvas []
   [:div#app {:class (::theme @state)}
@@ -346,8 +362,9 @@
      [:option {:value "eyesore"} "Classic"]]
     [:span.sep]
     [radiobuttons ::tool
-     [[cursor :cursor "Cursor"]
-      [eraser :eraser "Eraser"]]]
+     [[cursor ::cursor "Cursor"]
+      [wire ::wire "Wire"]
+      [eraser ::eraser "Eraser"]]]
     [:span.sep]
     [:a {:title "Rotate selected clockwise"
          :on-click (fn [e] (transform-selected #(.rotate % -90)))}
@@ -390,7 +407,7 @@
           :width "100%"
           :view-box (::zoom @state)
           :on-wheel scroll-zoom
-          :on-mouse-down #(when (= (.-button %) 1) (swap! state assoc ::dragging ::view))
+          :on-mouse-down drag-start-background
           :on-mouse-up drag-end
           :on-mouse-move drag}
     (for [[x y] (::wires @state)]
