@@ -104,7 +104,8 @@ svg.device g.transform {
   stroke: rgb(226, 226, 226);
 }
 
-.tetris svg.device.selected rect.tetris {
+.tetris svg.device.selected rect.tetris,
+.tetris rect.tetris.selected {
   fill: rgb(224, 216, 243) !important;
 }
 
