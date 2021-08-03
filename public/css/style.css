@@ -49,8 +49,8 @@ html, body, #root, #app {
   background-color: gray;
 }
 
-#menu input[type=radio] {
-  appearance: none;
+#menu input {
+  display: none;
 }
 
 

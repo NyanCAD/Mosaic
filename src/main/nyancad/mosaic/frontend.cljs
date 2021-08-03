@@ -1,7 +1,8 @@
 (ns nyancad.mosaic.frontend
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
-            [react-bootstrap-icons :as icons]))
+            [react-bootstrap-icons :as icons]
+            [clojure.edn]))
 
 (def grid-size 50)
 
@@ -17,7 +18,23 @@
   ([m keys f & args] (into m (map #(vector % (apply f (get m %) args))) keys)))
 
 (def I (js/DOMMatrixReadOnly.))
+(defn transform [[a b c d e f]]
+  (.fromMatrix js/DOMMatrixReadOnly
+               #js {:a a, :b b, :c c, :d d, :e e, :f f}))
 (defn point [x y] (.fromPoint js/DOMPointReadOnly (clj->js {:x x :y y})))
+
+(extend-type js/DOMMatrixReadOnly
+  IPrintWithWriter
+  (-pr-writer [obj writer _opts]
+      (write-all writer
+                 "#transform ["
+                 (.-a obj) " "
+                 (.-b obj) " "
+                 (.-c obj) " "
+                 (.-d obj) " "
+                 (.-e obj) " "
+                 (.-f obj)
+                 "]")))
 
 (defonce state
   (r/atom
@@ -188,7 +205,7 @@
     ::cursor (cursor-drag e)))
   
 (defn add-wire [st]
-  (let [name (keyword (gensym :wire))]
+  (let [name (keyword (gensym "wire"))]
     (-> st
         (assoc-in [::schematic name] ; X/Y will be set on drag
                   {:transform I, :cell :wire})
@@ -365,7 +382,7 @@
 (defn add-device [cell]
   (swap! state
          (fn [st]
-           (let [name (keyword (gensym cell))]
+           (let [name (keyword (gensym (name cell)))]
              (-> st
                  (assoc-in [::schematic name] ; X/Y will be set on drag
                            {:transform I, :cell cell})
@@ -373,6 +390,20 @@
                          ::tool ::cursor
                          ::dragging ::device
                          ::selected #{name}))))))
+
+(defn save-url []
+  (let [blob (js/Blob. #js[(prn-str @schematic)]
+                       #js{:type "application/edn"
+                           :file "schematic.edn"})]
+    (.createObjectURL js/URL blob)))
+
+(defn open-schematic [e]
+  (let [data (.text (aget (.. e -target -files) 0))]
+    (.then data (fn [data]
+                  (swap! state assoc ::schematic
+                         (clojure.edn/read-string
+                          {:readers {'transform transform}}
+                          data))))))
 
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
@@ -385,6 +416,8 @@
 (def eraser (r/adapt-react-class icons/Eraser))
 (def wire (r/adapt-react-class icons/Pencil))
 (def delete (r/adapt-react-class icons/Trash))
+(def save (r/adapt-react-class icons/Download))
+(def open (r/adapt-react-class icons/Upload))
 
 (defn radiobuttons [key m]
   [:<>
@@ -401,7 +434,15 @@
 (defn schematic-canvas []
   [:div#app {:class (::theme @ui)}
    [:div#menu
-      [:select {:on-change #(swap! ui assoc ::theme (.. % -target -value))}
+    [:a {:title "Save"
+         :href (save-url)
+         :download "schematic.edn"}
+     [save]]
+    [:label {:title "Open schematic"}
+     [:input {:type "file"
+              :on-change open-schematic}]
+     [open]]
+    [:select {:on-change #(swap! ui assoc ::theme (.. % -target -value))}
      [:option {:value "tetris"} "Tetris"]
      [:option {:value "eyesore"} "Classic"]]
     [:span.sep]
