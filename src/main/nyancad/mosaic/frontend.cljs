@@ -454,7 +454,11 @@
           :on-mouse-down drag-start-background
           :on-mouse-up drag-end
           :on-mouse-move drag}
-    (for [[k v] @schematic]
+    (for [[k v] @schematic
+          :when (= :wire (:cell v))]
+      ^{:key k} [(get-model ::bg v) k v])
+    (for [[k v] @schematic
+          :when (not= :wire (:cell v))]
       ^{:key k} [(get-model ::bg v) k v])
     (for [[k v] @schematic]
       ^{:key k} [(get-model ::sym v) k v])
