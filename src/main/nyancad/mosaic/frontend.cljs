@@ -435,7 +435,7 @@
   [:div#app {:class (::theme @ui)}
    [:div#menu
     [:a {:title "Save"
-         :href (save-url)
+         :on-click #(set! (.. % -target -href) (save-url))
          :download "schematic.edn"}
      [save]]
     [:label {:title "Open schematic"}
