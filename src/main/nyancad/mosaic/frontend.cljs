@@ -527,7 +527,7 @@
   [:div#app {:class (::theme @ui)}
    [:div#menu
     [:a {:title "Save"
-         :on-click #(set! (.. % -target -href) (save-url))
+         :on-mouse-enter #(set! (.. % -target -href) (save-url))
          :download "schematic.edn"}
      [save]]
     [:label {:title "Open schematic"}
@@ -593,7 +593,7 @@
    [:div#sidebar
     (doall (for [sel (::selected @ui)]
              [:<> {:key sel}
-              [:h1 (get-in schematic [sel :cell]) ": " sel]
+              [:h1 (get-in @schematic [sel :cell]) ": " sel]
               [:form.properties
                [:label {:for "width"} "width"] [:input {:name "width" :type "number"}]
                [:label {:for "length"} "length"] [:input {:name "length" :type "number"}]]]))]
