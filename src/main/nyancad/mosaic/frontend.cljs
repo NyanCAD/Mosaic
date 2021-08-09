@@ -42,44 +42,49 @@
           ::theme :tetris
           ::tool ::cursor
           ::selected #{}}
-    ::schematic {:mos1 {:x (+ 0  0), :y (+ 0 0), :transform (.rotate I 270), :cell :pmos}
-                 :mos2 {:x (+ 2 0), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
-                 :mos3 {:x (+ 1 0), :y (+ 3 0), :transform (.rotate I 90), :cell :pmos}
-                 :mos4 {:x (+ -1 0), :y (+ 2 0), :transform (.rotate I 180), :cell :nmos}
-                 :mos5 {:x (+ 0  4), :y (+ 0 0), :transform (.rotate I 270), :cell :pmos}
-                 :mos6 {:x (+ 2 4), :y (+ 1 0), :transform (.rotate I 0), :cell :nmos}
-                 :mos7 {:x (+ 1 4), :y (+ 3 0), :transform (.rotate I 90), :cell :pmos}
-                 :mos8 {:x (+ -1 4), :y (+ 2 0), :transform (.rotate I 180), :cell :nmos}
-                 :mos1a {:x (+ 0  0), :y (+ 0 4), :transform (.rotate I 270), :cell :pmos}
-                 :mos2a {:x (+ 2 0), :y (+ 1 4), :transform (.rotate I 0), :cell :nmos}
-                 :mos3a {:x (+ 1 0), :y (+ 3 4), :transform (.rotate I 90), :cell :pmos}
-                 :mos4a {:x (+ -1 0), :y (+ 2 4), :transform (.rotate I 180), :cell :nmos}
-                 :mos5a {:x (+ 0  4), :y (+ 0 4), :transform (.rotate I 270), :cell :pmos}
-                 :mos6a {:x (+ 2 4), :y (+ 1 4), :transform (.rotate I 0), :cell :nmos}
-                 :mos7a {:x (+ 1 4), :y (+ 3 4), :transform (.rotate I 90), :cell :pmos}
-                 :mos8a {:x (+ -1 4), :y (+ 2 4), :transform (.rotate I 180), :cell :nmos}
-                 :wire1 {:x 0 :y 0 :transform I :cell :wire :wires #{[0 -1] [0 0]}}
-                 :wire2 {:x 0 :y 0 :transform I :cell :wire :wires #{[-1 -1] [-1 0]}}}}))
+    ::schematic {}}))
 
 (defonce schematic (r/cursor state [::schematic]))
 (defonce ui (r/cursor state [::ui]))
 
 (def mosfet-shape
-  [" #"
-   "##"
-   " #"])
+  [" D"
+   "GB"
+   " S"])
 
-(declare mosfet-sym wire-sym wire-bg)
+(def twoport-shape
+  ["P"
+   "N"])
+
+(declare mosfet-sym wire-sym wire-bg resistor-sym capacitor-sym inductor-sym vsource-sym isource-sym diode-sym)
 ; should probably be in state eventually
-(def models {::bg {:pmos mosfet-shape
-                   :nmos mosfet-shape
-                   :wire #'wire-bg}
-             ::conn {:pmos mosfet-shape
-                     :nmos mosfet-shape
-                     :wire []}
-             ::sym {:pmos #'mosfet-sym
-                    :nmos #'mosfet-sym
-                    :wire #'wire-sym}})
+(def models {::pmos {::bg mosfet-shape
+                     ::conn mosfet-shape
+                     ::sym #'mosfet-sym}
+             ::nmos {::bg mosfet-shape
+                     ::conn mosfet-shape
+                     ::sym #'mosfet-sym}
+             ::resistor {::bg twoport-shape
+                         ::conn twoport-shape
+                         ::sym #'resistor-sym}
+             ::capacitor {::bg twoport-shape
+                         ::conn twoport-shape
+                         ::sym #'capacitor-sym}
+             ::inductor {::bg twoport-shape
+                         ::conn twoport-shape
+                         ::sym #'inductor-sym}
+             ::vsource {::bg twoport-shape
+                         ::conn twoport-shape
+                         ::sym #'vsource-sym}
+             ::isource {::bg twoport-shape
+                         ::conn twoport-shape
+                         ::sym #'isource-sym}
+             ::diode {::bg twoport-shape
+                      ::conn twoport-shape
+                      ::sym #'diode-sym}
+             ::wire {::bg #'wire-bg
+                     ::conn []
+                     ::sym #'wire-sym}})
 
 (defn viewbox-coord [e]
   (let [^js el (.-currentTarget e)
@@ -208,7 +213,7 @@
   (let [name (keyword (gensym "wire"))]
     (-> st
         (assoc-in [::schematic name] ; X/Y will be set on drag
-                  {:transform I, :cell :wire})
+                  {:transform I, :cell ::wire})
         (update ::ui assoc
                 ::dragging ::wire
                 ::selected #{name}))))
@@ -299,7 +304,7 @@
 
 
 (defn get-model [layer model]
-  (let [m (get (get models layer) (:cell model))]
+  (let [m (get-in models [(:cell model) layer])]
     (assert m "no model")
     (cond
       (fn? m) m
@@ -312,11 +317,18 @@
    (for [arc arcs]
      ^{:key arc} [:polyline {:points (map #(* % grid-size) (flatten arc))}])])
 
-(defn arrow [x y size]
+(defn harrow [x y size]
    [:polygon.arrow {:points 
      (map #(* % grid-size)
       [x y,
        (+ x size) (+ y size)
+       (+ x size) (- y size)])}])
+
+(defn varrow [x y size]
+   [:polygon.arrow {:points 
+     (map #(* % grid-size)
+      [x y,
+       (- x size) (- y size)
        (+ x size) (- y size)])}])
 
 
@@ -375,9 +387,89 @@
                [1.1 1.5]]]]
     [device 3 k v
      [lines shape]
-     (if (= (:cell v) :nmos)
-       [arrow 1.2 1.5 0.15]
-       [arrow 1.35 1.5 -0.15])]))
+     (if (= (:cell v) ::nmos)
+       [harrow 1.2 1.5 0.15]
+       [harrow 1.35 1.5 -0.15])]))
+
+(defn resistor-sym [k v]
+  (let [shape [[[0.5 0.5]
+               [0.5 0.7]]
+               [[0.4 0.7]
+                [0.6 0.7]
+                [0.6 1.3]
+                [0.4 1.3]
+                [0.4 0.7]]
+              [[0.5 1.3]
+               [0.5 1.5]]]]
+    [device 2 k v
+     [lines shape]]))
+
+(defn capacitor-sym [k v]
+  (let [shape [[[0.5 0.5]
+               [0.5 0.9]]
+               [[0.2 0.9]
+                [0.8 0.9]]
+               [[0.2 1.1]
+                [0.8 1.1]]
+              [[0.5 1.1]
+               [0.5 1.5]]]]
+    [device 2 k v
+     [lines shape]]))
+
+(defn inductor-sym [k v]
+  (let [shape [[[0.5 0.5]
+               [0.5 0.7]]
+              [[0.5 1.3]
+               [0.5 1.5]]]]
+    [device 2 k v
+     [lines shape]
+     [:path {:d "M25,35
+                 a5,5 90 0,1 0,10
+                 a5,5 90 0,1 0,10
+                 a5,5 90 0,1 0,10
+                 "}]]))
+
+(defn isource-sym [k v]
+  (let [shape [[[0.5 0.5]
+               [0.5 0.6]]
+               [[0.5 0.85]
+                [0.5 1.25]]
+              [[0.5 1.4]
+               [0.5 1.5]]]]
+    [device 2 k v
+     [lines shape]
+     [:circle.outline
+      {:cx (/ grid-size 2)
+       :cy grid-size
+       :r (* grid-size 0.4)}]
+     [varrow 0.5 0.7 -0.15]
+     ]))
+
+(defn vsource-sym [k v]
+  (let [shape [[[0.5 0.5]
+               [0.5 0.6]]
+              [[0.5 1.4]
+               [0.5 1.5]]]]
+    [device 2 k v
+     [lines shape]
+     [:circle.outline
+      {:cx (/ grid-size 2)
+       :cy grid-size
+       :r (* grid-size 0.4)}]
+     [:text {:x 25 :y 45 :text-anchor "middle"} "+"]
+     [:text {:x 25 :y 65 :text-anchor "middle"} "−"]
+     ]))
+
+(defn diode-sym [k v]
+  (let [shape [[[0.5 0.5]
+               [0.5 0.9]]
+               [[0.3 1.1]
+                [0.7 1.1]]
+              [[0.5 1.1]
+               [0.5 1.5]]]]
+    [device 2 k v
+     [lines shape]
+     [varrow 0.5 1.1 0.2]]))
 
 (defn add-device [cell]
   (swap! state
@@ -458,10 +550,10 @@
          :on-click (fn [_] (swap! state transform-selected #(.rotate % 90)))}
      [rotateccw]]
     [:a {:title "Mirror selected horizontal"
-         :on-click (fn [_] (swap! state transform-selected #(.flipX %)))}
+         :on-click (fn [_] (swap! state transform-selected #(.flipY %)))}
      [mirror-horizontal]]
     [:a {:title "Mirror selected vertical"
-         :on-click (fn [_] (swap! state transform-selected #(.flipY %)))}
+         :on-click (fn [_] (swap! state transform-selected #(.flipX %)))}
      [mirror-vertical]]
     [:a {:title "Delect selected"
          :on-click (fn [_] (swap! state delete-selected))}
@@ -474,11 +566,29 @@
          :on-click #(button-zoom 1)}
      [zoom-out]]
     [:span.sep]
+    [:a {:title "Add resistor"
+         :on-click #(add-device ::resistor)}
+     "R"]
+    [:a {:title "Add inductor"
+         :on-click #(add-device ::inductor)}
+     "L"]
+    [:a {:title "Add capacitor"
+         :on-click #(add-device ::capacitor)}
+     "C"]
+    [:a {:title "Add diode"
+         :on-click #(add-device ::diode)}
+     "D"]
+    [:a {:title "Add voltage source"
+         :on-click #(add-device ::vsource)}
+     "V"]
+    [:a {:title "Add current source"
+         :on-click #(add-device ::isource)}
+     "I"]
     [:a {:title "Add N-channel mosfet"
-         :on-click #(add-device :nmos)}
+         :on-click #(add-device ::nmos)}
      "N"]
     [:a {:title "Add P-channel mosfet"
-         :on-click #(add-device :pmos)}
+         :on-click #(add-device ::pmos)}
      "P"]]
    [:div#sidebar
     (doall (for [sel (::selected @ui)]
@@ -496,10 +606,10 @@
           :on-mouse-up drag-end
           :on-mouse-move drag}
     (for [[k v] @schematic
-          :when (= :wire (:cell v))]
+          :when (= ::wire (:cell v))]
       ^{:key k} [(get-model ::bg v) k v])
     (for [[k v] @schematic
-          :when (not= :wire (:cell v))]
+          :when (not= ::wire (:cell v))]
       ^{:key k} [(get-model ::bg v) k v])
     (for [[k v] @schematic]
       ^{:key k} [(get-model ::sym v) k v])

@@ -100,13 +100,14 @@ svg.device g.transform {
 
 /* tetris theme */
 .tetris rect.tetris {
-  fill: rgb(216, 243, 226);
+  fill: rgb(238, 238, 238);
   stroke: rgb(226, 226, 226);
 }
 
 .tetris svg.device.selected rect.tetris,
 .tetris rect.tetris.selected {
-  fill: rgb(224, 216, 243) !important;
+  fill: rgb(229, 216, 243) !important;
+  /* stroke: rgb(90, 90, 90) !important; */
 }
 
 .tetris svg.device.nmos rect.tetris {
@@ -115,6 +116,18 @@ svg.device g.transform {
 
 .tetris svg.device.pmos rect.tetris {
   fill: rgb(243, 231, 216);
+}
+
+.tetris svg.device.capacitor rect.tetris,
+.tetris svg.device.inductor rect.tetris,
+.tetris svg.device.resistor rect.tetris,
+.tetris svg.device.diode rect.tetris {
+  fill: rgb(216, 243, 226);
+}
+
+.tetris svg.device.vsource rect.tetris,
+.tetris svg.device.isource rect.tetris {
+  fill: rgb(243, 243, 216);
 }
 
 .tetris svg.device circle.port {
@@ -128,7 +141,9 @@ svg.device g.transform {
 }
 
 
-.tetris svg.device polyline {
+.tetris svg.device polyline,
+.tetris svg.device circle.outline,
+.tetris svg.device path {
   stroke: black;
   stroke-width: 2px;
   fill: none;
@@ -158,10 +173,20 @@ svg.device g.transform {
   fill: red;
 }
 
-.eyesore svg.device polyline, .eyesore svg.device polygon {
+.eyesore svg.device polyline,
+.eyesore svg.device path,
+.eyesore svg.device circle.outline,
+.eyesore svg.device polygon {
   stroke: #00cc66;
   stroke-width: 1px;
   fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.eyesore svg.device text {
+  stroke: #00cc66;
+  /* stroke-width: 1px; */
+  fill: #00cc66;
   vector-effect: non-scaling-stroke;
 }
 
