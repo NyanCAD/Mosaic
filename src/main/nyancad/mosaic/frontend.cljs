@@ -60,25 +60,49 @@
 ; should probably be in state eventually
 (def models {::pmos {::bg mosfet-shape
                      ::conn mosfet-shape
-                     ::sym #'mosfet-sym}
+                     ::sym #'mosfet-sym
+                     ::props {:w :number
+                              :l :number}}
              ::nmos {::bg mosfet-shape
                      ::conn mosfet-shape
-                     ::sym #'mosfet-sym}
+                     ::sym #'mosfet-sym
+                     ::props {:w :number
+                              :l :number}}
              ::resistor {::bg twoport-shape
                          ::conn twoport-shape
-                         ::sym #'resistor-sym}
+                         ::sym #'resistor-sym
+                         ::props {:resistance :number}}
              ::capacitor {::bg twoport-shape
-                         ::conn twoport-shape
-                         ::sym #'capacitor-sym}
+                          ::conn twoport-shape
+                          ::sym #'capacitor-sym
+                          ::props {:capacitance :number}}
              ::inductor {::bg twoport-shape
                          ::conn twoport-shape
-                         ::sym #'inductor-sym}
+                         ::sym #'inductor-sym
+                         ::props {:inductance :number}}
              ::vsource {::bg twoport-shape
-                         ::conn twoport-shape
-                         ::sym #'vsource-sym}
+                        ::conn twoport-shape
+                        ::sym #'vsource-sym
+                        ::props {:dc :number
+                                 :ac :number
+                                 :type {:none {}
+                                        :sin {:offset :number
+                                              :magnitude :number
+                                              :frequency :number
+                                              :delay :number
+                                              :damping :number
+                                              :phase :number}
+                                        :pulse {:initial :number
+                                                :pulse :number
+                                                :delay :number
+                                                :rise :number
+                                                :fall :number
+                                                :width :number
+                                                :period :number
+                                                :phase :number}}}}
              ::isource {::bg twoport-shape
-                         ::conn twoport-shape
-                         ::sym #'isource-sym}
+                        ::conn twoport-shape
+                        ::sym #'isource-sym}
              ::diode {::bg twoport-shape
                       ::conn twoport-shape
                       ::sym #'diode-sym}
@@ -127,9 +151,9 @@
      (for [[y s] (map-indexed vector pattern)
            [x c] (map-indexed vector s)
            :when (not= c " ")
-           :let [gx (:x v)
-                 gy (:y v)
-                 p (.transformPoint (:transform v) (point (- x mid) (- y mid)))
+           :let [gx (::x v)
+                 gy (::y v)
+                 p (.transformPoint (::transform v) (point (- x mid) (- y mid)))
                  nx (+ (.-x p) mid)
                  ny (+ (.-y p) mid)]]
          [(.round js/Math (+ gx nx)) (.round js/Math (+ gy ny))])))
@@ -138,7 +162,7 @@
   (let [selected (get-in st [::ui ::selected])]
     (update st ::schematic
             update-keys selected
-            update :transform tf)))
+            update ::transform tf)))
 
 (defn delete-selected [st]
   (let [selected (get-in st [::ui ::selected])]
@@ -148,10 +172,10 @@
 (defn remove-wire [st e]
   (let [[x y] (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))
         selected (first (get-in st [::ui ::selected]))
-        xo (get-in st [::schematic selected :x])
-        yo (get-in st [::schematic selected :y])
+        xo (get-in st [::schematic selected ::x])
+        yo (get-in st [::schematic selected ::y])
         coord [(- x xo) (- y yo)]]
-    (update-in st [::schematic selected :wires] disj coord)))
+    (update-in st [::schematic selected ::wires] disj coord)))
 
 (defn drag-view [e]
   (swap! ui update ::zoom
@@ -170,18 +194,18 @@
           (update st ::schematic update-keys selected
             (fn [device]
               (-> device
-                  (update :x #(+ (or % nx) dx))
-                  (update :y #(+ (or % ny) dy))))))))))
+                  (update ::x #(+ (or % nx) dx))
+                  (update ::y #(+ (or % ny) dy))))))))))
 
 (defn drag-wire [e]
   (let [[x y] (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))]
     (swap! state
            (fn [st]
              (let [selected (first (get-in st [::ui ::selected]))
-                   xo (get-in st [::schematic selected :x])
-                   yo (get-in st [::schematic selected :y])
+                   xo (get-in st [::schematic selected ::x])
+                   yo (get-in st [::schematic selected ::y])
                    coord [(- x xo) (- y yo)]]
-               (update-in st [::schematic selected :wires] sconj coord))))))
+               (update-in st [::schematic selected ::wires] sconj coord))))))
 
 (defn wire-drag [e]
     (case (::dragging @ui)
@@ -213,7 +237,7 @@
   (let [name (keyword (gensym "wire"))]
     (-> st
         (assoc-in [::schematic name] ; X/Y will be set on drag
-                  {:transform I, :cell ::wire})
+                  {::transform I, ::cell ::wire})
         (update ::ui assoc
                 ::dragging ::wire
                 ::selected #{name}))))
@@ -265,7 +289,7 @@
                 (assoc-in [::ui ::dragging] nil)
                 (update ::schematic
                            update-keys (get-in st [::ui ::selected])
-                           update-keys [:x :y] #(.round js/Math %))
+                           update-keys [::x ::y] #(.round js/Math %))
                 (deselect e)))]
     (swap! state end)))
 
@@ -281,17 +305,17 @@
                  :r (/ grid-size 10)}])
 
 (defn device [size k v & elements]
-  [:svg.device {:x (* (:x v) grid-size)
-                :y (* (:y v) grid-size)
+  [:svg.device {:x (* (::x v) grid-size)
+                :y (* (::y v) grid-size)
                 :width (* size grid-size)
                 :height (* size grid-size)
-                :class [(:cell v) (when (contains? (::selected @ui) k) :selected)]}
+                :class [(::cell v) (when (contains? (::selected @ui) k) :selected)]}
    [:g.position
     {:on-mouse-down (fn [e] (drag-start k ::device e))}
     (into [:g.transform
            {:width (* size grid-size)
             :height (* size grid-size)
-            :transform (.toString (:transform v))}]
+            :transform (.toString (::transform v))}]
           elements)]])
 
 (defn draw-pattern [pattern prim k v]
@@ -304,7 +328,7 @@
 
 
 (defn get-model [layer model]
-  (let [m (get-in models [(:cell model) layer])]
+  (let [m (get-in models [(::cell model) layer])]
     (assert m "no model")
     (cond
       (fn? m) m
@@ -333,9 +357,9 @@
 
 
 (defn wire-bg [name net]
-  (let [wires (:wires net)
-        xo (:x net)
-        yo (:y net)
+  (let [wires (::wires net)
+        xo (::x net)
+        yo (::y net)
         wires (set (map (fn [[x y]] [(+ xo x) (+ yo y)]) wires))]
     [:g {:on-mouse-down #(drag-start name ::wire %)}
      (doall (for [[x y] wires]
@@ -364,9 +388,9 @@
                   :key [x y x2 y2]}])]))
 
 (defn wire-sym [name net]
-  (let [wires (:wires net)
-        xo (:x net)
-        yo (:y net)
+  (let [wires (::wires net)
+        xo (::x net)
+        yo (::y net)
         wires (set (map (fn [[x y]] [(+ xo x) (+ yo y)]) wires))]
     [:g {:on-mouse-down #(drag-start name ::wire %)}
      (for [[x y] wires]
@@ -387,7 +411,7 @@
                [1.1 1.5]]]]
     [device 3 k v
      [lines shape]
-     (if (= (:cell v) ::nmos)
+     (if (= (::cell v) ::nmos)
        [harrow 1.2 1.5 0.15]
        [harrow 1.35 1.5 -0.15])]))
 
@@ -477,7 +501,7 @@
            (let [name (keyword (gensym (name cell)))]
              (-> st
                  (assoc-in [::schematic name] ; X/Y will be set on drag
-                           {:transform I, :cell cell})
+                           {::transform I, ::cell cell})
                  (update ::ui assoc
                          ::tool ::cursor
                          ::dragging ::device
@@ -522,6 +546,41 @@
                       :checked (= name (get @ui key))
                       :on-change #(swap! ui assoc key name)}]
              [:label {:for name :title disp} [icon]]]))])
+
+(defn deviceprops [key]
+  (let [props (r/cursor schematic [key ::props])
+        cell (r/cursor schematic [key ::cell])
+        model (get models @cell)]
+    (fn [key]
+      [:<>
+       [:h1 @cell ": " key]
+       [:form.properties
+        (doall (for [[prop typ] (::props model)
+                     :let [opts (cond
+                                  (map? typ) (keys typ)
+                                  (coll? typ) type)
+                           kv (if (map? typ)
+                                (get typ (get @props prop))
+                                {prop typ})]]
+                 [:<> {:key prop}
+                  (when opts
+                    [:<>
+                     [:label {:for prop} prop]
+                     [:select {:on-change #(swap! props assoc prop (keyword (.. % -target -value)))
+                               :value (get @props prop)}
+                      (doall (for [opt opts]
+                               [:option {:key opt} opt]))]])
+                  (doall (for [[prop typ] kv
+                               :let [parse (case typ
+                                             :number js/parseFloat ;TODO magnitude suffices?
+                                             identity)]]
+                           [:<> {:key prop}
+                            [:label {:for prop} prop]
+                            [:input {:key prop
+                                     :name prop
+                                     :type typ
+                                     :default-value (get @props prop)
+                                     :on-change #(swap! props assoc prop (parse (.. % -target -value)))}]]))]))]])))
 
 (defn schematic-canvas []
   [:div#app {:class (::theme @ui)}
@@ -592,11 +651,7 @@
      "P"]]
    [:div#sidebar
     (doall (for [sel (::selected @ui)]
-             [:<> {:key sel}
-              [:h1 (get-in @schematic [sel :cell]) ": " sel]
-              [:form.properties
-               [:label {:for "width"} "width"] [:input {:name "width" :type "number"}]
-               [:label {:for "length"} "length"] [:input {:name "length" :type "number"}]]]))]
+             ^{:key sel} [deviceprops sel]))]
    [:svg#canvas {:xmlns "http://www.w3.org/2000/svg"
           :height "100%"
           :width "100%"
@@ -606,10 +661,10 @@
           :on-mouse-up drag-end
           :on-mouse-move drag}
     (for [[k v] @schematic
-          :when (= ::wire (:cell v))]
+          :when (= ::wire (::cell v))]
       ^{:key k} [(get-model ::bg v) k v])
     (for [[k v] @schematic
-          :when (not= ::wire (:cell v))]
+          :when (not= ::wire (::cell v))]
       ^{:key k} [(get-model ::bg v) k v])
     (for [[k v] @schematic]
       ^{:key k} [(get-model ::sym v) k v])
