@@ -61,12 +61,14 @@
 (def models {::pmos {::bg mosfet-shape
                      ::conn mosfet-shape
                      ::sym #'mosfet-sym
-                     ::props {:w :number
+                     ::props {:model :text
+                              :w :number
                               :l :number}}
              ::nmos {::bg mosfet-shape
                      ::conn mosfet-shape
                      ::sym #'mosfet-sym
-                     ::props {:w :number
+                     ::props {:model :text
+                              :w :number
                               :l :number}}
              ::resistor {::bg twoport-shape
                          ::conn twoport-shape
@@ -87,7 +89,7 @@
                                  :ac :number
                                  :type {:none {}
                                         :sin {:offset :number
-                                              :magnitude :number
+                                              :amplitude :number
                                               :frequency :number
                                               :delay :number
                                               :damping :number
@@ -102,13 +104,32 @@
                                                 :phase :number}}}}
              ::isource {::bg twoport-shape
                         ::conn twoport-shape
-                        ::sym #'isource-sym}
+                        ::sym #'isource-sym
+                        ::props {:dc :number
+                                 :ac :number
+                                 :type {:none {}
+                                        :sin {:offset :number
+                                              :amplitude :number
+                                              :frequency :number
+                                              :delay :number
+                                              :damping :number
+                                              :phase :number}
+                                        :pulse {:initial :number
+                                                :pulse :number
+                                                :delay :number
+                                                :rise :number
+                                                :fall :number
+                                                :width :number
+                                                :period :number
+                                                :phase :number}}}}
              ::diode {::bg twoport-shape
                       ::conn twoport-shape
-                      ::sym #'diode-sym}
+                      ::sym #'diode-sym
+                      ::props {:model :text}}
              ::wire {::bg #'wire-bg
                      ::conn []
-                     ::sym #'wire-sym}})
+                     ::sym #'wire-sym
+                     ::props {:net :text}}})
 
 (defn viewbox-coord [e]
   (let [^js el (.-currentTarget e)
@@ -144,19 +165,6 @@
 (defn button-zoom [dir]
   (let [[x y w h] (::zoom @ui)]
     (zoom-schematic dir (+ x (/ w 2)) (+ y (/ h 2)))))
-
-(defn port-locations [pattern v]
-  (let [size (apply max (count pattern) (map count pattern))
-        mid (.floor js/Math (/ size 2))]
-     (for [[y s] (map-indexed vector pattern)
-           [x c] (map-indexed vector s)
-           :when (not= c " ")
-           :let [gx (::x v)
-                 gy (::y v)
-                 p (.transformPoint (::transform v) (point (- x mid) (- y mid)))
-                 nx (+ (.-x p) mid)
-                 ny (+ (.-y p) mid)]]
-         [(.round js/Math (+ gx nx)) (.round js/Math (+ gy ny))])))
 
 (defn transform-selected [st tf]
   (let [selected (get-in st [::ui ::selected])]
@@ -509,8 +517,7 @@
 
 (defn save-url []
   (let [blob (js/Blob. #js[(prn-str @schematic)]
-                       #js{:type "application/edn"
-                           :file "schematic.edn"})]
+                       #js{:type "application/edn"})]
     (.createObjectURL js/URL blob)))
 
 (defn open-schematic [e]
@@ -520,6 +527,64 @@
                          (clojure.edn/read-string
                           {:readers {'transform transform}}
                           data))))))
+
+(defn device-nets [sch {gx ::x gy ::y tran ::transform cell ::cell}]
+  (let [pattern (get-in models [cell ::conn])
+        size (apply max (count pattern) (map count pattern))
+        mid (.floor js/Math (/ size 2))
+        mid (- (/ size 2) 0.5)]
+    (into {}
+          (for [[y s] (map-indexed vector pattern)
+                [x c] (map-indexed vector s)
+                :when (not= c " ")
+                :let [p (.transformPoint tran (point (- x mid) (- y mid)))
+                      nx (+ (.-x p) mid)
+                      ny (+ (.-y p) mid)
+                      rx (.round js/Math (+ gx nx))
+                      ry (.round js/Math (+ gy ny))
+                      contains-loc? (fn [[key {wires ::wires x ::x y ::y props ::props}]]
+                                      (when (contains? wires [(- rx x) (- ry y)])
+                                        (or (:net props) key)))]]
+            [(keyword c) (or (some contains-loc? sch) (keyword (gensym "NC")))]))))
+
+(defn print-props [mprops dprops]
+  (apply str
+    (interpose " "
+      (for [[prop typ] mprops
+            :let [val (get dprops prop)]
+            :when (and (not= prop :model) val)]
+        (cond
+          (map? typ) (str (name val) "("
+                          (apply str (interpose " "
+                            (map #(get dprops %) (keys (get typ val)))))
+                          ")")
+          ; coll? :checkbox?
+          :else (str (name prop) "=" val))))))
+
+(defn export-spice []
+  (let [sch @schematic]
+    (apply str "* schematic\n"
+           (for [[key device] sch
+                 :let [loc (device-nets sch device)
+                       cell (::cell device)
+                       props (::props device)
+                       mprops (get-in models [cell ::props])
+                       propstr (print-props mprops props)]]
+             (case cell
+               ::resistor (str "R" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+               ::capacitor (str "C" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+               ::inductor (str "L" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+               ::diode (str "D" (name key) " " (name (:P loc)) " " (name (:N loc)) " " (:model props) "\n")
+               ::vsource (str "V" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+               ::isource (str "I" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+               ::pmos (str "M" (name key) " " (name (:D loc)) " " (name (:G loc)) " " (name (:S loc)) " " (name (:B loc)) " " (:model props) " " propstr "\n")
+               ::nmos (str "M" (name key) " " (name (:D loc)) " " (name (:G loc)) " " (name (:S loc)) " " (name (:B loc)) " " (:model props) " " propstr "\n")
+               nil)))))
+
+(defn spice-url []
+  (let [blob (js/Blob. #js[(export-spice)]
+                       #js{:type "application/spice"})]
+    (.createObjectURL js/URL blob)))
 
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
@@ -534,6 +599,7 @@
 (def delete (r/adapt-react-class icons/Trash))
 (def save (r/adapt-react-class icons/Download))
 (def open (r/adapt-react-class icons/Upload))
+(def export (r/adapt-react-class icons/FileEarmarkCode))
 
 (defn radiobuttons [key m]
   [:<>
@@ -579,6 +645,7 @@
                             [:input {:key prop
                                      :name prop
                                      :type typ
+                                     :step "any"
                                      :default-value (get @props prop)
                                      :on-change #(swap! props assoc prop (parse (.. % -target -value)))}]]))]))]])))
 
@@ -589,6 +656,10 @@
          :on-mouse-enter #(set! (.. % -target -href) (save-url))
          :download "schematic.edn"}
      [save]]
+    [:a {:title "Export SPICE netlist"
+         :on-mouse-enter #(set! (.. % -target -href) (spice-url))
+         :download "schematic.cir"}
+     [export]]
     [:label {:title "Open schematic"}
      [:input {:type "file"
               :on-change open-schematic}]
@@ -603,10 +674,10 @@
       [eraser ::eraser "Eraser"]]]
     [:span.sep]
     [:a {:title "Rotate selected clockwise"
-         :on-click (fn [_] (swap! state transform-selected #(.rotate % -90)))}
+         :on-click (fn [_] (swap! state transform-selected #(.rotate % 90)))}
      [rotatecw]]
     [:a {:title "Rotate selected counter-clockwise"
-         :on-click (fn [_] (swap! state transform-selected #(.rotate % 90)))}
+         :on-click (fn [_] (swap! state transform-selected #(.rotate % -90)))}
      [rotateccw]]
     [:a {:title "Mirror selected horizontal"
          :on-click (fn [_] (swap! state transform-selected #(.flipY %)))}
