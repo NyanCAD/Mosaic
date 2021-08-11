@@ -685,7 +685,7 @@
     [:a {:title "Mirror selected vertical"
          :on-click (fn [_] (swap! state transform-selected #(.flipX %)))}
      [mirror-vertical]]
-    [:a {:title "Delect selected"
+    [:a {:title "Delete selected"
          :on-click (fn [_] (swap! state delete-selected))}
      [delete]]
     [:span.sep]
