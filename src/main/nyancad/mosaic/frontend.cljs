@@ -2,7 +2,8 @@
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
             [react-bootstrap-icons :as icons]
-            [clojure.edn]))
+            clojure.edn
+            clojure.set))
 
 (def grid-size 50)
 
@@ -287,20 +288,6 @@
              (= ::wire (get-in st [::ui ::tool])) (add-wire st)
              :else st))))
   
-(defn drag-end [e]
-  (letfn [(deselect [st e]
-            (if (= (.-target e) (.-currentTarget e))
-              (assoc-in st [::ui ::selected] #{})
-              st))
-          (end [st]
-            (-> st
-                (assoc-in [::ui ::dragging] nil)
-                (update ::schematic
-                           update-keys (get-in st [::ui ::selected])
-                           update-keys [::x ::y] #(.round js/Math %))
-                (deselect e)))]
-    (swap! state end)))
-
 (defn tetris [x y _ _]
   [:rect.tetris {:x x, :y y
                  :width grid-size
@@ -363,12 +350,11 @@
        (- x size) (- y size)
        (+ x size) (- y size)])}])
 
+(defn offset-wires [{wires ::wires, xo ::x, yo ::y}]
+  (set (map (fn [[x y]] [(+ xo x) (+ yo y)]) wires)))
 
 (defn wire-bg [name net]
-  (let [wires (::wires net)
-        xo (::x net)
-        yo (::y net)
-        wires (set (map (fn [[x y]] [(+ xo x) (+ yo y)]) wires))]
+  (let [wires (offset-wires net)]
     [:g {:on-mouse-down #(drag-start name ::wire %)}
      (doall (for [[x y] wires]
               [:rect.tetris.wire {:x (* x grid-size)
@@ -377,29 +363,74 @@
                                   :width grid-size
                                   :height grid-size
                                   :class (when (contains? (::selected @ui) name) :selected)}]))]))
+(defn wire-neighbours [x y wires]
+  (filter #(contains? wires %)
+          [[x (+ y 1)] [x (- y 1)] [(+ x 1) y] [(- x 1) y]]))
 
 (defn draw-wire [x y wires]
-  (let [neigbours [[x (+ y 1)] [x (- y 1)] [(+ x 1) y] [(- x 1) y]]
-        is-wire (filter #(contains? wires %)
-                        neigbours)
-        num (count is-wire)]
+  (let [neigbours (wire-neighbours x y wires)
+        num (count neigbours)]
   [:<> 
-   (when (= num 3) [:circle.wire {:cx (* (+ x 0.5) grid-size)
+   (when (> num 2) [:circle.wire {:cx (* (+ x 0.5) grid-size)
                                   :cy (* (+ y 0.5) grid-size)
                                   :r (/ grid-size 10)}])
-   (for [[x2 y2] is-wire]
-        ;;  :when (or (< x x2) (< y y2))]
+   (for [[x2 y2] neigbours
+         :when (or (< x x2) (< y y2))]
      [:line.wire {:x1 (* (+ x 0.5) grid-size)
                   :y1 (* (+ y 0.5) grid-size)
                   :x2 (* (+ x2 0.5) grid-size)
                   :y2 (* (+ y2 0.5) grid-size)
                   :key [x y x2 y2]}])]))
 
+(defn find-overlapping [sch]
+  (->> (for [[k v] sch
+             :let [wires (offset-wires v)]
+             [x y] wires
+             :let [num (count (wire-neighbours x y wires))
+                   cross (if (> num 1) 1 0)]]
+         {::coord [x y] ::key k ::cross cross})
+       (group-by ::coord)
+       (sequence
+        (comp
+         (map val)
+         (filter (fn [tiles] (< (transduce (map ::cross) + tiles) 2)))
+         (filter (fn [tiles] (> (count tiles) 1)))
+         (map #(map ::key %))))))
+
+(defn merge-overlapping [sch]
+  (let [ov (find-overlapping sch)
+        merged (map #(apply clojure.set/union (map (comp offset-wires sch) %)) ov)
+        cleaned (reduce dissoc sch (apply concat ov))]
+    (reduce #(assoc %1 (gensym "wire")
+                    {::cell ::wire
+                     ::transform I
+                     ::x 0 ::y 0
+                     ::wires %2})
+            cleaned merged)))
+
+(defn clean-selected [st]
+  (update-in st [::ui ::selected]
+             (fn [sel]
+               (into #{} (filter #(contains? (::schematic st) %)) sel))))
+
+(defn drag-end [e]
+  (letfn [(deselect [st e]
+            (if (= (.-target e) (.-currentTarget e))
+              (assoc-in st [::ui ::selected] #{})
+              st))
+          (end [st]
+            (-> st
+                (assoc-in [::ui ::dragging] nil)
+                (update ::schematic
+                           update-keys (get-in st [::ui ::selected])
+                           update-keys [::x ::y] #(.round js/Math %))
+                (deselect e)
+                (update ::schematic merge-overlapping)
+                clean-selected))]
+    (swap! state end)))
+
 (defn wire-sym [name net]
-  (let [wires (::wires net)
-        xo (::x net)
-        yo (::y net)
-        wires (set (map (fn [[x y]] [(+ xo x) (+ yo y)]) wires))]
+  (let [wires (offset-wires net)]
     [:g {:on-mouse-down #(drag-start name ::wire %)}
      (for [[x y] wires]
           ^{:key [x y]} [draw-wire x y wires])]))
