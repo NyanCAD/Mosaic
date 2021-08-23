@@ -432,7 +432,6 @@
         device (get-in st [::schematic selected])
         wires (::wires device)
         newnets (split-net wires)]
-    (println selected wires newnets)
     (if (> (count newnets) 1)
       (let [st (update st ::schematic dissoc selected)]
         (reduce (fn [st net]
