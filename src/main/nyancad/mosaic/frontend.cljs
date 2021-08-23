@@ -363,12 +363,12 @@
                                   :width grid-size
                                   :height grid-size
                                   :class (when (contains? (::selected @ui) name) :selected)}]))]))
-(defn wire-neighbours [x y wires]
+(defn wire-neighbours [wires x y]
   (filter #(contains? wires %)
           [[x (+ y 1)] [x (- y 1)] [(+ x 1) y] [(- x 1) y]]))
 
 (defn draw-wire [x y wires]
-  (let [neigbours (wire-neighbours x y wires)
+  (let [neigbours (wire-neighbours wires x y)
         num (count neigbours)]
   [:<> 
    (when (> num 2) [:circle.wire {:cx (* (+ x 0.5) grid-size)
@@ -385,10 +385,10 @@
 (defn find-overlapping [sch]
   (->> (for [[k v] sch
              :let [wires (offset-wires v)]
-             [x y] wires
-             :let [num (count (wire-neighbours x y wires))
+             coord wires
+             :let [num (count (apply wire-neighbours wires coord))
                    cross (if (> num 1) 1 0)]]
-         {::coord [x y] ::key k ::cross cross})
+         {::coord coord ::key k ::cross cross})
        (group-by ::coord)
        (sequence
         (comp
@@ -401,7 +401,7 @@
   (let [ov (find-overlapping sch)
         merged (map #(apply clojure.set/union (map (comp offset-wires sch) %)) ov)
         cleaned (reduce dissoc sch (apply concat ov))]
-    (reduce #(assoc %1 (gensym "wire")
+    (reduce #(assoc %1 (keyword (gensym "wire"))
                     {::cell ::wire
                      ::transform I
                      ::x 0 ::y 0
@@ -412,6 +412,34 @@
   (update-in st [::ui ::selected]
              (fn [sel]
                (into #{} (filter #(contains? (::schematic st) %)) sel))))
+
+(defn split-net [coords]
+  (loop [perimeter #{(first coords)}
+         contiguous #{}
+         remainder coords]
+    (if (empty? perimeter)
+      (lazy-seq (cons contiguous
+                      (if (empty? remainder)
+                        nil
+                        (split-net remainder))))
+      (recur
+       (into #{} (mapcat #(apply wire-neighbours remainder %)) perimeter)
+       (clojure.set/union contiguous perimeter)
+       (clojure.set/difference remainder perimeter)))))
+
+(defn split-disjoint [st]
+  (let [selected (first (get-in st [::ui ::selected]))
+        device (get-in st [::schematic selected])
+        wires (::wires device)
+        newnets (split-net wires)]
+    (println selected wires newnets)
+    (if (> (count newnets) 1)
+      (let [st (update st ::schematic dissoc selected)]
+        (reduce (fn [st net]
+                  (assoc-in st [::schematic (keyword (gensym (name selected)))]
+                         (assoc device ::wires net)))
+                st newnets))
+      st)))
 
 (defn drag-end [e]
   (letfn [(deselect [st e]
@@ -424,8 +452,9 @@
                 (update ::schematic
                            update-keys (get-in st [::ui ::selected])
                            update-keys [::x ::y] #(.round js/Math %))
-                (deselect e)
                 (update ::schematic merge-overlapping)
+                split-disjoint
+                (deselect e)
                 clean-selected))]
     (swap! state end)))
 
