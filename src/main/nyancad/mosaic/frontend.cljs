@@ -2,6 +2,7 @@
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
             [react-bootstrap-icons :as icons]
+            [clojure.spec.alpha :as s]
             clojure.edn
             clojure.set))
 
@@ -37,6 +38,32 @@
                  (.-f obj)
                  "]")))
 
+(s/def ::zoom (s/coll-of number? :count 4))
+(s/def ::theme #{:tetris :eyesore})
+(s/def ::tool #{::cursor ::eraser ::wire})
+(s/def ::selected (s/and set? (s/coll-of keyword?)))
+(s/def ::dragging (s/nilable #{::wire ::device ::view}))
+(s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected]
+                    :opt [::dragging]))
+
+(s/def ::x number?)
+(s/def ::y number?)
+(s/def ::transform #(instance? js/DOMMatrixReadOnly %))
+(s/def ::cell keyword?)
+(s/def ::coord (s/tuple number? number?))
+(s/def ::wires (s/and set? (s/coll-of ::coord)))
+
+(defmulti cell-type ::cell)
+(defmethod cell-type ::wire [_]
+  (s/keys :req [::wires ::cell]
+          :opt [::x ::y]))
+(defmethod cell-type :default [_]
+  (s/keys :req [::cell ::transform]
+          :opt [::x ::y]))
+(s/def ::device (s/multi-spec cell-type ::cell))
+(s/def ::schematic (s/map-of keyword? ::device))
+(s/def ::state (s/keys :req [::schematic ::ui]))
+
 (defonce state
   (r/atom
    {::ui {::zoom [0 0 500 500]
@@ -44,6 +71,8 @@
           ::tool ::cursor
           ::selected #{}}
     ::schematic {}}))
+
+(set-validator! state #(or (s/valid? ::state %) (.log js/console (s/explain-str ::state %))))
 
 (defonce schematic (r/cursor state [::schematic]))
 (defonce ui (r/cursor state [::ui]))
@@ -246,7 +275,7 @@
   (let [name (keyword (gensym "wire"))]
     (-> st
         (assoc-in [::schematic name] ; X/Y will be set on drag
-                  {::transform I, ::cell ::wire})
+                  {::transform I, ::cell ::wire ::wires #{}})
         (update ::ui assoc
                 ::dragging ::wire
                 ::selected #{name}))))
@@ -324,12 +353,12 @@
 
 (defn get-model [layer model]
   (let [m (get-in models [(::cell model) layer])]
-    (assert m "no model")
+    ;; (assert m "no model")
     (cond
       (fn? m) m
       (= layer ::bg) (partial draw-pattern m tetris)
       (= layer ::conn) (partial draw-pattern m port)
-      :else (throw (js/Error. "invalid model")))))
+      :else (fn [k _v] (println "invalid model for" k)))))
 
 (defn lines [arcs]
   [:<>
@@ -390,23 +419,22 @@
                    cross (if (> num 1) 1 0)]]
          {::coord coord ::key k ::cross cross})
        (group-by ::coord)
-       (sequence
+       (into #{}
         (comp
          (map val)
          (filter (fn [tiles] (< (transduce (map ::cross) + tiles) 2)))
          (filter (fn [tiles] (> (count tiles) 1)))
-         (map #(map ::key %))))))
+         (mapcat #(map ::key %))))))
 
 (defn merge-overlapping [sch]
   (let [ov (find-overlapping sch)
-        merged (map #(apply clojure.set/union (map (comp offset-wires sch) %)) ov)
-        cleaned (reduce dissoc sch (apply concat ov))]
-    (reduce #(assoc %1 (keyword (gensym "wire"))
-                    {::cell ::wire
-                     ::transform I
-                     ::x 0 ::y 0
-                     ::wires %2})
-            cleaned merged)))
+        merged (apply clojure.set/union (map (comp offset-wires sch) ov))
+        cleaned (reduce dissoc sch ov)]
+    (assoc cleaned (keyword (gensym "wire"))
+           {::cell ::wire
+            ::transform I
+            ::x 0 ::y 0
+            ::wires merged}))) ; TODO merge params?
 
 (defn clean-selected [st]
   (update-in st [::ui ::selected]
@@ -582,10 +610,12 @@
 (defn open-schematic [e]
   (let [data (.text (aget (.. e -target -files) 0))]
     (.then data (fn [data]
-                  (swap! state assoc ::schematic
-                         (clojure.edn/read-string
-                          {:readers {'transform transform}}
-                          data))))))
+                  (let [parsed (clojure.edn/read-string
+                                {:readers {'transform transform}}
+                                data)]
+                    (if (s/valid? ::schematic parsed)
+                      (swap! state assoc ::schematic parsed)
+                      (js/alert (s/explain-str ::schematic parsed))))))))
 
 (defn device-nets [sch {gx ::x gy ::y tran ::transform cell ::cell}]
   (let [pattern (get-in models [cell ::conn])
@@ -707,10 +737,8 @@
                                      :step "any"
                                      :default-value (get @props prop)
                                      :on-change #(swap! props assoc prop (parse (.. % -target -value)))}]]))]))]])))
-
-(defn schematic-canvas []
-  [:div#app {:class (::theme @ui)}
-   [:div#menu
+(defn menu-items []
+  [:<>
     [:a {:title "Save"
          :on-mouse-enter #(set! (.. % -target -href) (save-url))
          :download "schematic.edn"}
@@ -778,7 +806,25 @@
      "N"]
     [:a {:title "Add P-channel mosfet"
          :on-click #(add-device ::pmos)}
-     "P"]]
+     "P"]])
+
+(defn schematic-elements []
+  [:<>
+   (for [[k v] @schematic
+         :when (= ::wire (::cell v))]
+     ^{:key k} [(get-model ::bg v) k v])
+   (for [[k v] @schematic
+         :when (not= ::wire (::cell v))]
+     ^{:key k} [(get-model ::bg v) k v])
+   (for [[k v] @schematic]
+     ^{:key k} [(get-model ::sym v) k v])
+   (for [[k v] @schematic]
+     ^{:key k} [(get-model ::conn v) k v])])
+
+(defn schematic-ui []
+  [:div#app {:class (::theme @ui)}
+   [:div#menu
+    [menu-items]]
    [:div#sidebar
     (doall (for [sel (::selected @ui)]
              ^{:key sel} [deviceprops sel]))]
@@ -790,17 +836,8 @@
           :on-mouse-down drag-start-background
           :on-mouse-up drag-end
           :on-mouse-move drag}
-    (for [[k v] @schematic
-          :when (= ::wire (::cell v))]
-      ^{:key k} [(get-model ::bg v) k v])
-    (for [[k v] @schematic
-          :when (not= ::wire (::cell v))]
-      ^{:key k} [(get-model ::bg v) k v])
-    (for [[k v] @schematic]
-      ^{:key k} [(get-model ::sym v) k v])
-    (for [[k v] @schematic]
-      ^{:key k} [(get-model ::conn v) k v])]])
+    [schematic-elements]]])
 
 (defn ^:dev/after-load init []
-  (rd/render [schematic-canvas]
+  (rd/render [schematic-ui]
              (.getElementById js/document "root")))
