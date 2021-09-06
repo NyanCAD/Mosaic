@@ -62,20 +62,16 @@
           :opt [::x ::y]))
 (s/def ::device (s/multi-spec cell-type ::cell))
 (s/def ::schematic (s/map-of keyword? ::device))
-(s/def ::state (s/keys :req [::schematic ::ui]))
 
-(defonce state
-  (r/atom
-   {::ui {::zoom [0 0 500 500]
-          ::theme :tetris
-          ::tool ::cursor
-          ::selected #{}}
-    ::schematic {}}))
 
-(set-validator! state #(or (s/valid? ::state %) (.log js/console (s/explain-str ::state %))))
+(defonce schematic (r/atom {}))
+(defonce ui (r/atom {::zoom [0 0 500 500]
+                     ::theme :tetris
+                     ::tool ::cursor
+                     ::selected #{}}))
 
-(defonce schematic (r/cursor state [::schematic]))
-(defonce ui (r/cursor state [::ui]))
+(set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
+(set-validator! schematic #(or (s/valid? ::schematic %) (.log js/console (pr-str %) (s/explain-str ::schematic %))))
 
 (def mosfet-shape
   [" D"
@@ -196,24 +192,22 @@
   (let [[x y w h] (::zoom @ui)]
     (zoom-schematic dir (+ x (/ w 2)) (+ y (/ h 2)))))
 
-(defn transform-selected [st tf]
-  (let [selected (get-in st [::ui ::selected])]
-    (update st ::schematic
-            update-keys selected
-            update ::transform tf)))
+(defn transform-selected [sch tf]
+  (let [selected (::selected @ui)]
+    (update-keys sch selected
+                 update ::transform tf)))
 
-(defn delete-selected [st]
-  (let [selected (get-in st [::ui ::selected])]
-    (-> (apply update st ::schematic dissoc selected)
-        (assoc-in [::ui ::selected] #{}))))
+(defn delete-selected []
+  (let [selected (::selected @ui)]
+    (swap! ui assoc ::selected #{})
+    (swap! schematic #(apply dissoc % selected))))
 
-(defn remove-wire [st e]
+(defn remove-wire [sch selected e]
   (let [[x y] (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))
-        selected (first (get-in st [::ui ::selected]))
-        xo (get-in st [::schematic selected ::x])
-        yo (get-in st [::schematic selected ::y])
+        xo (get-in sch [selected ::x])
+        yo (get-in sch [selected ::y])
         coord [(- x xo) (- y yo)]]
-    (update-in st [::schematic selected ::wires] disj coord)))
+    (update-in sch [selected ::wires] disj coord)))
 
 (defn drag-view [e]
   (swap! ui update ::zoom
@@ -225,25 +219,25 @@
 
 (defn drag-device [e]
   (let [[dx dy] (map #(/ % grid-size) (viewbox-movement e))
-        [nx ny] (map #(/ % grid-size) (viewbox-coord e))]
-    (swap! state
-      (fn [st]
-        (let [selected (get-in st [::ui ::selected])]
-          (update st ::schematic update-keys selected
+        [nx ny] (map #(/ % grid-size) (viewbox-coord e))
+        selected (::selected @ui)]
+    (swap! schematic
+      (fn [sch]
+          (update-keys sch selected
             (fn [device]
               (-> device
                   (update ::x #(+ (or % nx) dx))
-                  (update ::y #(+ (or % ny) dy))))))))))
+                  (update ::y #(+ (or % ny) dy)))))))))
 
 (defn drag-wire [e]
-  (let [[x y] (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))]
-    (swap! state
-           (fn [st]
-             (let [selected (first (get-in st [::ui ::selected]))
-                   xo (get-in st [::schematic selected ::x])
-                   yo (get-in st [::schematic selected ::y])
+  (let [[x y] (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))
+        selected (first (::selected @ui))]
+    (swap! schematic
+           (fn [sch]
+             (let [xo (get-in sch [selected ::x])
+                   yo (get-in sch [selected ::y])
                    coord [(- x xo) (- y yo)]]
-               (update-in st [::schematic selected ::wires] sconj coord))))))
+               (update-in sch [selected ::wires] sconj coord))))))
 
 (defn wire-drag [e]
     (case (::dragging @ui)
@@ -262,7 +256,7 @@
   (let [dragging (::dragging @ui)]
     (case dragging
       ::view (drag-view e)
-      ::wire (swap! state remove-wire e)
+      ::wire (swap! schematic remove-wire (first (::selected @ui)) e)
       nil))) ;todo remove devices?
 
 (defn drag [e]
@@ -271,18 +265,16 @@
     ::wire (wire-drag e)
     ::cursor (cursor-drag e)))
   
-(defn add-wire [st]
+(defn add-wire []
   (let [name (keyword (gensym "wire"))]
-    (-> st
-        (assoc-in [::schematic name] ; X/Y will be set on drag
-                  {::transform I, ::cell ::wire ::wires #{}})
-        (update ::ui assoc
+        (swap! schematic assoc name {::transform I, ::cell ::wire ::wires #{}}) ; X/Y will be set on drag
+        (swap! ui assoc
                 ::dragging ::wire
-                ::selected #{name}))))
+                ::selected #{name})))
 
 (defn drag-start [k type e]
   ; skip the button press from a drag initiated from a toolbar button
-  (when-not (::dragging @ui) 
+  (when-not (::dragging @ui)
     ; primary mouse click
     (when (= (.-button e) 0)
       (.stopPropagation e) ; prevent bg drag
@@ -296,26 +288,21 @@
                        (case (::tool ui)
                          ::cursor ::device
                          ::wire ::wire
-                         ::eraser type)))
-              (update-schematic [st]
-                (case [(get-in st [::ui ::tool]) type]
-                  [::eraser ::device] (delete-selected st)
-                  [::eraser ::wire] (remove-wire st e) ;; TODO
-                  [::wire ::device] (add-wire st)
-                  st))]
-        (swap! state (fn [st]
-                       (-> st
-                           (update-in [::ui ::selected] update-selection)
-                           (update ::ui drag-type)
-                           update-schematic)))))))
+                         ::eraser type))) ]
+        (swap! ui (fn [ui]
+                    (-> ui
+                        (update ::selected update-selection)
+                        (drag-type)))))
+      (case [(::tool @ui) type]
+        [::eraser ::device] (delete-selected)
+        [::eraser ::wire] (swap! schematic remove-wire (first (::selected @ui)) e) ;; TODO
+        [::wire ::device] (add-wire)
+        nil))))
 
 (defn drag-start-background [e]
-  (swap! state
-         (fn [st]
-           (cond
-             (= (.-button e) 1) (assoc-in st [::ui ::dragging] ::view)
-             (= ::wire (get-in st [::ui ::tool])) (add-wire st)
-             :else st))))
+    (cond
+      (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
+      (= ::wire (get @ui ::tool)) (add-wire)))
   
 (defn tetris [x y _ _]
   [:rect.tetris {:x x, :y y
@@ -427,19 +414,21 @@
          (mapcat #(map ::key %))))))
 
 (defn merge-overlapping [sch]
-  (let [ov (find-overlapping sch)
-        merged (apply clojure.set/union (map (comp offset-wires sch) ov))
-        cleaned (reduce dissoc sch ov)]
-    (assoc cleaned (keyword (gensym "wire"))
-           {::cell ::wire
-            ::transform I
-            ::x 0 ::y 0
-            ::wires merged}))) ; TODO merge params?
-
-(defn clean-selected [st]
-  (update-in st [::ui ::selected]
+  (let [ov (find-overlapping sch)]
+    (if (empty? ov)
+      sch ; no overlapping wires
+      (let [merged (apply clojure.set/union (map (comp offset-wires sch) ov))
+            cleaned (reduce dissoc sch ov)]
+        (assoc cleaned (keyword (gensym "wire"))
+               {::cell ::wire
+                ::transform I
+                ::x 0 ::y 0
+                ::wires merged}))))) ; TODO merge params?
+    
+(defn clean-selected [ui sch]
+  (update ui ::selected
              (fn [sel]
-               (into #{} (filter #(contains? (::schematic st) %)) sel))))
+               (into #{} (filter #(contains? sch %)) sel))))
 
 (defn split-net [coords]
   (loop [perimeter #{(first coords)}
@@ -455,35 +444,34 @@
        (clojure.set/union contiguous perimeter)
        (clojure.set/difference remainder perimeter)))))
 
-(defn split-disjoint [st]
-  (let [selected (first (get-in st [::ui ::selected]))
-        device (get-in st [::schematic selected])
+(defn split-disjoint [sch selected]
+  (let [device (get sch selected)
         wires (::wires device)
         newnets (split-net wires)]
     (if (> (count newnets) 1)
-      (let [st (update st ::schematic dissoc selected)]
-        (reduce (fn [st net]
-                  (assoc-in st [::schematic (keyword (gensym (name selected)))]
-                         (assoc device ::wires net)))
-                st newnets))
-      st)))
+      (let [sch (dissoc sch selected)]
+        (reduce (fn [sch net]
+                  (assoc sch (keyword (gensym (name selected))) (assoc device ::wires net)))
+                sch newnets))
+      sch)))
 
 (defn drag-end [e]
-  (letfn [(deselect [st e]
+  (letfn [(deselect [ui]
             (if (= (.-target e) (.-currentTarget e))
-              (assoc-in st [::ui ::selected] #{})
-              st))
-          (end [st]
-            (-> st
-                (assoc-in [::ui ::dragging] nil)
-                (update ::schematic
-                           update-keys (get-in st [::ui ::selected])
-                           update-keys [::x ::y] #(.round js/Math %))
-                (update ::schematic merge-overlapping)
-                split-disjoint
-                (deselect e)
-                clean-selected))]
-    (swap! state end)))
+              (assoc ui ::selected #{})
+              ui))
+          (end-ui [ui]
+            (-> ui
+                (assoc ::dragging nil)
+                deselect
+                (clean-selected @schematic)))
+          (end-sch [sch selected]
+            (-> sch
+                (update-keys selected update-keys [::x ::y] #(.round js/Math %))
+                merge-overlapping
+                (split-disjoint (first selected))))]
+    (swap! schematic end-sch (::selected @ui))
+    (swap! ui end-ui)))
 
 (defn wire-sym [name net]
   (let [wires (offset-wires net)]
@@ -591,16 +579,12 @@
      [varrow 0.5 1.1 0.2]]))
 
 (defn add-device [cell]
-  (swap! state
-         (fn [st]
-           (let [name (keyword (gensym (name cell)))]
-             (-> st
-                 (assoc-in [::schematic name] ; X/Y will be set on drag
-                           {::transform I, ::cell cell})
-                 (update ::ui assoc
-                         ::tool ::cursor
-                         ::dragging ::device
-                         ::selected #{name}))))))
+  (let [name (keyword (gensym (name cell)))]
+    (swap! schematic assoc name {::transform I, ::cell cell}) ; X/Y will be set on drag
+    (swap! ui assoc
+           ::tool ::cursor
+           ::dragging ::device
+           ::selected #{name})))
 
 (defn save-url []
   (let [blob (js/Blob. #js[(prn-str @schematic)]
@@ -614,13 +598,12 @@
                                 {:readers {'transform transform}}
                                 data)]
                     (if (s/valid? ::schematic parsed)
-                      (swap! state assoc ::schematic parsed)
+                      (swap! schematic into parsed) ; TODO rethink
                       (js/alert (s/explain-str ::schematic parsed))))))))
 
 (defn device-nets [sch {gx ::x gy ::y tran ::transform cell ::cell}]
   (let [pattern (get-in models [cell ::conn])
         size (apply max (count pattern) (map count pattern))
-        mid (.floor js/Math (/ size 2))
         mid (- (/ size 2) 0.5)]
     (into {}
           (for [[y s] (map-indexed vector pattern)
@@ -761,19 +744,19 @@
       [eraser ::eraser "Eraser"]]]
     [:span.sep]
     [:a {:title "Rotate selected clockwise"
-         :on-click (fn [_] (swap! state transform-selected #(.rotate % 90)))}
+         :on-click (fn [_] (swap! schematic transform-selected #(.rotate % 90)))}
      [rotatecw]]
     [:a {:title "Rotate selected counter-clockwise"
-         :on-click (fn [_] (swap! state transform-selected #(.rotate % -90)))}
+         :on-click (fn [_] (swap! schematic transform-selected #(.rotate % -90)))}
      [rotateccw]]
     [:a {:title "Mirror selected horizontal"
-         :on-click (fn [_] (swap! state transform-selected #(.flipY %)))}
+         :on-click (fn [_] (swap! schematic transform-selected #(.flipY %)))}
      [mirror-horizontal]]
     [:a {:title "Mirror selected vertical"
-         :on-click (fn [_] (swap! state transform-selected #(.flipX %)))}
+         :on-click (fn [_] (swap! schematic transform-selected #(.flipX %)))}
      [mirror-vertical]]
     [:a {:title "Delete selected"
-         :on-click (fn [_] (swap! state delete-selected))}
+         :on-click (fn [_] (delete-selected))}
      [delete]]
     [:span.sep]
     [:a {:title "zoom in [scroll wheel/pinch]"
@@ -822,21 +805,24 @@
      ^{:key k} [(get-model ::conn v) k v])])
 
 (defn schematic-ui []
-  [:div#app {:class (::theme @ui)}
-   [:div#menu
-    [menu-items]]
-   [:div#sidebar
-    (doall (for [sel (::selected @ui)]
-             ^{:key sel} [deviceprops sel]))]
-   [:svg#canvas {:xmlns "http://www.w3.org/2000/svg"
-          :height "100%"
-          :width "100%"
-          :view-box (::zoom @ui)
-          :on-wheel scroll-zoom
-          :on-mouse-down drag-start-background
-          :on-mouse-up drag-end
-          :on-mouse-move drag}
-    [schematic-elements]]])
+  (r/with-let [theme (r/cursor ui [::theme])
+               selected (r/cursor ui [::selected])
+               zoom (r/cursor ui [::zoom])]
+    [:div#app {:class @theme}
+     [:div#menu
+      [menu-items]]
+     [:div#sidebar
+      (doall (for [sel @selected]
+               ^{:key sel} [deviceprops sel]))]
+     [:svg#canvas {:xmlns "http://www.w3.org/2000/svg"
+                   :height "100%"
+                   :width "100%"
+                   :view-box @zoom
+                   :on-wheel scroll-zoom
+                   :on-mouse-down drag-start-background
+                   :on-mouse-up drag-end
+                   :on-mouse-move drag}
+      [schematic-elements]]]))
 
 (defn ^:dev/after-load init []
   (rd/render [schematic-ui]
