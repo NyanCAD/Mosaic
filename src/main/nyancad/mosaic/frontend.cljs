@@ -19,11 +19,14 @@
   ([m keys f] (into m (map #(vector % (f (get m %)))) keys))
   ([m keys f & args] (into m (map #(vector % (apply f (get m %) args))) keys)))
 
-(def I (js/DOMMatrixReadOnly.))
 (defn transform [[a b c d e f]]
   (.fromMatrix js/DOMMatrixReadOnly
                #js {:a a, :b b, :c c, :d d, :e e, :f f}))
+(defn transform-vec [obj]
+  [(.-a obj) (.-b obj) (.-c obj) (.-d obj) (.-e obj) (.-f obj)])
 (defn point [x y] (.fromPoint js/DOMPointReadOnly (clj->js {:x x :y y})))
+(def I (js/DOMMatrixReadOnly.))
+(def IV (transform-vec I))
 
 (extend-type js/DOMMatrixReadOnly
   IPrintWithWriter
@@ -48,7 +51,7 @@
 
 (s/def ::x number?)
 (s/def ::y number?)
-(s/def ::transform #(instance? js/DOMMatrixReadOnly %))
+(s/def ::transform (s/coll-of number? :count 6))
 (s/def ::cell keyword?)
 (s/def ::coord (s/tuple number? number?))
 (s/def ::wires (s/and set? (s/coll-of ::coord)))
@@ -68,10 +71,17 @@
 (defonce ui (r/atom {::zoom [0 0 500 500]
                      ::theme :tetris
                      ::tool ::cursor
-                     ::selected #{}}))
+                     ::selected #{}
+                     ::delta {::x 0 ::y 0}}))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
 (set-validator! schematic #(or (s/valid? ::schematic %) (.log js/console (pr-str %) (s/explain-str ::schematic %))))
+
+(defonce zoom (r/cursor ui [::zoom]))
+(defonce theme (r/cursor ui [::theme]))
+(defonce tool (r/cursor ui [::tool]))
+(defonce selected (r/cursor ui [::selected]))
+(defonce delta (r/cursor ui [::delta]))
 
 (def mosfet-shape
   [" D"
@@ -193,9 +203,10 @@
     (zoom-schematic dir (+ x (/ w 2)) (+ y (/ h 2)))))
 
 (defn transform-selected [sch tf]
-  (let [selected (::selected @ui)]
+  (let [selected (::selected @ui)
+        f (comp transform-vec tf transform)]
     (update-keys sch selected
-                 update ::transform tf)))
+                 update ::transform f)))
 
 (defn delete-selected []
   (let [selected (::selected @ui)]
@@ -260,14 +271,14 @@
       nil))) ;todo remove devices?
 
 (defn drag [e]
-  (case (::tool @ui)
+  (case @tool
     ::eraser (eraser-drag e)
     ::wire (wire-drag e)
     ::cursor (cursor-drag e)))
   
 (defn add-wire []
   (let [name (keyword (gensym "wire"))]
-        (swap! schematic assoc name {::transform I, ::cell ::wire ::wires #{}}) ; X/Y will be set on drag
+        (swap! schematic assoc name {::transform IV, ::cell ::wire ::wires #{}}) ; X/Y will be set on drag
         (swap! ui assoc
                 ::dragging ::wire
                 ::selected #{name})))
@@ -293,7 +304,7 @@
                     (-> ui
                         (update ::selected update-selection)
                         (drag-type)))))
-      (case [(::tool @ui) type]
+      (case [@tool type]
         [::eraser ::device] (delete-selected)
         [::eraser ::wire] (swap! schematic remove-wire (first (::selected @ui)) e) ;; TODO
         [::wire ::device] (add-wire)
@@ -302,7 +313,7 @@
 (defn drag-start-background [e]
     (cond
       (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
-      (= ::wire (get @ui ::tool)) (add-wire)))
+      (= ::wire @tool) (add-wire)))
   
 (defn tetris [x y _ _]
   [:rect.tetris {:x x, :y y
@@ -315,18 +326,23 @@
                  :cy (+ y (/ grid-size 2)),
                  :r (/ grid-size 10)}])
 
+(defn delta-pos [xy k v]
+  (if (contains? @selected k)
+    (+ (get v xy) (get @delta xy))
+    (get v xy)))
+
 (defn device [size k v & elements]
-  [:svg.device {:x (* (::x v) grid-size)
-                :y (* (::y v) grid-size)
+  [:svg.device {:x (* (delta-pos ::x k v) grid-size)
+                :y (* (delta-pos ::y k v) grid-size)
                 :width (* size grid-size)
                 :height (* size grid-size)
-                :class [(::cell v) (when (contains? (::selected @ui) k) :selected)]}
+                :class [(::cell v) (when (contains? @selected k) :selected)]}
    [:g.position
     {:on-mouse-down (fn [e] (drag-start k ::device e))}
     (into [:g.transform
            {:width (* size grid-size)
             :height (* size grid-size)
-            :transform (.toString (::transform v))}]
+            :transform (.toString (transform (::transform v)))}]
           elements)]])
 
 (defn draw-pattern [pattern prim k v]
@@ -421,7 +437,7 @@
             cleaned (reduce dissoc sch ov)]
         (assoc cleaned (keyword (gensym "wire"))
                {::cell ::wire
-                ::transform I
+                ::transform IV
                 ::x 0 ::y 0
                 ::wires merged}))))) ; TODO merge params?
     
@@ -580,7 +596,7 @@
 
 (defn add-device [cell]
   (let [name (keyword (gensym (name cell)))]
-    (swap! schematic assoc name {::transform I, ::cell cell}) ; X/Y will be set on drag
+    (swap! schematic assoc name {::transform IV, ::cell cell}) ; X/Y will be set on drag
     (swap! ui assoc
            ::tool ::cursor
            ::dragging ::device
@@ -609,7 +625,7 @@
           (for [[y s] (map-indexed vector pattern)
                 [x c] (map-indexed vector s)
                 :when (not= c " ")
-                :let [p (.transformPoint tran (point (- x mid) (- y mid)))
+                :let [p (.transformPoint (transform tran) (point (- x mid) (- y mid)))
                       nx (+ (.-x p) mid)
                       ny (+ (.-y p) mid)
                       rx (.round js/Math (+ gx nx))
@@ -673,16 +689,16 @@
 (def open (r/adapt-react-class icons/Upload))
 (def export (r/adapt-react-class icons/FileEarmarkCode))
 
-(defn radiobuttons [key m]
+(defn radiobuttons [cursor m]
   [:<>
    (doall (for [[icon name disp] m]
             [:<> {:key name}
              [:input {:type "radio"
-                      :name key
+                      :name cursor
                       :id name
                       :value name
-                      :checked (= name (get @ui key))
-                      :on-change #(swap! ui assoc key name)}]
+                      :checked (= name @cursor)
+                      :on-change #(reset! cursor name)}]
              [:label {:for name :title disp} [icon]]]))])
 
 (defn deviceprops [key]
@@ -738,7 +754,7 @@
      [:option {:value "tetris"} "Tetris"]
      [:option {:value "eyesore"} "Classic"]]
     [:span.sep]
-    [radiobuttons ::tool
+    [radiobuttons tool
      [[cursor ::cursor "Cursor"]
       [wire ::wire "Wire"]
       [eraser ::eraser "Eraser"]]]
@@ -805,9 +821,6 @@
      ^{:key k} [(get-model ::conn v) k v])])
 
 (defn schematic-ui []
-  (r/with-let [theme (r/cursor ui [::theme])
-               selected (r/cursor ui [::selected])
-               zoom (r/cursor ui [::zoom])]
     [:div#app {:class @theme}
      [:div#menu
       [menu-items]]
@@ -822,7 +835,7 @@
                    :on-mouse-down drag-start-background
                    :on-mouse-up drag-end
                    :on-mouse-move drag}
-      [schematic-elements]]]))
+      [schematic-elements]]])
 
 (defn ^:dev/after-load init []
   (rd/render [schematic-ui]
