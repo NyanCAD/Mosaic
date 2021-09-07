@@ -44,7 +44,7 @@
                  "]")))
 
 (s/def ::zoom (s/coll-of number? :count 4))
-(s/def ::theme #{:tetris :eyesore})
+(s/def ::theme #{"tetris" "eyesore"})
 (s/def ::tool #{::cursor ::eraser ::wire})
 (s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view}))
@@ -69,16 +69,18 @@
 (s/def ::schematic (s/map-of string? ::device))
 
 
-(def group "mysch")
+(def group (if (empty? js/window.location.search)
+             "mysch"
+             (subs js/window.location.search 1)))
 (defn make-name [base]
   (letfn [(hex [] (.toString (rand-int 16) 16))]
     (str group sep base "-" (hex) (hex) (hex) (hex) (hex) (hex) (hex) (hex))))
 
 (defonce db (pouchdb "schematic"))
-(defonce syncer (.sync db "http://127.0.0.1:5984/schematic" #js{:live true, :retry true}))
-(defonce schematic (pouch-atom db "mysch" (r/atom {})))
+(defonce syncer (.sync db "https://c6be5bcc-59a8-492d-91fd-59acc17fef02-bluemix.cloudantnosqldb.appdomain.cloud/schematics" #js{:live true, :retry true}))
+(defonce schematic (pouch-atom db group (r/atom {})))
 (defonce ui (r/atom {::zoom [0 0 500 500]
-                     ::theme :tetris
+                     ::theme "tetris"
                      ::tool ::cursor
                      ::selected #{}
                      ::delta {:x 0 :y 0}}))
@@ -177,14 +179,14 @@
                      ::props {:net :text}}})
 
 (defn viewbox-coord [e]
-  (let [^js el (.-currentTarget e)
-        p (point (.-clientX e) (.-clientY e))
+  (let [^js el (js/document.getElementById "canvas")
         m (.inverse (.getScreenCTM el))
+        p (point (.-clientX e) (.-clientY e))
         tp (.matrixTransform p m)]
-    [(.-x tp) (.-y tp)]))
+    [(/ (.-x tp) grid-size) (/ (.-y tp) grid-size)]))
 
 (defn viewbox-movement [e]
-  (let [^js el (.-currentTarget e)
+  (let [^js el (js/document.getElementById "canvas")
         m (.inverse (.getScreenCTM el))
         _ (do (set! (.-e m) 0)
               (set! (.-f m) 0)) ; cancel translation
@@ -197,8 +199,8 @@
     (fn [[x y w h]]
       (let [dx (* direction w 0.1)
             dy (* direction h 0.1)
-            rx (/ (- ex x) w)
-            ry (/ (- ey y) h)]
+            rx (/ (- (* ex grid-size) x) w)
+            ry (/ (- (* ey grid-size) y) h)]
         [(- x (* dx rx))
          (- y (* dy ry))
          (+ w dx)
@@ -222,7 +224,7 @@
     (swap! schematic #(apply dissoc %1 %2) selected)))
 
 (defn remove-wire [sch selected coord]
-  (let [[x y] (map #(.floor js/Math (/ % grid-size)) coord)
+  (let [[x y] (map #(.floor js/Math %) coord)
         xo (get-in sch [selected :x])
         yo (get-in sch [selected :y])
         coord [(- x xo) (- y yo)]]
@@ -243,7 +245,7 @@
               {:x (+ x dx) :y (+ y dy)}))))
 
 (defn drag-wire [e]
-  (let [[x y] (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))
+  (let [[x y] (map #(.floor js/Math %) (viewbox-coord e))
         selected (first (::selected @ui))]
     (swap! schematic
            (fn [sch sel]
@@ -601,9 +603,9 @@
      [lines shape]
      [varrow 0.5 1.1 0.2]]))
 
-(defn add-device [cell]
+(defn add-device [cell [x y]]
   (let [name (make-name cell)]
-    (swap! schematic assoc name {:transform IV, :cell cell}) ; X/Y will be set on drag
+    (swap! schematic assoc name {:transform IV, :cell cell :x x :y y})
     (swap! ui assoc
            ::tool ::cursor
            ::dragging ::device
@@ -790,28 +792,28 @@
      [zoom-out]]
     [:span.sep]
     [:a {:title "Add resistor"
-         :on-click #(add-device "resistor")}
+         :on-click #(add-device "resistor" (viewbox-coord %))}
      "R"]
     [:a {:title "Add inductor"
-         :on-click #(add-device "inductor")}
+         :on-click #(add-device "inductor" (viewbox-coord %))}
      "L"]
     [:a {:title "Add capacitor"
-         :on-click #(add-device "capacitor")}
+         :on-click #(add-device "capacitor" (viewbox-coord %))}
      "C"]
     [:a {:title "Add diode"
-         :on-click #(add-device "diode")}
+         :on-click #(add-device "diode" (viewbox-coord %))}
      "D"]
     [:a {:title "Add voltage source"
-         :on-click #(add-device "vsource")}
+         :on-click #(add-device "vsource" (viewbox-coord %))}
      "V"]
     [:a {:title "Add current source"
-         :on-click #(add-device "isource")}
+         :on-click #(add-device "isource" (viewbox-coord %))}
      "I"]
     [:a {:title "Add N-channel mosfet"
-         :on-click #(add-device "nmos")}
+         :on-click #(add-device "nmos" (viewbox-coord %))}
      "N"]
     [:a {:title "Add P-channel mosfet"
-         :on-click #(add-device "pmos")}
+         :on-click #(add-device "pmos" (viewbox-coord %))}
      "P"]])
 
 (defn schematic-elements []
