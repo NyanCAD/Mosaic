@@ -5,7 +5,8 @@
   "src/test"]
 
  :dependencies
- [[reagent "1.0.0"]]
+ [[reagent "1.0.0"]
+  [org.clojars.pepijndevos/hipflask "0.4.0"]]
 
  :dev-http {8080 "public"}
  :builds

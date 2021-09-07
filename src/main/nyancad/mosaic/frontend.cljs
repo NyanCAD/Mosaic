@@ -1,8 +1,10 @@
 (ns nyancad.mosaic.frontend
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
+            [nyancad.hipflask :refer [pouch-atom pouchdb update-keys sep]]
             [react-bootstrap-icons :as icons]
             [clojure.spec.alpha :as s]
+            [cljs.core.async :refer [go <!]]
             clojure.edn
             clojure.set))
 
@@ -10,14 +12,14 @@
 
 (defn sign [n] (if (> n 0) 1 -1))
 
-; like conj but nil defaults to set
+; like conj but coerces to set
 (defn sconj
-  ([s val] (conj (or s #{}) val))
-  ([s val & vals] (apply conj (or s #{}) val vals)))
+  ([s val] (conj (set s) val))
+  ([s val & vals] (apply conj (set s) val vals)))
 
-(defn update-keys
-  ([m keys f] (into m (map #(vector % (f (get m %)))) keys))
-  ([m keys f & args] (into m (map #(vector % (apply f (get m %) args))) keys)))
+(defn sdisj
+  ([s val] (disj (set s) val))
+  ([s val & vals] (apply disj (set s) val vals)))
 
 (defn transform [[a b c d e f]]
   (.fromMatrix js/DOMMatrixReadOnly
@@ -44,7 +46,7 @@
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme #{:tetris :eyesore})
 (s/def ::tool #{::cursor ::eraser ::wire})
-(s/def ::selected (s/and set? (s/coll-of keyword?)))
+(s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view}))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected]
                     :opt [::dragging]))
@@ -52,27 +54,33 @@
 (s/def ::x number?)
 (s/def ::y number?)
 (s/def ::transform (s/coll-of number? :count 6))
-(s/def ::cell keyword?)
+(s/def ::cell string?)
 (s/def ::coord (s/tuple number? number?))
 (s/def ::wires (s/and set? (s/coll-of ::coord)))
 
-(defmulti cell-type ::cell)
+(defmulti cell-type :cell)
 (defmethod cell-type ::wire [_]
-  (s/keys :req [::wires ::cell]
-          :opt [::x ::y]))
+  (s/keys :req-un [::wires ::cell]
+          :opt-un [::x ::y]))
 (defmethod cell-type :default [_]
-  (s/keys :req [::cell ::transform]
-          :opt [::x ::y]))
+  (s/keys :req-un [::cell ::transform]
+          :opt-un [::x ::y]))
 (s/def ::device (s/multi-spec cell-type ::cell))
-(s/def ::schematic (s/map-of keyword? ::device))
+(s/def ::schematic (s/map-of string? ::device))
 
 
-(defonce schematic (r/atom {}))
+(def group "mysch")
+(defn make-name [base]
+  (letfn [(hex [] (.toString (rand-int 16) 16))]
+    (str group sep base "-" (hex) (hex) (hex) (hex) (hex) (hex) (hex) (hex))))
+
+(defonce db (pouchdb "schematic"))
+(defonce schematic (pouch-atom db "mysch" (r/atom {})))
 (defonce ui (r/atom {::zoom [0 0 500 500]
                      ::theme :tetris
                      ::tool ::cursor
                      ::selected #{}
-                     ::delta {::x 0 ::y 0}}))
+                     ::delta {:x 0 :y 0}}))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
 (set-validator! schematic #(or (s/valid? ::schematic %) (.log js/console (pr-str %) (s/explain-str ::schematic %))))
@@ -94,31 +102,31 @@
 
 (declare mosfet-sym wire-sym wire-bg resistor-sym capacitor-sym inductor-sym vsource-sym isource-sym diode-sym)
 ; should probably be in state eventually
-(def models {::pmos {::bg mosfet-shape
+(def models {"pmos" {::bg mosfet-shape
                      ::conn mosfet-shape
                      ::sym #'mosfet-sym
                      ::props {:model :text
                               :w :number
                               :l :number}}
-             ::nmos {::bg mosfet-shape
+             "nmos" {::bg mosfet-shape
                      ::conn mosfet-shape
                      ::sym #'mosfet-sym
                      ::props {:model :text
                               :w :number
                               :l :number}}
-             ::resistor {::bg twoport-shape
+             "resistor" {::bg twoport-shape
                          ::conn twoport-shape
                          ::sym #'resistor-sym
                          ::props {:resistance :number}}
-             ::capacitor {::bg twoport-shape
+             "capacitor" {::bg twoport-shape
                           ::conn twoport-shape
                           ::sym #'capacitor-sym
                           ::props {:capacitance :number}}
-             ::inductor {::bg twoport-shape
+             "inductor" {::bg twoport-shape
                          ::conn twoport-shape
                          ::sym #'inductor-sym
                          ::props {:inductance :number}}
-             ::vsource {::bg twoport-shape
+             "vsource" {::bg twoport-shape
                         ::conn twoport-shape
                         ::sym #'vsource-sym
                         ::props {:dc :number
@@ -138,7 +146,7 @@
                                                 :width :number
                                                 :period :number
                                                 :phase :number}}}}
-             ::isource {::bg twoport-shape
+             "isource" {::bg twoport-shape
                         ::conn twoport-shape
                         ::sym #'isource-sym
                         ::props {:dc :number
@@ -158,11 +166,11 @@
                                                 :width :number
                                                 :period :number
                                                 :phase :number}}}}
-             ::diode {::bg twoport-shape
+             "diode" {::bg twoport-shape
                       ::conn twoport-shape
                       ::sym #'diode-sym
                       ::props {:model :text}}
-             ::wire {::bg #'wire-bg
+             "wire" {::bg #'wire-bg
                      ::conn []
                      ::sym #'wire-sym
                      ::props {:net :text}}})
@@ -202,23 +210,22 @@
   (let [[x y w h] (::zoom @ui)]
     (zoom-schematic dir (+ x (/ w 2)) (+ y (/ h 2)))))
 
-(defn transform-selected [sch tf]
-  (let [selected (::selected @ui)
-        f (comp transform-vec tf transform)]
+(defn transform-selected [sch selected tf]
+  (let [f (comp transform-vec tf transform)]
     (update-keys sch selected
-                 update ::transform f)))
+                 update :transform f)))
 
 (defn delete-selected []
   (let [selected (::selected @ui)]
     (swap! ui assoc ::selected #{})
-    (swap! schematic #(apply dissoc % selected))))
+    (swap! schematic #(apply dissoc %1 %2) selected)))
 
-(defn remove-wire [sch selected e]
-  (let [[x y] (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))
-        xo (get-in sch [selected ::x])
-        yo (get-in sch [selected ::y])
+(defn remove-wire [sch selected coord]
+  (let [[x y] (map #(.floor js/Math (/ % grid-size)) coord)
+        xo (get-in sch [selected :x])
+        yo (get-in sch [selected :y])
         coord [(- x xo) (- y yo)]]
-    (update-in sch [selected ::wires] disj coord)))
+    (update-in sch [selected :wires] sdisj coord)))
 
 (defn drag-view [e]
   (swap! ui update ::zoom
@@ -232,23 +239,22 @@
   (let [[dx dy] (map #(/ % grid-size) (viewbox-movement e))
         [nx ny] (map #(/ % grid-size) (viewbox-coord e))
         selected (::selected @ui)]
-    (swap! schematic
-      (fn [sch]
-          (update-keys sch selected
+    (swap! schematic update-keys selected
             (fn [device]
               (-> device
-                  (update ::x #(+ (or % nx) dx))
-                  (update ::y #(+ (or % ny) dy)))))))))
+                  (update :x #(+ (or % nx) dx))
+                  (update :y #(+ (or % ny) dy)))))))
 
 (defn drag-wire [e]
   (let [[x y] (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))
         selected (first (::selected @ui))]
     (swap! schematic
-           (fn [sch]
-             (let [xo (get-in sch [selected ::x])
-                   yo (get-in sch [selected ::y])
+           (fn [sch sel]
+             (let [xo (get-in sch [sel :x])
+                   yo (get-in sch [sel :y])
                    coord [(- x xo) (- y yo)]]
-               (update-in sch [selected ::wires] sconj coord))))))
+               (update-in sch [sel :wires] sconj coord)))
+           selected)))
 
 (defn wire-drag [e]
     (case (::dragging @ui)
@@ -267,7 +273,9 @@
   (let [dragging (::dragging @ui)]
     (case dragging
       ::view (drag-view e)
-      ::wire (swap! schematic remove-wire (first (::selected @ui)) e)
+      ::wire (swap! schematic remove-wire
+                    (first (::selected @ui))
+                    (viewbox-coord e))
       nil))) ;todo remove devices?
 
 (defn drag [e]
@@ -277,8 +285,8 @@
     ::cursor (cursor-drag e)))
   
 (defn add-wire []
-  (let [name (keyword (gensym "wire"))]
-        (swap! schematic assoc name {::transform IV, ::cell ::wire ::wires #{}}) ; X/Y will be set on drag
+  (let [name (make-name "wire")]
+        (swap! schematic assoc name {:transform IV, :cell "wire" :wires #{}}) ; X/Y will be set on drag
         (swap! ui assoc
                 ::dragging ::wire
                 ::selected #{name})))
@@ -306,7 +314,9 @@
                         (drag-type)))))
       (case [@tool type]
         [::eraser ::device] (delete-selected)
-        [::eraser ::wire] (swap! schematic remove-wire (first (::selected @ui)) e) ;; TODO
+        [::eraser ::wire] (swap! schematic remove-wire
+                                 (first (::selected @ui))
+                                 (viewbox-coord e)) ;; TODO
         [::wire ::device] (add-wire)
         nil))))
 
@@ -332,17 +342,17 @@
     (get v xy)))
 
 (defn device [size k v & elements]
-  [:svg.device {:x (* (delta-pos ::x k v) grid-size)
-                :y (* (delta-pos ::y k v) grid-size)
+  [:svg.device {:x (* (delta-pos :x k v) grid-size)
+                :y (* (delta-pos :y k v) grid-size)
                 :width (* size grid-size)
                 :height (* size grid-size)
-                :class [(::cell v) (when (contains? @selected k) :selected)]}
+                :class [(:cell v) (when (contains? @selected k) :selected)]}
    [:g.position
     {:on-mouse-down (fn [e] (drag-start k ::device e))}
     (into [:g.transform
            {:width (* size grid-size)
             :height (* size grid-size)
-            :transform (.toString (transform (::transform v)))}]
+            :transform (.toString (transform (:transform v)))}]
           elements)]])
 
 (defn draw-pattern [pattern prim k v]
@@ -355,7 +365,7 @@
 
 
 (defn get-model [layer model]
-  (let [m (get-in models [(::cell model) layer])]
+  (let [m (get-in models [(:cell model) layer])]
     ;; (assert m "no model")
     (cond
       (fn? m) m
@@ -382,7 +392,7 @@
        (- x size) (- y size)
        (+ x size) (- y size)])}])
 
-(defn offset-wires [{wires ::wires, xo ::x, yo ::y}]
+(defn offset-wires [{wires :wires, xo :x, yo :y}]
   (set (map (fn [[x y]] [(+ xo x) (+ yo y)]) wires)))
 
 (defn wire-bg [name net]
@@ -429,17 +439,16 @@
          (filter (fn [tiles] (> (count tiles) 1)))
          (mapcat #(map ::key %))))))
 
-(defn merge-overlapping [sch]
-  (let [ov (find-overlapping sch)]
+(defn merge-overlapping [sch ov]
     (if (empty? ov)
       sch ; no overlapping wires
       (let [merged (apply clojure.set/union (map (comp offset-wires sch) ov))
             cleaned (reduce dissoc sch ov)]
-        (assoc cleaned (keyword (gensym "wire"))
-               {::cell ::wire
-                ::transform IV
-                ::x 0 ::y 0
-                ::wires merged}))))) ; TODO merge params?
+        (assoc cleaned (make-name "wire")
+               {:cell "wire"
+                :transform IV
+                :x 0 :y 0
+                :wires merged})))) ; TODO merge params?
     
 (defn clean-selected [ui sch]
   (update ui ::selected
@@ -449,7 +458,7 @@
 (defn split-net [coords]
   (loop [perimeter #{(first coords)}
          contiguous #{}
-         remainder coords]
+         remainder (set coords)]
     (if (empty? perimeter)
       (lazy-seq (cons contiguous
                       (if (empty? remainder)
@@ -462,32 +471,46 @@
 
 (defn split-disjoint [sch selected]
   (let [device (get sch selected)
-        wires (::wires device)
+        wires (:wires device)
         newnets (split-net wires)]
     (if (> (count newnets) 1)
       (let [sch (dissoc sch selected)]
         (reduce (fn [sch net]
-                  (assoc sch (keyword (gensym (name selected))) (assoc device ::wires net)))
+                  (let [id (make-name "wire")]
+                    (assoc sch id
+                           (assoc device
+                                  :wires net
+                                  :_id id
+                                  :_rev nil))))
                 sch newnets))
       sch)))
 
 (defn drag-end [e]
-  (letfn [(deselect [ui]
-            (if (= (.-target e) (.-currentTarget e))
-              (assoc ui ::selected #{})
-              ui))
-          (end-ui [ui]
-            (-> ui
-                (assoc ::dragging nil)
-                deselect
-                (clean-selected @schematic)))
-          (end-sch [sch selected]
-            (-> sch
-                (update-keys selected update-keys [::x ::y] #(.round js/Math %))
-                merge-overlapping
-                (split-disjoint (first selected))))]
-    (swap! schematic end-sch (::selected @ui))
-    (swap! ui end-ui)))
+  (let [bg? (= (.-target e) (.-currentTarget e))
+        selected (::selected @ui)
+        deselect (fn [ui] (if bg? (assoc ui ::selected #{}) ui))
+        end-ui (fn [ui]
+                 (-> ui
+                     (assoc ::dragging nil)
+                     deselect
+                     (clean-selected @schematic)))
+        merge-wires (fn [sch ov]
+                      (apply clojure.set/union (map (comp offset-wires sch) ov)))]
+    (go
+      (<! (swap! schematic update-keys selected
+                 update-keys #{:x :y} #(.round js/Math %)))
+      (let [sch @schematic
+            overlapping (find-overlapping sch)
+            merged (merge-wires sch overlapping)]
+        (when (seq overlapping)
+          (<! (swap! schematic #(apply dissoc %1 %2) overlapping))
+          (<! (swap! schematic assoc (make-name "wire")
+                     {:cell "wire"
+                      :transform IV
+                      :x 0 :y 0
+                      :wires merged}))))
+      (<! (swap! schematic split-disjoint (first selected)))
+      (swap! ui end-ui))))
 
 (defn wire-sym [name net]
   (let [wires (offset-wires net)]
@@ -510,7 +533,7 @@
                [1.1 1.5]]]]
     [device 3 k v
      [lines shape]
-     (if (= (::cell v) ::nmos)
+     (if (= (:cell v) "nmos")
        [harrow 1.2 1.5 0.15]
        [harrow 1.35 1.5 -0.15])]))
 
@@ -595,8 +618,8 @@
      [varrow 0.5 1.1 0.2]]))
 
 (defn add-device [cell]
-  (let [name (keyword (gensym (name cell)))]
-    (swap! schematic assoc name {::transform IV, ::cell cell}) ; X/Y will be set on drag
+  (let [name (make-name cell)]
+    (swap! schematic assoc name {:transform IV, :cell cell}) ; X/Y will be set on drag
     (swap! ui assoc
            ::tool ::cursor
            ::dragging ::device
@@ -617,7 +640,7 @@
                       (swap! schematic into parsed) ; TODO rethink
                       (js/alert (s/explain-str ::schematic parsed))))))))
 
-(defn device-nets [sch {gx ::x gy ::y tran ::transform cell ::cell}]
+(defn device-nets [sch {gx :x gy :y tran :transform cell :cell}]
   (let [pattern (get-in models [cell ::conn])
         size (apply max (count pattern) (map count pattern))
         mid (- (/ size 2) 0.5)]
@@ -630,10 +653,10 @@
                       ny (+ (.-y p) mid)
                       rx (.round js/Math (+ gx nx))
                       ry (.round js/Math (+ gy ny))
-                      contains-loc? (fn [[key {wires ::wires x ::x y ::y props ::props}]]
+                      contains-loc? (fn [[key {wires :wires x :x y :y props ::props}]]
                                       (when (contains? wires [(- rx x) (- ry y)])
                                         (or (:net props) key)))]]
-            [(keyword c) (or (some contains-loc? sch) (keyword (gensym "NC")))]))))
+            [(keyword c) (or (some contains-loc? sch) (make-name "NC"))]))))
 
 (defn print-props [mprops dprops]
   (apply str
@@ -654,19 +677,19 @@
     (apply str "* schematic\n"
            (for [[key device] sch
                  :let [loc (device-nets sch device)
-                       cell (::cell device)
+                       cell (:cell device)
                        props (::props device)
                        mprops (get-in models [cell ::props])
                        propstr (print-props mprops props)]]
              (case cell
-               ::resistor (str "R" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-               ::capacitor (str "C" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-               ::inductor (str "L" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-               ::diode (str "D" (name key) " " (name (:P loc)) " " (name (:N loc)) " " (:model props) "\n")
-               ::vsource (str "V" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-               ::isource (str "I" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-               ::pmos (str "M" (name key) " " (name (:D loc)) " " (name (:G loc)) " " (name (:S loc)) " " (name (:B loc)) " " (:model props) " " propstr "\n")
-               ::nmos (str "M" (name key) " " (name (:D loc)) " " (name (:G loc)) " " (name (:S loc)) " " (name (:B loc)) " " (:model props) " " propstr "\n")
+               "resistor" (str "R" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+               "capacitor" (str "C" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+               "inductor" (str "L" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+               "diode" (str "D" (name key) " " (name (:P loc)) " " (name (:N loc)) " " (:model props) "\n")
+               "vsource" (str "V" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+               "isource" (str "I" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+               "pmos" (str "M" (name key) " " (name (:D loc)) " " (name (:G loc)) " " (name (:S loc)) " " (name (:B loc)) " " (:model props) " " propstr "\n")
+               "nmos" (str "M" (name key) " " (name (:D loc)) " " (name (:G loc)) " " (name (:S loc)) " " (name (:B loc)) " " (:model props) " " propstr "\n")
                nil)))))
 
 (defn spice-url []
@@ -702,8 +725,8 @@
              [:label {:for name :title disp} [icon]]]))])
 
 (defn deviceprops [key]
-  (let [props (r/cursor schematic [key ::props])
-        cell (r/cursor schematic [key ::cell])
+  (let [props (r/cursor (.-cache schematic) [key ::props])
+        cell (r/cursor (.-cache schematic) [key :cell])
         model (get models @cell)]
     (fn [key]
       [:<>
@@ -760,16 +783,16 @@
       [eraser ::eraser "Eraser"]]]
     [:span.sep]
     [:a {:title "Rotate selected clockwise"
-         :on-click (fn [_] (swap! schematic transform-selected #(.rotate % 90)))}
+         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))}
      [rotatecw]]
     [:a {:title "Rotate selected counter-clockwise"
-         :on-click (fn [_] (swap! schematic transform-selected #(.rotate % -90)))}
+         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % -90)))}
      [rotateccw]]
     [:a {:title "Mirror selected horizontal"
-         :on-click (fn [_] (swap! schematic transform-selected #(.flipY %)))}
+         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipY %)))}
      [mirror-horizontal]]
     [:a {:title "Mirror selected vertical"
-         :on-click (fn [_] (swap! schematic transform-selected #(.flipX %)))}
+         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipX %)))}
      [mirror-vertical]]
     [:a {:title "Delete selected"
          :on-click (fn [_] (delete-selected))}
@@ -783,37 +806,37 @@
      [zoom-out]]
     [:span.sep]
     [:a {:title "Add resistor"
-         :on-click #(add-device ::resistor)}
+         :on-click #(add-device "resistor")}
      "R"]
     [:a {:title "Add inductor"
-         :on-click #(add-device ::inductor)}
+         :on-click #(add-device "inductor")}
      "L"]
     [:a {:title "Add capacitor"
-         :on-click #(add-device ::capacitor)}
+         :on-click #(add-device "capacitor")}
      "C"]
     [:a {:title "Add diode"
-         :on-click #(add-device ::diode)}
+         :on-click #(add-device "diode")}
      "D"]
     [:a {:title "Add voltage source"
-         :on-click #(add-device ::vsource)}
+         :on-click #(add-device "vsource")}
      "V"]
     [:a {:title "Add current source"
-         :on-click #(add-device ::isource)}
+         :on-click #(add-device "isource")}
      "I"]
     [:a {:title "Add N-channel mosfet"
-         :on-click #(add-device ::nmos)}
+         :on-click #(add-device "nmos")}
      "N"]
     [:a {:title "Add P-channel mosfet"
-         :on-click #(add-device ::pmos)}
+         :on-click #(add-device "pmos")}
      "P"]])
 
 (defn schematic-elements []
   [:<>
    (for [[k v] @schematic
-         :when (= ::wire (::cell v))]
+         :when (= "wire" (:cell v))]
      ^{:key k} [(get-model ::bg v) k v])
    (for [[k v] @schematic
-         :when (not= ::wire (::cell v))]
+         :when (not= "wire" (:cell v))]
      ^{:key k} [(get-model ::bg v) k v])
    (for [[k v] @schematic]
      ^{:key k} [(get-model ::sym v) k v])
