@@ -75,6 +75,7 @@
     (str group sep base "-" (hex) (hex) (hex) (hex) (hex) (hex) (hex) (hex))))
 
 (defonce db (pouchdb "schematic"))
+(defonce syncer (.sync db "http://127.0.0.1:5984/schematic" #js{:live true, :retry true}))
 (defonce schematic (pouch-atom db "mysch" (r/atom {})))
 (defonce ui (r/atom {::zoom [0 0 500 500]
                      ::theme :tetris
@@ -236,14 +237,10 @@
               w h]))))
 
 (defn drag-device [e]
-  (let [[dx dy] (map #(/ % grid-size) (viewbox-movement e))
-        [nx ny] (map #(/ % grid-size) (viewbox-coord e))
-        selected (::selected @ui)]
-    (swap! schematic update-keys selected
-            (fn [device]
-              (-> device
-                  (update :x #(+ (or % nx) dx))
-                  (update :y #(+ (or % ny) dy)))))))
+  (let [[dx dy] (map #(/ % grid-size) (viewbox-movement e))]
+    (swap! delta
+            (fn [{x :x y :y}]
+              {:x (+ x dx) :y (+ y dy)}))))
 
 (defn drag-wire [e]
   (let [[x y] (map #(.floor js/Math (/ % grid-size)) (viewbox-coord e))
@@ -392,8 +389,10 @@
        (- x size) (- y size)
        (+ x size) (- y size)])}])
 
-(defn offset-wires [{wires :wires, xo :x, yo :y}]
-  (set (map (fn [[x y]] [(+ xo x) (+ yo y)]) wires)))
+(defn offset-wires [net]
+  (let [xo (delta-pos :x (:_id net) net)
+        yo (delta-pos :y (:_id net) net)]
+    (set (map (fn [[x y]] [(+ xo x) (+ yo y)]) (:wires net)))))
 
 (defn wire-bg [name net]
   (let [wires (offset-wires net)]
@@ -439,28 +438,17 @@
          (filter (fn [tiles] (> (count tiles) 1)))
          (mapcat #(map ::key %))))))
 
-(defn merge-overlapping [sch ov]
-    (if (empty? ov)
-      sch ; no overlapping wires
-      (let [merged (apply clojure.set/union (map (comp offset-wires sch) ov))
-            cleaned (reduce dissoc sch ov)]
-        (assoc cleaned (make-name "wire")
-               {:cell "wire"
-                :transform IV
-                :x 0 :y 0
-                :wires merged})))) ; TODO merge params?
-    
 (defn clean-selected [ui sch]
   (update ui ::selected
              (fn [sel]
                (into #{} (filter #(contains? sch %)) sel))))
 
-(defn split-net [coords]
-  (loop [perimeter #{(first coords)}
+(defn split-net [wires]
+  (loop [perimeter #{(first wires)}
          contiguous #{}
-         remainder (set coords)]
+         remainder (set wires)]
     (if (empty? perimeter)
-      (lazy-seq (cons contiguous
+      (lazy-seq (cons {:cell "wire" :transform IV :x 0 :y 0 :wires contiguous}
                       (if (empty? remainder)
                         nil
                         (split-net remainder))))
@@ -469,25 +457,10 @@
        (clojure.set/union contiguous perimeter)
        (clojure.set/difference remainder perimeter)))))
 
-(defn split-disjoint [sch selected]
-  (let [device (get sch selected)
-        wires (:wires device)
-        newnets (split-net wires)]
-    (if (> (count newnets) 1)
-      (let [sch (dissoc sch selected)]
-        (reduce (fn [sch net]
-                  (let [id (make-name "wire")]
-                    (assoc sch id
-                           (assoc device
-                                  :wires net
-                                  :_id id
-                                  :_rev nil))))
-                sch newnets))
-      sch)))
-
 (defn drag-end [e]
   (let [bg? (= (.-target e) (.-currentTarget e))
         selected (::selected @ui)
+        {dx :x dy :y} @delta
         deselect (fn [ui] (if bg? (assoc ui ::selected #{}) ui))
         end-ui (fn [ui]
                  (-> ui
@@ -498,7 +471,11 @@
                       (apply clojure.set/union (map (comp offset-wires sch) ov)))]
     (go
       (<! (swap! schematic update-keys selected
-                 update-keys #{:x :y} #(.round js/Math %)))
+                 (fn [{x :x y :y :as dev}]
+                   (assoc dev
+                          :x (js/Math.round (+ x dx))
+                          :y (js/Math.round (+ y dy))))))
+      (reset! delta {:x 0 :y 0})
       (let [sch @schematic
             overlapping (find-overlapping sch)
             merged (merge-wires sch overlapping)]
@@ -509,7 +486,15 @@
                       :transform IV
                       :x 0 :y 0
                       :wires merged}))))
-      (<! (swap! schematic split-disjoint (first selected)))
+      (let [sch @schematic
+            dev (get sch (first selected))
+            newnets (split-net (offset-wires dev))
+            n (count newnets)
+            names (set (repeatedly n #(make-name "wire")))]
+        (println newnets)
+        (when (> n 1)
+          (<! (swap! schematic dissoc (first selected)))
+          (<! (swap! schematic #(into %1 (map vector %2 newnets)) names))))
       (swap! ui end-ui))))
 
 (defn wire-sym [name net]
