@@ -491,7 +491,6 @@
             newnets (split-net (offset-wires dev))
             n (count newnets)
             names (set (repeatedly n #(make-name "wire")))]
-        (println newnets)
         (when (> n 1)
           (<! (swap! schematic dissoc (first selected)))
           (<! (swap! schematic #(into %1 (map vector %2 newnets)) names))))
