@@ -639,7 +639,7 @@
                       ny (+ (.-y p) mid)
                       rx (.round js/Math (+ gx nx))
                       ry (.round js/Math (+ gy ny))
-                      contains-loc? (fn [[key {wires :wires x :x y :y props ::props}]]
+                      contains-loc? (fn [[key {wires :wires x :x y :y props :props}]]
                                       (when (contains? wires [(- rx x) (- ry y)])
                                         (or (:net props) key)))]]
             [(keyword c) (or (some contains-loc? sch) (make-name "NC"))]))))
@@ -664,7 +664,7 @@
            (for [[key device] sch
                  :let [loc (device-nets sch device)
                        cell (:cell device)
-                       props (::props device)
+                       props (:props device)
                        mprops (get-in models [cell ::props])
                        propstr (print-props mprops props)]]
              (case cell
@@ -711,7 +711,7 @@
              [:label {:for name :title disp} [icon]]]))])
 
 (defn deviceprops [key]
-  (let [props (r/cursor (.-cache schematic) [key ::props])
+  (let [props (r/cursor (.-cache schematic) [key :props])
         cell (r/cursor (.-cache schematic) [key :cell])
         model (get models @cell)]
     (fn [key]
@@ -729,7 +729,7 @@
                   (when opts
                     [:<>
                      [:label {:for prop} prop]
-                     [:select {:on-change #(swap! props assoc prop (keyword (.. % -target -value)))
+                     [:select {:on-change #(swap! schematic assoc-in [key :props prop] (keyword (.. % -target -value)))
                                :value (get @props prop)}
                       (doall (for [opt opts]
                                [:option {:key opt} opt]))]])
@@ -744,7 +744,7 @@
                                      :type typ
                                      :step "any"
                                      :default-value (get @props prop)
-                                     :on-change #(swap! props assoc prop (parse (.. % -target -value)))}]]))]))]])))
+                                     :on-change #(swap! schematic assoc-in [key :props prop] (parse (.. % -target -value)))}]]))]))]])))
 (defn menu-items []
   [:<>
     [:a {:title "Save"
@@ -830,10 +830,10 @@
      ^{:key k} [(get-model ::conn v) k v])])
 
 (defn schematic-ui []
-    [:div#app {:class @theme}
-     [:div#menu
+    [:div#mosaic_app {:class @theme}
+     [:div#mosaic_menu
       [menu-items]]
-     [:div#sidebar
+     [:div#mosaic_sidebar
       (doall (for [sel @selected]
                ^{:key sel} [deviceprops sel]))]
      [:svg#canvas {:xmlns "http://www.w3.org/2000/svg"
@@ -848,4 +848,4 @@
 
 (defn ^:dev/after-load init []
   (rd/render [schematic-ui]
-             (.getElementById js/document "root")))
+             (.getElementById js/document "mosaic_root")))
