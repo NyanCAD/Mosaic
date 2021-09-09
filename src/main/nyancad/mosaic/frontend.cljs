@@ -640,7 +640,7 @@
                       rx (.round js/Math (+ gx nx))
                       ry (.round js/Math (+ gy ny))
                       contains-loc? (fn [[key {wires :wires x :x y :y props :props}]]
-                                      (when (contains? wires [(- rx x) (- ry y)])
+                                      (when (contains? (set wires) [(- rx x) (- ry y)])
                                         (or (:net props) key)))]]
             [(keyword c) (or (some contains-loc? sch) (make-name "NC"))]))))
 
@@ -658,28 +658,27 @@
           ; coll? :checkbox?
           :else (str (name prop) "=" val))))))
 
-(defn export-spice []
-  (let [sch @schematic]
-    (apply str "* schematic\n"
-           (for [[key device] sch
-                 :let [loc (device-nets sch device)
-                       cell (:cell device)
-                       props (:props device)
-                       mprops (get-in models [cell ::props])
-                       propstr (print-props mprops props)]]
-             (case cell
-               "resistor" (str "R" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-               "capacitor" (str "C" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-               "inductor" (str "L" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-               "diode" (str "D" (name key) " " (name (:P loc)) " " (name (:N loc)) " " (:model props) "\n")
-               "vsource" (str "V" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-               "isource" (str "I" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-               "pmos" (str "M" (name key) " " (name (:D loc)) " " (name (:G loc)) " " (name (:S loc)) " " (name (:B loc)) " " (:model props) " " propstr "\n")
-               "nmos" (str "M" (name key) " " (name (:D loc)) " " (name (:G loc)) " " (name (:S loc)) " " (name (:B loc)) " " (:model props) " " propstr "\n")
-               nil)))))
+(defn export-spice [sch]
+  (apply str "* schematic\n"
+          (for [[key device] sch
+                :let [loc (device-nets sch device)
+                      cell (:cell device)
+                      props (:props device)
+                      mprops (get-in models [cell ::props])
+                      propstr (print-props mprops props)]]
+            (case cell
+              "resistor" (str "R" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+              "capacitor" (str "C" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+              "inductor" (str "L" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+              "diode" (str "D" (name key) " " (name (:P loc)) " " (name (:N loc)) " " (:model props) "\n")
+              "vsource" (str "V" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+              "isource" (str "I" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
+              "pmos" (str "M" (name key) " " (name (:D loc)) " " (name (:G loc)) " " (name (:S loc)) " " (name (:B loc)) " " (:model props) " " propstr "\n")
+              "nmos" (str "M" (name key) " " (name (:D loc)) " " (name (:G loc)) " " (name (:S loc)) " " (name (:B loc)) " " (:model props) " " propstr "\n")
+              nil))))
 
 (defn spice-url []
-  (let [blob (js/Blob. #js[(export-spice)]
+  (let [blob (js/Blob. #js[(export-spice @schematic)]
                        #js{:type "application/spice"})]
     (.createObjectURL js/URL blob)))
 
@@ -846,6 +845,20 @@
                    :on-mouse-move drag}
       [schematic-elements]]])
 
-(defn ^:dev/after-load init []
+(defn ^:dev/after-load ^:export init []
   (rd/render [schematic-ui]
              (.getElementById js/document "mosaic_root")))
+
+(defn add-spice-callback [a f]
+  (add-watch a :spice #(f (export-spice %4))))
+
+(defn ^:export current-spice-callback [f]
+  (add-spice-callback schematic f))
+
+(defn ^:export spice-callback [db sch f]
+  (let [db (pouchdb db)
+        pa (pouch-atom db sch)]
+    (add-spice-callback pa f)))
+
+(defn ^:export clear []
+  (swap! schematic #(apply dissoc %1 %2) (set (keys @schematic))))
