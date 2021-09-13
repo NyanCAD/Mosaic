@@ -128,9 +128,12 @@ svg.device g.transform {
   fill: rgb(243, 243, 216);
 }
 
-.tetris svg.device circle.port {
+.tetris circle.port {
   fill: rgb(145, 0, 0);
   stroke: rgb(53, 0, 0);
+}
+
+.tetris svg.device circle.port {
   display: none;
 }
 
@@ -167,7 +170,11 @@ svg.device g.transform {
   fill: transparent;
 }
 
-.eyesore svg.device circle.port {
+.eyesore circle.port {
+  fill: red;
+}
+
+.eyesore text {
   fill: red;
 }
 
@@ -184,7 +191,7 @@ svg.device g.transform {
 .eyesore svg.device text {
   stroke: #00cc66;
   /* stroke-width: 1px; */
-  fill: #mosaic_00cc66;
+  fill: #00cc66;
   vector-effect: non-scaling-stroke;
 }
 

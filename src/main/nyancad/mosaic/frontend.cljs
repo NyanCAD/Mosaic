@@ -46,7 +46,7 @@
 
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme #{"tetris" "eyesore"})
-(s/def ::tool #{::cursor ::eraser ::wire})
+(s/def ::tool #{::cursor ::eraser ::wire ::label})
 (s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view}))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected]
@@ -106,7 +106,7 @@
   ["P"
    "N"])
 
-(declare mosfet-sym wire-sym wire-bg resistor-sym capacitor-sym inductor-sym vsource-sym isource-sym diode-sym)
+(declare mosfet-sym wire-sym wire-bg wire-conn resistor-sym capacitor-sym inductor-sym vsource-sym isource-sym diode-sym)
 ; should probably be in state eventually
 (def models {"pmos" {::bg mosfet-shape
                      ::conn mosfet-shape
@@ -181,19 +181,19 @@
                       ::sym #'diode-sym
                       ::props {:model :text}}
              "wire" {::bg #'wire-bg
-                     ::conn []
+                     ::conn #'wire-conn
                      ::sym #'wire-sym
                      ::props {}}})
 
 (defn viewbox-coord [e]
-  (let [^js el (js/document.getElementById "canvas")
+  (let [^js el (js/document.getElementById "mosaic_canvas")
         m (.inverse (.getScreenCTM el))
         p (point (.-clientX e) (.-clientY e))
         tp (.matrixTransform p m)]
     [(/ (.-x tp) grid-size) (/ (.-y tp) grid-size)]))
 
 (defn viewbox-movement [e]
-  (let [^js el (js/document.getElementById "canvas")
+  (let [^js el (js/document.getElementById "mosaic_canvas")
         m (.inverse (.getScreenCTM el))
         _ (do (set! (.-e m) 0)
               (set! (.-f m) 0)) ; cancel translation
@@ -291,7 +291,8 @@
   (case @tool
     ::eraser (eraser-drag e)
     ::wire (wire-drag e)
-    ::cursor (cursor-drag e)))
+    ::cursor (cursor-drag e)
+    ::label nil))
   
 (defn add-wire []
   (let [name (make-name "wire")]
@@ -299,6 +300,16 @@
         (swap! ui assoc
                 ::dragging ::wire
                 ::selected #{name})))
+
+(defn add-label [k coord]
+  (let [[x y] (map #(.floor js/Math %) coord)]
+    (swap! schematic
+           (fn [sch sel]
+             (let [xo (get-in sch [sel :x])
+                   yo (get-in sch [sel :y])
+                   coord [(- x xo) (- y yo)]]
+               (update-in sch [sel :labels] sconj coord)))
+           k)))
 
 (defn drag-start [k type e]
   ; skip the button press from a drag initiated from a toolbar button
@@ -313,9 +324,10 @@
                   #{k}))
               (drag-type [ui]
                 (assoc ui ::dragging
-                       (case (::tool ui)
+                       (case @tool
                          ::cursor ::device
                          ::wire ::wire
+                         ::label nil ; you don't drag a label
                          ::eraser type))) ]
         (swap! ui (fn [ui]
                     (-> ui
@@ -327,6 +339,7 @@
                                  (first (::selected @ui))
                                  (viewbox-coord e)) ;; TODO
         [::wire ::device] (add-wire)
+        [::label ::wire] (add-label k (viewbox-coord e))
         nil))))
 
 (defn drag-start-background [e]
@@ -401,13 +414,13 @@
        (- x size) (- y size)
        (+ x size) (- y size)])}])
 
-(defn offset-wires [net]
+(defn offset-coords [key net]
   (let [xo (delta-pos :x (:_id net) net)
         yo (delta-pos :y (:_id net) net)]
-    (set (map (fn [[x y]] [(+ xo x) (+ yo y)]) (:wires net)))))
+    (set (map (fn [[x y]] [(+ xo x) (+ yo y)]) (get net key)))))
 
 (defn wire-bg [name net]
-  (let [wires (offset-wires net)]
+  (let [wires (offset-coords :wires net)]
     [:g {:on-mouse-down #(drag-start name ::wire %)}
      (doall (for [[x y] wires]
               [:rect.tetris.wire {:x (* x grid-size)
@@ -437,7 +450,7 @@
 
 (defn find-overlapping [sch]
   (->> (for [[k v] sch
-             :let [wires (offset-wires v)]
+             :let [wires (offset-coords :wires v)]
              coord wires
              :let [num (count (apply wire-neighbours wires coord))
                    cross (if (> num 1) 1 0)]]
@@ -480,7 +493,7 @@
                      deselect
                      (clean-selected @schematic)))
         merge-wires (fn [sch ov]
-                      (apply clojure.set/union (map (comp offset-wires sch) ov)))]
+                      (apply clojure.set/union (map (comp (partial offset-coords :wires) sch) ov)))]
     (go
       (<! (swap! schematic update-keys selected
                  (fn [{x :x y :y :as dev}]
@@ -500,7 +513,7 @@
                       :wires merged}))))
       (let [sch @schematic
             dev (get sch (first selected))
-            newnets (split-net (offset-wires dev))
+            newnets (split-net (offset-coords :wires dev))
             n (count newnets)
             names (set (repeatedly n #(make-name "wire")))]
         (when (> n 1)
@@ -509,10 +522,23 @@
       (swap! ui end-ui))))
 
 (defn wire-sym [name net]
-  (let [wires (offset-wires net)]
+  (let [wires (offset-coords :wires net)]
     [:g {:on-mouse-down #(drag-start name ::wire %)}
      (for [[x y] wires]
           ^{:key [x y]} [draw-wire x y wires])]))
+
+(defn wire-conn [key net]
+  (let [labels (offset-coords :labels net)
+        name (or (:name net) key)]
+    [:g.wire
+     (for [[x y] labels
+           :let [x (* x grid-size)
+                 y (* y grid-size)]]
+       [:<> {:key [x y]}
+        [:text {:x (+ x (/ grid-size 2))
+                :y (+ y (/ grid-size 3))
+                :text-anchor "middle"} name]
+        [port x y nil nil]])]))
 
 (defn mosfet-sym [k v]
   (let [shape [[[0.5 1.5]
@@ -708,6 +734,7 @@
 (def cursor (r/adapt-react-class icons/HandIndex))
 (def eraser (r/adapt-react-class icons/Eraser))
 (def wire (r/adapt-react-class icons/Pencil))
+(def label (r/adapt-react-class icons/Tag))
 (def delete (r/adapt-react-class icons/Trash))
 (def save (r/adapt-react-class icons/Download))
 (def open (r/adapt-react-class icons/Upload))
@@ -782,6 +809,7 @@
     [radiobuttons tool
      [[cursor ::cursor "Cursor"]
       [wire ::wire "Wire"]
+      [label ::label "Label"]
       [eraser ::eraser "Eraser"]]]
     [:span.sep]
     [:a {:title "Rotate selected clockwise"
@@ -852,7 +880,7 @@
      [:div#mosaic_sidebar
       (doall (for [sel @selected]
                ^{:key sel} [deviceprops sel]))]
-     [:svg#canvas {:xmlns "http://www.w3.org/2000/svg"
+     [:svg#mosaic_canvas {:xmlns "http://www.w3.org/2000/svg"
                    :height "100%"
                    :width "100%"
                    :view-box @zoom
