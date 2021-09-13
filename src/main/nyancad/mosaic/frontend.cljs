@@ -6,7 +6,8 @@
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go <!]]
             clojure.edn
-            clojure.set))
+            clojure.set
+            clojure.string))
 
 (def grid-size 50)
 
@@ -53,6 +54,7 @@
 
 (s/def ::x number?)
 (s/def ::y number?)
+(s/def ::name string?)
 (s/def ::transform (s/coll-of number? :count 6))
 (s/def ::cell string?)
 (s/def ::coord (s/tuple number? number?))
@@ -68,16 +70,17 @@
 (s/def ::device (s/multi-spec cell-type ::cell))
 (s/def ::schematic (s/map-of string? ::device))
 
+(def params (js/URLSearchParams. js/window.location.search))
+(def group (or js/window.schem (.get params "schem") "myschem"))
+(def dbname (or js/window.db (.get params "db") "schematics"))
+(def sync (or js/window.sync (.get params "sync") "https://c6be5bcc-59a8-492d-91fd-59acc17fef02-bluemix.cloudantnosqldb.appdomain.cloud/"))
 
-(def group (if (empty? js/window.location.search)
-             "mysch"
-             (subs js/window.location.search 1)))
 (defn make-name [base]
   (letfn [(hex [] (.toString (rand-int 16) 16))]
     (str group sep base "-" (hex) (hex) (hex) (hex) (hex) (hex) (hex) (hex))))
 
-(defonce db (pouchdb "schematic"))
-(defonce syncer (.sync db "https://c6be5bcc-59a8-492d-91fd-59acc17fef02-bluemix.cloudantnosqldb.appdomain.cloud/schematics" #js{:live true, :retry true}))
+(defonce db (pouchdb dbname))
+(defonce syncer (.sync db (str sync dbname) #js{:live true, :retry true}))
 (defonce schematic (pouch-atom db group (r/atom {})))
 (defonce ui (r/atom {::zoom [0 0 500 500]
                      ::theme "tetris"
@@ -109,12 +112,16 @@
                      ::conn mosfet-shape
                      ::sym #'mosfet-sym
                      ::props {:model :text
+                              :m :number
+                              :nf :number
                               :w :number
                               :l :number}}
              "nmos" {::bg mosfet-shape
                      ::conn mosfet-shape
                      ::sym #'mosfet-sym
                      ::props {:model :text
+                              :m :number
+                              :nf :number
                               :w :number
                               :l :number}}
              "resistor" {::bg twoport-shape
@@ -176,7 +183,7 @@
              "wire" {::bg #'wire-bg
                      ::conn []
                      ::sym #'wire-sym
-                     ::props {:net :text}}})
+                     ::props {}}})
 
 (defn viewbox-coord [e]
   (let [^js el (js/document.getElementById "canvas")
@@ -199,19 +206,22 @@
     (fn [[x y w h]]
       (let [dx (* direction w 0.1)
             dy (* direction h 0.1)
-            rx (/ (- (* ex grid-size) x) w)
-            ry (/ (- (* ey grid-size) y) h)]
+            rx (/ (- ex x) w)
+            ry (/ (- ey y) h)]
         [(- x (* dx rx))
          (- y (* dy ry))
          (+ w dx)
          (+ h dy)]))))
 
 (defn scroll-zoom [e]
-  (apply zoom-schematic (sign (.-deltaY e)) (viewbox-coord e)))
+  (let [[x y] (viewbox-coord e)]
+    (zoom-schematic (sign (.-deltaY e)) (* x grid-size) (* y grid-size))))
 
 (defn button-zoom [dir]
   (let [[x y w h] (::zoom @ui)]
-    (zoom-schematic dir (+ x (/ w 2)) (+ y (/ h 2)))))
+    (zoom-schematic dir
+                    (+ x (/ w 2))
+                    (+ y (/ h 2)))))
 
 (defn transform-selected [sch selected tf]
   (let [f (comp transform-vec tf transform)]
@@ -639,9 +649,9 @@
                       ny (+ (.-y p) mid)
                       rx (.round js/Math (+ gx nx))
                       ry (.round js/Math (+ gy ny))
-                      contains-loc? (fn [[key {wires :wires x :x y :y props :props}]]
+                      contains-loc? (fn [[key {wires :wires x :x y :y name :name}]]
                                       (when (contains? (set wires) [(- rx x) (- ry y)])
-                                        (or (:net props) key)))]]
+                                        (or name key)))]]
             [(keyword c) (or (some contains-loc? sch) (make-name "NC"))]))))
 
 (defn print-props [mprops dprops]
@@ -658,24 +668,30 @@
           ; coll? :checkbox?
           :else (str (name prop) "=" val))))))
 
+(defn spicename [n]
+  (peek (clojure.string/split n "-")))
+
 (defn export-spice [sch]
-  (apply str "* schematic\n"
-          (for [[key device] sch
-                :let [loc (device-nets sch device)
-                      cell (:cell device)
-                      props (:props device)
-                      mprops (get-in models [cell ::props])
-                      propstr (print-props mprops props)]]
-            (case cell
-              "resistor" (str "R" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-              "capacitor" (str "C" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-              "inductor" (str "L" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-              "diode" (str "D" (name key) " " (name (:P loc)) " " (name (:N loc)) " " (:model props) "\n")
-              "vsource" (str "V" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-              "isource" (str "I" (name key) " " (name (:P loc)) " " (name (:N loc)) " " propstr "\n")
-              "pmos" (str "M" (name key) " " (name (:D loc)) " " (name (:G loc)) " " (name (:S loc)) " " (name (:B loc)) " " (:model props) " " propstr "\n")
-              "nmos" (str "M" (name key) " " (name (:D loc)) " " (name (:G loc)) " " (name (:S loc)) " " (name (:B loc)) " " (:model props) " " propstr "\n")
-              nil))))
+(str "* schematic\n"
+ (apply str
+        (for [[key device] sch
+              :let [loc (device-nets sch device)
+                    cell (:cell device)
+                    props (:props device)
+                    name (or (:name device) (spicename key))
+                    mprops (get-in models [cell ::props])
+                    propstr (print-props mprops props)]]
+          (case cell
+            "resistor" (str "R" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
+            "capacitor" (str "C" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
+            "inductor" (str "L" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
+            "diode" (str "D" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " (:model props) "\n")
+            "vsource" (str "V" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
+            "isource" (str "I" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
+            "pmos" (str "M" name " " (spicename (:D loc)) " " (spicename (:G loc)) " " (spicename (:S loc)) " " (spicename (:B loc)) " " (:model props) " " propstr "\n")
+            "nmos" (str "M" name " " (spicename (:D loc)) " " (spicename (:G loc)) " " (spicename (:S loc)) " " (spicename (:B loc)) " " (:model props) " " propstr "\n")
+            nil)))
+     ".end\n"))
 
 (defn spice-url []
   (let [blob (js/Blob. #js[(export-spice @schematic)]
@@ -712,11 +728,17 @@
 (defn deviceprops [key]
   (let [props (r/cursor (.-cache schematic) [key :props])
         cell (r/cursor (.-cache schematic) [key :cell])
+        name (r/cursor (.-cache schematic) [key :name])
         model (get models @cell)]
     (fn [key]
       [:<>
-       [:h1 @cell ": " key]
+       [:h1 @cell ": " (or @name key)]
        [:form.properties
+        [:label {:for "name"} "name"]
+        [:input {:name "name"
+                 :type "text"
+                 :default-value @name
+                 :on-change #(swap! schematic assoc-in [key :name] (.. % -target -value))}]
         (doall (for [[prop typ] (::props model)
                      :let [opts (cond
                                   (map? typ) (keys typ)
@@ -732,18 +754,13 @@
                                :value (get @props prop)}
                       (doall (for [opt opts]
                                [:option {:key opt} opt]))]])
-                  (doall (for [[prop typ] kv
-                               :let [parse (case typ
-                                             :number js/parseFloat ;TODO magnitude suffices?
-                                             identity)]]
+                  (doall (for [[prop _] kv]
                            [:<> {:key prop}
                             [:label {:for prop} prop]
-                            [:input {:key prop
-                                     :name prop
-                                     :type typ
-                                     :step "any"
+                            [:input {:name prop
+                                     :type "text"
                                      :default-value (get @props prop)
-                                     :on-change #(swap! schematic assoc-in [key :props prop] (parse (.. % -target -value)))}]]))]))]])))
+                                     :on-change #(swap! schematic assoc-in [key :props prop] (.. % -target -value))}]]))]))]])))
 (defn menu-items []
   [:<>
     [:a {:title "Save"
@@ -850,7 +867,8 @@
              (.getElementById js/document "mosaic_root")))
 
 (defn add-spice-callback [a f]
-  (add-watch a :spice #(f (export-spice %4))))
+  (add-watch a :spice #(f (export-spice %4)))
+  (f (export-spice @a)))
 
 (defn ^:export current-spice-callback [f]
   (add-spice-callback schematic f))
