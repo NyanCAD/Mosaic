@@ -70,18 +70,16 @@
 (s/def ::device (s/multi-spec cell-type ::cell))
 (s/def ::schematic (s/map-of string? ::device))
 
-(def params (js/URLSearchParams. js/window.location.search))
-(def group (or js/window.schem (.get params "schem") "myschem"))
-(def dbname (or js/window.db (.get params "db") "schematics"))
-(def sync (or js/window.sync (.get params "sync") "https://c6be5bcc-59a8-492d-91fd-59acc17fef02-bluemix.cloudantnosqldb.appdomain.cloud/"))
+; these are set on init
+; just so they can be "reloaded" without a full page reload
+; maybe it's more "correct" to use an atom, but then to use schematic you'd have to @@schematic, yuk
+; and either way they are pretty static
+(declare group schematic)
 
 (defn make-name [base]
   (letfn [(hex [] (.toString (rand-int 16) 16))]
     (str group sep base "-" (hex) (hex) (hex) (hex) (hex) (hex) (hex) (hex))))
 
-(defonce db (pouchdb dbname))
-(defonce syncer (.sync db (str sync dbname) #js{:live true, :retry true}))
-(defonce schematic (pouch-atom db group (r/atom {})))
 (defonce ui (r/atom {::zoom [0 0 500 500]
                      ::theme "tetris"
                      ::tool ::cursor
@@ -89,7 +87,6 @@
                      ::delta {:x 0 :y 0}}))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
-(set-validator! schematic #(or (s/valid? ::schematic %) (.log js/console (pr-str %) (s/explain-str ::schematic %))))
 
 (defonce zoom (r/cursor ui [::zoom]))
 (defonce theme (r/cursor ui [::theme]))
@@ -890,9 +887,29 @@
                    :on-mouse-move drag}
       [schematic-elements]]])
 
-(defn ^:dev/after-load ^:export init []
+(defn ^:dev/after-load ^:export render []
   (rd/render [schematic-ui]
              (.getElementById js/document "mosaic_root")))
+
+(def default-sync "https://c6be5bcc-59a8-492d-91fd-59acc17fef02-bluemix.cloudantnosqldb.appdomain.cloud/")
+(defn ^:export init
+  ([] ; get the params from global variables or url parameters
+   (let [params (js/URLSearchParams. js/window.location.search)
+         group (or js/window.schem (.get params "schem") "myschem")
+         dbname (or js/window.db (.get params "db") "schematics")
+         sync (or js/window.sync (.get params "sync") default-sync)]
+     (init group dbname sync)))
+  ([group dbname] ; default sync
+   (init group dbname default-sync))
+  ([group* dbname sync] ; fully specified
+   (let [db (pouchdb dbname)
+         schematic* (pouch-atom db group* (r/atom {}))]
+     (when sync ; pass nil to disable synchronization
+       (.sync db (str sync dbname) #js{:live true, :retry true}))
+     (set-validator! schematic* #(or (s/valid? ::schematic %) (.log js/console (pr-str %) (s/explain-str ::schematic %))))
+     (set! group group*)
+     (set! schematic schematic*))
+   (render)))
 
 (defn add-spice-callback [a f]
   (add-watch a :spice #(f (export-spice %4)))
