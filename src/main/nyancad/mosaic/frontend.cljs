@@ -74,7 +74,7 @@
 ; just so they can be "reloaded" without a full page reload
 ; maybe it's more "correct" to use an atom, but then to use schematic you'd have to @@schematic, yuk
 ; and either way they are pretty static
-(declare group schematic impl)
+(declare group dbname sync schematic impl)
 
 (defn make-name [base]
   (letfn [(hex [] (.toString (rand-int 16) 16))]
@@ -660,13 +660,18 @@
         (draw-pattern (pattern-size bgptn) pattern
                       port k v)))))
 
+(defn ckt-url [model]
+  (str "?" (.toString (js/URLSearchParams. #js{:schem model :db dbname :sync sync}))))
+
 (defn circuit-sym [k _v]
   (let [model (r/cursor (.-cache schematic) [k :props :model])]
     (fn [k v]
       (let [ptnstr (get-in @impl [(str "implementations" sep @model) :bg] "#")
             pattern (clojure.string/split ptnstr "\n")]
         [device (pattern-size pattern) k v
-         [:image {:href (get-in @impl [(str "implementations" sep @model) :sym])}]]))))
+         [:image {:href (get-in @impl [(str "implementations" sep @model) :sym])
+                  :on-mouse-down #(.preventDefault %) ; prevent dragging the image
+                  :on-double-click #(.assign js/window.location (ckt-url @model))}]]))))
   
 (defn add-device [cell [x y]]
   (let [name (make-name cell)]
@@ -789,6 +794,8 @@
     (fn [key]
       [:<>
        [:h1 @cell ": " (or @name key)]
+       (when (= @cell "ckt")
+         [:a {:href (ckt-url (:model @props))} "Edit"])
        [:div.properties
         [:label {:for "name"} "name"]
         [:input {:id "name"
@@ -964,14 +971,16 @@
      (init group dbname sync)))
   ([group dbname] ; default sync
    (init group dbname default-sync))
-  ([group* dbname sync] ; fully specified
-   (let [db (pouchdb dbname)
+  ([group* dbname* sync*] ; fully specified
+   (let [db (pouchdb dbname*)
          schematic* (pouch-atom db group* (r/atom {}))
          impl* (pouch-atom db "implementations" (r/atom {}))]
-     (when sync ; pass nil to disable synchronization
-       (.sync db (str sync dbname) #js{:live true, :retry true}))
+     (when sync* ; pass nil to disable synchronization
+       (.sync db (str sync* dbname*) #js{:live true, :retry true}))
      (set-validator! schematic* #(or (s/valid? ::schematic %) (.log js/console (pr-str %) (s/explain-str ::schematic %))))
      (set! group group*)
+     (set! dbname dbname*)
+     (set! sync sync*)
      (set! impl impl*)
      (set! schematic schematic*))
    (render)))

@@ -83,7 +83,6 @@
 #mosaic_canvas {
   grid-row: 2;
   grid-column: 2;
-  user-select: none;
 }
 
 
