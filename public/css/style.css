@@ -62,18 +62,18 @@
   overflow:auto;
 }
 
-#mosaic_sidebar form.properties {
+#mosaic_sidebar .properties {
   display: grid;
   grid-template-columns: [labels] auto [controls] 1fr;
   grid-auto-flow: row;
   grid-gap: .8em;
 }
-#mosaic_sidebar form.properties label {
+#mosaic_sidebar .properties label {
   grid-column: labels;
   grid-row: auto;
 }
 
-#mosaic_sidebar form.properties input {
+#mosaic_sidebar .properties input {
     grid-column: controls;
     grid-row: auto;
     box-sizing: border-box;
@@ -83,6 +83,7 @@
 #mosaic_canvas {
   grid-row: 2;
   grid-column: 2;
+  user-select: none;
 }
 
 
