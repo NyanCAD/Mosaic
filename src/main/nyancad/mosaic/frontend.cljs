@@ -185,7 +185,7 @@
                     ::sym #'circuit-sym
                     ::props {:model :text}}
              "wire" {::bg #'wire-bg
-                     ::conn #'wire-conn
+                     ::conn []
                      ::sym #'wire-sym
                      ::props {}}})
 
@@ -453,20 +453,28 @@
                     :y2 (* (+ y2 0.5) grid-size)
                     :key [x y x2 y2]}])]))
 
-(defn find-overlapping [sch]
+(defn build-wire-index [sch]
   (->> (for [[k v] sch
              :let [wires (offset-coords :wires v)]
              coord wires
              :let [num (count (apply wire-neighbours wires coord))
                    cross (if (> num 1) 1 0)]]
-         {::coord coord ::key k ::cross cross})
-       (group-by ::coord)
-       (into #{}
-             (comp
-              (map val)
-              (filter (fn [tiles] (< (transduce (map ::cross) + tiles) 2)))
-              (filter (fn [tiles] (> (count tiles) 1)))
-              (mapcat #(map ::key %))))))
+         {::coord coord ::key k ::name (or (:name v) k)::cross cross})
+       (group-by ::coord)))
+
+(defn build-current-wire-index []
+  (build-wire-index @schematic))
+
+(def wire-index (r/track build-current-wire-index))
+
+(defn find-overlapping []
+  (into #{}
+        (comp
+         (map val)
+         (filter (fn [tiles] (< (transduce (map ::cross) + tiles) 2)))
+         (filter (fn [tiles] (> (count tiles) 1)))
+         (mapcat #(map ::key %)))
+        @wire-index))
 
 (defn clean-selected [ui sch]
   (update ui ::selected
@@ -506,9 +514,8 @@
                           :x (js/Math.round (+ x dx))
                           :y (js/Math.round (+ y dy))))))
       (reset! delta {:x 0 :y 0})
-      (let [sch @schematic
-            overlapping (find-overlapping sch)
-            merged (merge-wires sch overlapping)]
+      (let [overlapping (find-overlapping)
+            merged (merge-wires @schematic overlapping)]
         (when (seq overlapping)
           (<! (swap! schematic #(apply dissoc %1 %2) overlapping))
           (<! (swap! schematic assoc (make-name "wire")
@@ -526,16 +533,13 @@
           (<! (swap! schematic #(into %1 (map vector %2 newnets)) names))))
       (swap! ui end-ui))))
 
-(defn wire-sym [name net]
-  (let [wires (offset-coords :wires net)]
-    [:g {:on-mouse-down #(drag-start name ::wire %)}
-     (for [[x y] wires]
-       ^{:key [x y]} [draw-wire x y wires])]))
-
-(defn wire-conn [key net]
-  (let [labels (offset-coords :labels net)
+(defn wire-sym [key net]
+  (let [wires (offset-coords :wires net)
+        labels (offset-coords :labels net)
         name (or (:name net) key)]
-    [:g.wire
+    [:g.wire {:on-mouse-down #(drag-start key ::wire %)}
+     (for [[x y] wires]
+       ^{:key [x y]} [draw-wire x y wires])
      (for [[x y] labels
            :let [x (* x grid-size)
                  y (* y grid-size)]]
@@ -650,6 +654,11 @@
         (draw-pattern (pattern-size pattern) pattern
                       tetris k v)))))
 
+(defn circuit-pattern [ckt]
+  (let [model (get-in ckt [:props :model])
+        ptnstr (get-in @impl [(str "implementations" sep model) :conn] "#")]
+    (clojure.string/split ptnstr "\n")))
+
 (defn circuit-conn [k _v]
   (let [model (r/cursor (.-cache schematic) [k :props :model])]
     (fn [k v]
@@ -696,9 +705,10 @@
                       (swap! schematic into parsed) ; TODO rethink
                       (js/alert (s/explain-str ::schematic parsed))))))))
 
-(defn device-nets [sch {gx :x gy :y tran :transform cell :cell}]
-  (let [pattern (get-in models [cell ::conn]) ; TODO refactor patterns
-        size (apply max (count pattern) (map count pattern))
+(defn device-ports [{gx :x gy :y tran :transform cell :cell :as dev}]
+  (let [pattern (get-in models [cell ::conn])
+        pattern (if (= cell "ckt") (circuit-pattern dev) pattern)
+        size (pattern-size pattern)
         mid (- (/ size 2) 0.5)]
     (into {}
           (for [[y s] (map-indexed vector pattern)
@@ -708,11 +718,13 @@
                       nx (+ (.-x p) mid)
                       ny (+ (.-y p) mid)
                       rx (.round js/Math (+ gx nx))
-                      ry (.round js/Math (+ gy ny))
-                      contains-loc? (fn [[key {wires :wires x :x y :y name :name}]]
-                                      (when (contains? (set wires) [(- rx x) (- ry y)])
-                                        (or name key)))]]
-            [(keyword c) (or (some contains-loc? sch) (make-name "NC"))]))))
+                      ry (.round js/Math (+ gy ny))]]
+            [(keyword c) [rx ry]]))))
+
+(defn device-nets [wires dev]
+  (into {}
+        (map (fn [[k v]] [k (get-in wires [v 0 ::name] (make-name "NC"))]))
+        (device-ports dev)))
 
 (defn print-props [mprops dprops]
   (apply str
@@ -731,27 +743,31 @@
 (defn spicename [n]
   (peek (clojure.string/split n "-")))
 
+(defn ciruit-spice [sch]
+  (let [wires (build-wire-index sch)]
+    (apply str
+           (for [[key device] sch
+                 :let [loc (device-nets wires device)
+                       cell (:cell device)
+                       props (:props device)
+                       name (or (:name device) (spicename key))
+                       mprops (get-in models [cell ::props])
+                       propstr (print-props mprops props)]]
+             (case cell
+               "resistor" (str "R" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
+               "capacitor" (str "C" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
+               "inductor" (str "L" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
+               "diode" (str "D" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " (:model props) "\n")
+               "vsource" (str "V" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
+               "isource" (str "I" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
+               "pmos" (str "M" name " " (spicename (:D loc)) " " (spicename (:G loc)) " " (spicename (:S loc)) " " (spicename (:B loc)) " " (:model props) " " propstr "\n")
+               "nmos" (str "M" name " " (spicename (:D loc)) " " (spicename (:G loc)) " " (spicename (:S loc)) " " (spicename (:B loc)) " " (:model props) " " propstr "\n")
+               "ckt" (str "X" name " " (clojure.string/join " " (map spicename (vals loc))) " " (:model props) "\n")
+               nil)))))
+
 (defn export-spice [sch]
   (str "* schematic\n"
-       (apply str
-              (for [[key device] sch
-                    :let [loc (device-nets sch device)
-                          cell (:cell device)
-                          props (:props device)
-                          name (or (:name device) (spicename key))
-                          mprops (get-in models [cell ::props])
-                          propstr (print-props mprops props)]]
-                (case cell
-                  "resistor" (str "R" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
-                  "capacitor" (str "C" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
-                  "inductor" (str "L" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
-                  "diode" (str "D" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " (:model props) "\n")
-                  "vsource" (str "V" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
-                  "isource" (str "I" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
-                  "pmos" (str "M" name " " (spicename (:D loc)) " " (spicename (:G loc)) " " (spicename (:S loc)) " " (spicename (:B loc)) " " (:model props) " " propstr "\n")
-                  "nmos" (str "M" name " " (spicename (:D loc)) " " (spicename (:G loc)) " " (spicename (:S loc)) " " (spicename (:B loc)) " " (:model props) " " propstr "\n")
-                  "ckt" (str "X" name " " (:model props) "\n")
-                  nil)))
+       (ciruit-spice sch)
        ".end\n"))
 
 (defn spice-url []
@@ -871,8 +887,8 @@
    [radiobuttons tool
     [[cursor ::cursor "Cursor"]
      [wire ::wire "Wire"]
-     [label ::label "Label"]
-     [eraser ::eraser "Eraser"]]]
+     [eraser ::eraser "Eraser"]
+     [label ::label "Label"]]]
    [:span.sep]
    [:a {:title "Rotate selected clockwise"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))}
