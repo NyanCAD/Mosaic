@@ -76,15 +76,20 @@
 ; and either way they are pretty static
 (declare group dbname sync schematic impl)
 
-(defn make-name [base]
-  (letfn [(hex [] (.toString (rand-int 16) 16))]
-    (str group sep base "-" (hex) (hex) (hex) (hex) (hex) (hex) (hex) (hex))))
+(defonce local (pouch-atom (pouchdb "local") "local"))
+
+(defn make-name
+  ([base] (make-name group base))
+  ([group base]
+   (letfn [(hex [] (.toString (rand-int 16) 16))]
+     (str group sep base "-" (hex) (hex) (hex) (hex) (hex) (hex) (hex) (hex)))))
 
 (defonce ui (r/atom {::zoom [0 0 500 500]
                      ::theme "tetris"
                      ::tool ::cursor
                      ::selected #{}
-                     ::delta {:x 0 :y 0}}))
+                     ::delta {:x 0 :y 0}
+                     ::mouse [0 0]}))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
 
@@ -292,6 +297,9 @@
       nil))) ;todo remove devices?
 
 (defn drag [e]
+  ;; store mouse position for use outside mouse events
+  ;; keyboard shortcuts for example
+  (swap! ui assoc ::mouse (viewbox-coord e))
   (case @tool
     ::eraser (eraser-drag e)
     ::wire (wire-drag e)
@@ -790,6 +798,9 @@
 (def save (r/adapt-react-class icons/Download))
 (def open (r/adapt-react-class icons/Upload))
 (def export (r/adapt-react-class icons/FileEarmarkCode))
+(def copyi (r/adapt-react-class icons/Files))
+(def cuti (r/adapt-react-class icons/Scissors))
+(def pastei (r/adapt-react-class icons/Clipboard))
 
 (defn radiobuttons [cursor m]
   [:<>
@@ -866,6 +877,22 @@
                  :default-value (:sym @props)
                  :on-change #(swap! impl assoc-in [(str "implementations" sep group) :sym] (.. % -target -value))}]]])))
 
+(defn copy []
+  (let [sel @selected
+        sch @schematic
+        devs (map (comp #(dissoc % :_rev :_id) sch) sel)]
+    (swap! local assoc (str "local" sep "clipboard") {:data devs})))
+
+(defn cut []
+  (copy)
+  (delete-selected))
+
+(defn paste []
+  (let [devs (get-in @local [(str "local" sep "clipboard") :data])
+        devmap (into {} (map (fn [d] [(make-name (:cell d)) d])) devs)]
+    (swap! schematic into devmap)
+    (reset! selected (set (keys devmap)))))
+
 (defn menu-items []
   [:<>
    [:a {:title "Save"
@@ -890,21 +917,30 @@
      [eraser ::eraser "Eraser"]
      [label ::label "Label"]]]
    [:span.sep]
-   [:a {:title "Rotate selected clockwise"
+   [:a {:title "Rotate selected clockwise [s]"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))}
     [rotatecw]]
-   [:a {:title "Rotate selected counter-clockwise"
+   [:a {:title "Rotate selected counter-clockwise [shift+s]"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % -90)))}
     [rotateccw]]
-   [:a {:title "Mirror selected horizontal"
+   [:a {:title "Mirror selected horizontal [shift+f]"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipY %)))}
     [mirror-horizontal]]
-   [:a {:title "Mirror selected vertical"
+   [:a {:title "Mirror selected vertical [f]"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipX %)))}
     [mirror-vertical]]
-   [:a {:title "Delete selected"
+   [:a {:title "Delete selected [del]"
         :on-click (fn [_] (delete-selected))}
     [delete]]
+   [:a {:title "Copy selected [ctrl+c]"
+        :on-click (fn [_] (copy))}
+    [copyi]]
+   [:a {:title "Cut selected [ctrl+x]"
+        :on-click (fn [_] (cut))}
+    [cuti]]
+   [:a {:title "Paste [ctrl+v]"
+        :on-click (fn [_] (paste))}
+    [pastei]]
    [:span.sep]
    [:a {:title "zoom in [scroll wheel/pinch]"
         :on-click #(button-zoom -1)}
@@ -913,31 +949,31 @@
         :on-click #(button-zoom 1)}
     [zoom-out]]
    [:span.sep]
-   [:a {:title "Add resistor"
+   [:a {:title "Add resistor [r]"
         :on-click #(add-device "resistor" (viewbox-coord %))}
     "R"]
-   [:a {:title "Add inductor"
+   [:a {:title "Add inductor [l]"
         :on-click #(add-device "inductor" (viewbox-coord %))}
     "L"]
-   [:a {:title "Add capacitor"
+   [:a {:title "Add capacitor [c]"
         :on-click #(add-device "capacitor" (viewbox-coord %))}
     "C"]
-   [:a {:title "Add diode"
+   [:a {:title "Add diode [d]"
         :on-click #(add-device "diode" (viewbox-coord %))}
     "D"]
-   [:a {:title "Add voltage source"
+   [:a {:title "Add voltage source [v]"
         :on-click #(add-device "vsource" (viewbox-coord %))}
     "V"]
-   [:a {:title "Add current source"
+   [:a {:title "Add current source [i]"
         :on-click #(add-device "isource" (viewbox-coord %))}
     "I"]
-   [:a {:title "Add N-channel mosfet"
+   [:a {:title "Add N-channel mosfet [n]"
         :on-click #(add-device "nmos" (viewbox-coord %))}
     "N"]
-   [:a {:title "Add P-channel mosfet"
+   [:a {:title "Add P-channel mosfet [p]"
         :on-click #(add-device "pmos" (viewbox-coord %))}
     "P"]
-   [:a {:title "Add subcircuit"
+   [:a {:title "Add subcircuit [x]"
         :on-click #(add-device "ckt" (viewbox-coord %))}
     "X"]])
 
@@ -973,7 +1009,44 @@
                         :on-mouse-move drag}
     [schematic-elements]]])
 
+(def shortcuts {#{:c} #(add-device "capacitor" (::mouse @ui))
+                #{:r} #(add-device "resistor" (::mouse @ui))
+                #{:l} #(add-device "inductor" (::mouse @ui))
+                #{:d} #(add-device "diode" (::mouse @ui))
+                #{:v} #(add-device "vsource" (::mouse @ui))
+                #{:i} #(add-device "isource" (::mouse @ui))
+                #{:n} #(add-device "nmos" (::mouse @ui))
+                #{:p} #(add-device "pmos" (::mouse @ui))
+                #{:x} #(add-device "ckt" (::mouse @ui))
+                #{:backspace} delete-selected
+                #{:delete} delete-selected
+                #{:s}        (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))
+                #{:shift :s} (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % -90)))
+                #{:shift :f} (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipY %)))
+                #{:f}        (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipX %)))
+                #{:control :c} copy
+                #{:control :x} cut
+                #{:control :v} paste})
+
+(defn keyset [e]
+  (letfn [(conj-when [s e c] (if c (conj s e) s))]
+    (-> #{(keyword (clojure.string/lower-case (.-key e)))}
+        (conj-when :control (.-ctrlKey e))
+        (conj-when :alt (.-altKey e))
+        (conj-when :shift (.-shiftKey e))
+        (conj-when :os (.-metaKey e))
+        )))
+
+(defn keyboard-shortcuts [e]
+  (when-not (or ;; the user is typing, ignore
+             (= "INPUT" (.. e -target -tagName))
+             (= "TEXTAREA" (.. e -target -tagName)))
+    (println (keyset e))
+    ((get shortcuts (keyset e) #()))))
+
 (defn ^:dev/after-load ^:export render []
+  ;; (js/document.addEventListener "keyup" keyboard-shortcuts)
+  (set! js/document.onkeyup keyboard-shortcuts)
   (rd/render [schematic-ui]
              (.getElementById js/document "mosaic_root")))
 
