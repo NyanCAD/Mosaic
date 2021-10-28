@@ -61,12 +61,10 @@
 (s/def ::wires (s/and set? (s/coll-of ::coord)))
 
 (defmulti cell-type :cell)
-(defmethod cell-type ::wire [_]
-  (s/keys :req-un [::wires ::cell]
-          :opt-un [::x ::y]))
+(defmethod cell-type "wire" [_]
+  (s/keys :req-un [::rx ::ry ::cell ::x ::y]))
 (defmethod cell-type :default [_]
-  (s/keys :req-un [::cell ::transform]
-          :opt-un [::x ::y]))
+  (s/keys :req-un [::cell ::transform ::x ::y]))
 (s/def ::device (s/multi-spec cell-type ::cell))
 (s/def ::schematic (s/map-of string? ::device))
 
@@ -88,7 +86,7 @@
                      ::theme "tetris"
                      ::tool ::cursor
                      ::selected #{}
-                     ::delta {:x 0 :y 0}
+                     ::delta {:x 0 :y 0 :rx 0 :ry 0}
                      ::mouse [0 0]}))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
@@ -243,7 +241,7 @@
     (swap! schematic #(apply dissoc %1 %2) selected)))
 
 (defn remove-wire [sch selected coord]
-  (let [[x y] (map #(.floor js/Math %) coord)
+  #_(let [[x y] (map #(.floor js/Math %) coord)
         xo (get-in sch [selected :x])
         yo (get-in sch [selected :y])
         coord [(- x xo) (- y yo)]]
@@ -260,19 +258,18 @@
 (defn drag-device [e]
   (let [[dx dy] (map #(/ % grid-size) (viewbox-movement e))]
     (swap! delta
-           (fn [{x :x y :y}]
-             {:x (+ x dx) :y (+ y dy)}))))
+           (fn [d]
+             (-> d
+                 (update :x #(+ % dx))
+                 (update :y #(+ % dy)))))))
 
 (defn drag-wire [e]
-  (let [[x y] (map #(.floor js/Math %) (viewbox-coord e))
-        selected (first (::selected @ui))]
-    (swap! schematic
-           (fn [sch sel]
-             (let [xo (get-in sch [sel :x])
-                   yo (get-in sch [sel :y])
-                   coord [(- x xo) (- y yo)]]
-               (update-in sch [sel :wires] sconj coord)))
-           selected)))
+  (let [[dx dy] (map #(/ % grid-size) (viewbox-movement e))]
+    (swap! delta
+           (fn [d]
+             (-> d
+                 (update :rx #(+ % dx))
+                 (update :ry #(+ % dy)))))))
 
 (defn wire-drag [e]
   (case (::dragging @ui)
@@ -306,9 +303,12 @@
     ::cursor (cursor-drag e)
     ::label nil))
 
-(defn add-wire []
+(defn add-wire [[x y]]
   (let [name (make-name "wire")]
-    (swap! schematic assoc name {:transform IV, :cell "wire" :wires #{}}) ; X/Y will be set on drag
+    (swap! schematic assoc name {:cell "wire"
+                                 :x (js/Math.floor x)
+                                 :y (js/Math.floor y)
+                                 :rx 0 :ry 0})
     (swap! ui assoc
            ::dragging ::wire
            ::selected #{name})))
@@ -350,14 +350,14 @@
         [::eraser ::wire] (swap! schematic remove-wire
                                  (first (::selected @ui))
                                  (viewbox-coord e)) ;; TODO
-        [::wire ::device] (add-wire)
+        [::wire ::device] (add-wire (viewbox-coord e))
         [::label ::wire] (add-label k (viewbox-coord e))
         nil))))
 
 (defn drag-start-background [e]
   (cond
     (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
-    (= ::wire @tool) (add-wire)))
+    (= ::wire @tool) (add-wire (viewbox-coord e))))
 
 (defn tetris [x y _ _]
   [:rect.tetris {:x x, :y y
@@ -385,7 +385,7 @@
     (into [:g.transform
            {:width (* size grid-size)
             :height (* size grid-size)
-            :transform (.toString (transform (:transform v)))}]
+            :transform (.toString (transform (:transform v IV)))}]
           elements)]])
 
 (defn pattern-size [pattern]
@@ -433,7 +433,7 @@
     (set (map (fn [[x y]] [(+ xo x) (+ yo y)]) (get net key)))))
 
 (defn wire-bg [name net]
-  (let [wires (offset-coords :wires net)]
+  #_(let [wires (offset-coords :wires net)]
     [:g {:on-mouse-down #(drag-start name ::wire %)}
      (doall (for [[x y] wires]
               [:rect.tetris.wire {:x (* x grid-size)
@@ -442,11 +442,8 @@
                                   :width grid-size
                                   :height grid-size
                                   :class (when (contains? (::selected @ui) name) :selected)}]))]))
-(defn wire-neighbours [wires x y]
-  (filter #(contains? wires %)
-          [[x (+ y 1)] [x (- y 1)] [(+ x 1) y] [(- x 1) y]]))
 
-(defn draw-wire [x y wires]
+#_(defn draw-wire [x y wires]
   (let [neigbours (wire-neighbours wires x y)
         num (count neigbours)]
     [:<>
@@ -462,100 +459,86 @@
                     :key [x y x2 y2]}])]))
 
 (defn build-wire-index [sch]
-  (->> (for [[k v] sch
-             :let [wires (offset-coords :wires v)]
-             coord wires
-             :let [num (count (apply wire-neighbours wires coord))
-                   cross (if (> num 1) 1 0)]]
-         {::coord coord ::key k ::name (or (:name v) k)::cross cross})
-       (group-by ::coord)))
+  (transduce
+   (filter #(= (:cell %) "wire"))
+   (completing
+    (fn [idx {:keys [:_id :x :y :rx :ry]}]
+      (println _id)
+      (-> idx
+          (update [x y] conj _id)
+          (update [(+ x rx) (+ y ry)] conj _id))))
+   {} (vals sch)))
 
 (defn build-current-wire-index []
   (build-wire-index @schematic))
 
 (def wire-index (r/track build-current-wire-index))
 
-(defn find-overlapping []
-  (into #{}
-        (comp
-         (map val)
-         (filter (fn [tiles] (< (transduce (map ::cross) + tiles) 2)))
-         (filter (fn [tiles] (> (count tiles) 1)))
-         (mapcat #(map ::key %)))
-        @wire-index))
+;; (defn find-overlapping []
+;;   (into #{}
+;;         (comp
+;;          (map val)
+;;          (filter (fn [tiles] (< (transduce (map ::cross) + tiles) 2)))
+;;          (filter (fn [tiles] (> (count tiles) 1)))
+;;          (mapcat #(map ::key %)))
+;;         @wire-index))
 
 (defn clean-selected [ui sch]
   (update ui ::selected
           (fn [sel]
             (into #{} (filter #(contains? sch %)) sel))))
 
-(defn split-net [wires]
-  (loop [perimeter #{(first wires)}
-         contiguous #{}
-         remainder (set wires)]
-    (if (empty? perimeter)
-      (lazy-seq (cons {:cell "wire" :transform IV :x 0 :y 0 :wires contiguous}
-                      (if (empty? remainder)
-                        nil
-                        (split-net remainder))))
-      (recur
-       (into #{} (mapcat #(apply wire-neighbours remainder %)) perimeter)
-       (clojure.set/union contiguous perimeter)
-       (clojure.set/difference remainder perimeter)))))
+;; (defn split-net [wires]
+;;   (loop [perimeter #{(first wires)}
+;;          contiguous #{}
+;;          remainder (set wires)]
+;;     (if (empty? perimeter)
+;;       (lazy-seq (cons {:cell "wire" :transform IV :x 0 :y 0 :wires contiguous}
+;;                       (if (empty? remainder)
+;;                         nil
+;;                         (split-net remainder))))
+;;       (recur
+;;        (into #{} (mapcat #(apply wire-neighbours remainder %)) perimeter)
+;;        (clojure.set/union contiguous perimeter)
+;;        (clojure.set/difference remainder perimeter)))))
 
 (defn drag-end [e]
   (let [bg? (= (.-target e) (.-currentTarget e))
         selected (::selected @ui)
-        {dx :x dy :y} @delta
+        {dx :x dy :y drx :rx dry :ry} @delta
         deselect (fn [ui] (if bg? (assoc ui ::selected #{}) ui))
         end-ui (fn [ui]
                  (-> ui
                      (assoc ::dragging nil)
                      deselect
-                     (clean-selected @schematic)))
-        merge-wires (fn [sch ov]
-                      (apply clojure.set/union (map (comp (partial offset-coords :wires) sch) ov)))]
+                     (clean-selected @schematic)))]
     (go
       (<! (swap! schematic update-keys selected
-                 (fn [{x :x y :y :as dev}]
+                 (fn [{x :x y :y rx :rx ry :ry :as dev}]
                    (assoc dev
                           :x (js/Math.round (+ x dx))
-                          :y (js/Math.round (+ y dy))))))
-      (reset! delta {:x 0 :y 0})
-      (let [overlapping (find-overlapping)
-            merged (merge-wires @schematic overlapping)]
-        (when (seq overlapping)
-          (<! (swap! schematic #(apply dissoc %1 %2) overlapping))
-          (<! (swap! schematic assoc (make-name "wire")
-                     {:cell "wire"
-                      :transform IV
-                      :x 0 :y 0
-                      :wires merged}))))
-      (let [sch @schematic
-            dev (get sch (first selected))
-            newnets (split-net (offset-coords :wires dev))
-            n (count newnets)
-            names (set (repeatedly n #(make-name "wire")))]
-        (when (> n 1)
-          (<! (swap! schematic dissoc (first selected)))
-          (<! (swap! schematic #(into %1 (map vector %2 newnets)) names))))
+                          :y (js/Math.round (+ y dy))
+                          :rx (js/Math.round (+ rx drx))
+                          :ry (js/Math.round (+ ry dry))
+                          ))))
+      (reset! delta {:x 0 :y 0 :rx 0 :ry 0})
       (swap! ui end-ui))))
 
-(defn wire-sym [key net]
-  (let [wires (offset-coords :wires net)
-        labels (offset-coords :labels net)
-        name (or (:name net) key)]
+(defn wire-sym [key wire]
+  (let [name (or (:name wire) key)
+        x (delta-pos :x key wire)
+        y (delta-pos :y key wire)
+        rx (delta-pos :rx key wire)
+        ry (delta-pos :ry key wire)]
     [:g.wire {:on-mouse-down #(drag-start key ::wire %)}
-     (for [[x y] wires]
-       ^{:key [x y]} [draw-wire x y wires])
-     (for [[x y] labels
-           :let [x (* x grid-size)
-                 y (* y grid-size)]]
-       [:<> {:key [x y]}
-        [:text {:x (+ x (/ grid-size 2))
-                :y (+ y (/ grid-size 3))
-                :text-anchor "middle"} name]
-        [port x y nil nil]])]))
+     [:line.wire {:x1 (* (+ x 0.5) grid-size)
+                  :y1 (* (+ y 0.5) grid-size)
+                  :x2 (* (+ x rx 0.5) grid-size)
+                  :y2 (* (+ y ry 0.5) grid-size)}]
+     [:line.wirebb {:x1 (* (+ x 0.5) grid-size)
+                    :y1 (* (+ y 0.5) grid-size)
+                    :x2 (* (+ x rx 0.5) grid-size)
+                    :y2 (* (+ y ry 0.5) grid-size)}]]))
 
 (defn mosfet-sym [k v]
   (let [shape [[[0.5 1.5]
@@ -1066,7 +1049,8 @@
          impl* (pouch-atom db "implementations" (r/atom {}))]
      (when sync* ; pass nil to disable synchronization
        (.sync db (str sync* dbname*) #js{:live true, :retry true}))
-     (set-validator! schematic* #(or (s/valid? ::schematic %) (.log js/console (pr-str %) (s/explain-str ::schematic %))))
+     (set-validator! (.-cache schematic*)
+                     #(or (s/valid? ::schematic %) (.log js/console (pr-str %) (s/explain-str ::schematic %))))
      (set! group group*)
      (set! dbname dbname*)
      (set! sync sync*)

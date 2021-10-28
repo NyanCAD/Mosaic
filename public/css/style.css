@@ -96,6 +96,12 @@ svg.device g.transform {
   transform-origin: center;
 }
 
+line.wirebb {
+  stroke: transparent;
+  stroke-width: 50px;
+  fill: none;
+}
+
 /* tetris theme */
 .tetris rect.tetris {
   fill: rgb(238, 238, 238);
