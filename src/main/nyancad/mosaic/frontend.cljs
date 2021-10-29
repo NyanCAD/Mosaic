@@ -324,19 +324,21 @@
           y (js/Math.round (+ (:y dev) (:ry dev) dry))]
       (go
         (<! (swap! schematic update selected
-                  (fn [{rx :rx ry :ry :as dev}]
-                    (assoc dev
-                           :rx (js/Math.round (+ rx drx))
-                           :ry (js/Math.round (+ ry dry))))))
+                   (fn [{rx :rx ry :ry :as dev}]
+                     (assoc dev
+                            :rx (js/Math.round (+ rx drx))
+                            :ry (js/Math.round (+ ry dry))))))
         (if (and (< (js/Math.abs drx) 0.5) (< (js/Math.abs dry) 0.5))
-          (swap! ui assoc ; the dragged wire stayed at the same tile, exit
-                  ::dragging nil
-                  ::delta {:x 0 :y 0 :rx 0 :ry 0})
           (do
-          (swap! ui assoc ; add the rounding error to delta
-                  ::delta {:x 0 :y 0
-                           :rx (- drx (js/Math.round drx))
-                           :ry (- dry (js/Math.round dry))})
+            (delete-selected)
+            (swap! ui assoc ; the dragged wire stayed at the same tile, exit
+                   ::dragging nil
+                   ::delta {:x 0 :y 0 :rx 0 :ry 0}))
+          (do
+            (swap! ui assoc ; add the rounding error to delta
+                   ::delta {:x 0 :y 0
+                            :rx (- drx (js/Math.round drx))
+                            :ry (- dry (js/Math.round dry))})
             (add-wire-segment [x y])))))))
 
 (defn add-label [k coord]
@@ -379,7 +381,6 @@
                                    (first (::selected @ui))
                                    (viewbox-coord e)) ;; TODO
           [::wire ::device] (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
-          ;; [::wire ::wire]   (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
           [::label ::wire] (add-label k (viewbox-coord e))
           nil)))))
 
