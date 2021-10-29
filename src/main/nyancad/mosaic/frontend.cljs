@@ -303,15 +303,41 @@
     ::cursor (cursor-drag e)
     ::label nil))
 
-(defn add-wire [[x y]]
+(defn add-wire-segment [[x y]]
   (let [name (make-name "wire")]
-    (swap! schematic assoc name {:cell "wire"
-                                 :x (js/Math.floor x)
-                                 :y (js/Math.floor y)
-                                 :rx 0 :ry 0})
+    (swap! schematic assoc name
+           {:cell "wire"
+            :x (js/Math.floor x)
+            :y (js/Math.floor y)
+            :rx 0 :ry 0})
     (swap! ui assoc
            ::dragging ::wire
            ::selected #{name})))
+
+(defn add-wire [[x y] first?]
+  (if first?
+    (add-wire-segment [x y]) ; just add a new wire, else finish old wire
+    (let [selected (first (::selected @ui))
+          {drx :rx dry :ry} @delta
+          dev (get @schematic selected)
+          x (js/Math.round (+ (:x dev) (:rx dev) drx)) ; use end pos of previous wire instead
+          y (js/Math.round (+ (:y dev) (:ry dev) dry))]
+      (go
+        (<! (swap! schematic update selected
+                  (fn [{rx :rx ry :ry :as dev}]
+                    (assoc dev
+                           :rx (js/Math.round (+ rx drx))
+                           :ry (js/Math.round (+ ry dry))))))
+        (if (and (< (js/Math.abs drx) 0.5) (< (js/Math.abs dry) 0.5))
+          (swap! ui assoc ; the dragged wire stayed at the same tile, exit
+                  ::dragging nil
+                  ::delta {:x 0 :y 0 :rx 0 :ry 0})
+          (do
+          (swap! ui assoc ; add the rounding error to delta
+                  ::delta {:x 0 :y 0
+                           :rx (- drx (js/Math.round drx))
+                           :ry (- dry (js/Math.round dry))})
+            (add-wire-segment [x y])))))))
 
 (defn add-label [k coord]
   (let [[x y] (map #(.floor js/Math %) coord)]
@@ -325,39 +351,42 @@
 
 (defn drag-start [k type e]
   ; skip the button press from a drag initiated from a toolbar button
-  (when-not (::dragging @ui)
-    ; primary mouse click
-    (when (= (.-button e) 0)
-      (.stopPropagation e) ; prevent bg drag
-      (letfn [(update-selection [sel]
-                (if (or (contains? sel k)
-                        (.-shiftKey e))
-                  (sconj sel k)
-                  #{k}))
-              (drag-type [ui]
-                (assoc ui ::dragging
-                       (case @tool
-                         ::cursor ::device
-                         ::wire ::wire
-                         ::label nil ; you don't drag a label
-                         ::eraser type)))]
-        (swap! ui (fn [ui]
-                    (-> ui
-                        (update ::selected update-selection)
-                        (drag-type)))))
-      (case [@tool type]
-        [::eraser ::device] (delete-selected)
-        [::eraser ::wire] (swap! schematic remove-wire
-                                 (first (::selected @ui))
-                                 (viewbox-coord e)) ;; TODO
-        [::wire ::device] (add-wire (viewbox-coord e))
-        [::label ::wire] (add-label k (viewbox-coord e))
-        nil))))
+  (let [uiv @ui]
+    (when (not= (::dragging uiv) ::device)
+      ; primary mouse click
+      (when (= (.-button e) 0)
+        (.stopPropagation e) ; prevent bg drag
+        (letfn [(update-selection [sel]
+                  (if (or (contains? sel k)
+                          (.-shiftKey e))
+                    (sconj sel k)
+                    #{k}))
+                (drag-type [ui]
+                  (assoc ui ::dragging
+                         (case @tool
+                           ::cursor ::device
+                           ::wire ::wire
+                           ::label nil ; you don't drag a label
+                           ::eraser type)))]
+          (when (not= (::dragging uiv) ::wire)
+            (swap! ui (fn [ui]
+                        (-> ui
+                            (update ::selected update-selection)
+                            (drag-type))))))
+        (case [@tool type]
+          [::eraser ::device] (delete-selected)
+          [::eraser ::wire] (swap! schematic remove-wire
+                                   (first (::selected @ui))
+                                   (viewbox-coord e)) ;; TODO
+          [::wire ::device] (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
+          ;; [::wire ::wire]   (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
+          [::label ::wire] (add-label k (viewbox-coord e))
+          nil)))))
 
 (defn drag-start-background [e]
   (cond
     (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
-    (= ::wire @tool) (add-wire (viewbox-coord e))))
+    (= ::wire @tool) (add-wire (viewbox-coord e) (nil? (::dragging @ui)))))
 
 (defn tetris [x y _ _]
   [:rect.tetris {:x x, :y y
@@ -512,17 +541,15 @@
                      (assoc ::dragging nil)
                      deselect
                      (clean-selected @schematic)))]
-    (go
-      (<! (swap! schematic update-keys selected
-                 (fn [{x :x y :y rx :rx ry :ry :as dev}]
-                   (assoc dev
-                          :x (js/Math.round (+ x dx))
-                          :y (js/Math.round (+ y dy))
-                          :rx (js/Math.round (+ rx drx))
-                          :ry (js/Math.round (+ ry dry))
-                          ))))
-      (reset! delta {:x 0 :y 0 :rx 0 :ry 0})
-      (swap! ui end-ui))))
+    (when-not (= (::dragging @ui) ::wire)
+      (go
+        (<! (swap! schematic update-keys selected
+                   (fn [{x :x y :y :as dev}]
+                     (assoc dev
+                            :x (js/Math.round (+ x dx))
+                            :y (js/Math.round (+ y dy))))))
+        (reset! delta {:x 0 :y 0 :rx 0 :ry 0})
+        (swap! ui end-ui)))))
 
 (defn wire-sym [key wire]
   (let [name (or (:name wire) key)
@@ -530,7 +557,8 @@
         y (delta-pos :y key wire)
         rx (delta-pos :rx key wire)
         ry (delta-pos :ry key wire)]
-    [:g.wire {:on-mouse-down #(drag-start key ::wire %)}
+    [:g.wire {:on-mouse-down #(drag-start key ::device %)}
+     ; TODO drag-start ::wire nodes (with reverse) 
      [:line.wire {:x1 (* (+ x 0.5) grid-size)
                   :y1 (* (+ y 0.5) grid-size)
                   :x2 (* (+ x rx 0.5) grid-size)
