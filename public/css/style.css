@@ -88,7 +88,7 @@
 
 #mosaic_root svg {
   overflow: hidden;
-  stroke-linecap: square;
+  stroke-linecap: round;
 }
 
 svg.device g.transform {
@@ -150,6 +150,7 @@ line.wirebb {
 
 .tetris svg.device polyline,
 .tetris svg.device circle.outline,
+.tetris svg.device rect.outline,
 .tetris svg.device path {
   stroke: black;
   stroke-width: 2px;

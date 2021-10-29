@@ -591,14 +591,13 @@
 (defn resistor-sym [k v]
   (let [shape [[[0.5 0.5]
                 [0.5 0.7]]
-               [[0.4 0.7]
-                [0.6 0.7]
-                [0.6 1.3]
-                [0.4 1.3]
-                [0.4 0.7]]
                [[0.5 1.3]
                 [0.5 1.5]]]]
     [device 2 k v
+     [:rect.outline {:x (* 0.4 grid-size)
+             :y (* 0.7 grid-size)
+             :width (* 0.2 grid-size)
+             :height (* 0.6 grid-size)}]
      [lines shape]]))
 
 (defn capacitor-sym [k v]
