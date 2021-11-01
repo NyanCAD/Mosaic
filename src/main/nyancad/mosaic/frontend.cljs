@@ -46,7 +46,7 @@
 
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme #{"tetris" "eyesore"})
-(s/def ::tool #{::cursor ::eraser ::wire ::label})
+(s/def ::tool #{::cursor ::eraser ::wire})
 (s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view}))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected]
@@ -106,7 +106,7 @@
   ["P"
    "N"])
 
-(declare mosfet-sym wire-sym wire-bg wire-conn
+(declare mosfet-sym wire-sym wire-bg label-conn
          resistor-sym capacitor-sym inductor-sym
          vsource-sym isource-sym diode-sym
          circuit-shape circuit-conn circuit-sym)
@@ -190,7 +190,11 @@
              "wire" {::bg #'wire-bg
                      ::conn []
                      ::sym #'wire-sym
-                     ::props {}}})
+                     ::props {}}
+             "label" {::bg []
+                      ::conn #'label-conn
+                      ::sym (constantly nil)
+                      ::props {}}})
 
 (defn viewbox-coord [e]
   (let [^js el (js/document.getElementById "mosaic_canvas")
@@ -300,8 +304,7 @@
   (case @tool
     ::eraser (eraser-drag e)
     ::wire (wire-drag e)
-    ::cursor (cursor-drag e)
-    ::label nil))
+    ::cursor (cursor-drag e)))
 
 (defn add-wire-segment [[x y]]
   (let [name (make-name "wire")]
@@ -341,16 +344,6 @@
                             :ry (- dry (js/Math.round dry))})
             (add-wire-segment [x y])))))))
 
-(defn add-label [k coord]
-  (let [[x y] (map #(.floor js/Math %) coord)]
-    (swap! schematic
-           (fn [sch sel]
-             (let [xo (get-in sch [sel :x])
-                   yo (get-in sch [sel :y])
-                   coord [(- x xo) (- y yo)]]
-               (update-in sch [sel :labels] sconj coord)))
-           k)))
-
 (defn drag-start [k type e]
   ; skip the button press from a drag initiated from a toolbar button
   (let [uiv @ui]
@@ -368,7 +361,6 @@
                          (case @tool
                            ::cursor ::device
                            ::wire ::wire
-                           ::label nil ; you don't drag a label
                            ::eraser type)))]
           (when (not= (::dragging uiv) ::wire)
             (swap! ui (fn [ui]
@@ -381,7 +373,6 @@
                                    (first (::selected @ui))
                                    (viewbox-coord e)) ;; TODO
           [::wire ::device] (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
-          [::label ::wire] (add-label k (viewbox-coord e))
           nil)))))
 
 (defn drag-start-background [e]
@@ -568,6 +559,16 @@
                     :y1 (* (+ y 0.5) grid-size)
                     :x2 (* (+ x rx 0.5) grid-size)
                     :y2 (* (+ y ry 0.5) grid-size)}]]))
+
+(defn label-conn [key label]
+  [device 1 key label
+   [lines [[[0.5 0.5]
+            [0.3 0.3]
+            [-0.5 0.3]
+            [-0.5 0.7]
+            [0.3 0.7]
+            [0.5 0.5]]]]
+   [:text {:x (* -0.4 grid-size) :y (* 0.6 grid-size)} (:name label)]])
 
 (defn mosfet-sym [k v]
   (let [shape [[[0.5 1.5]
@@ -925,8 +926,7 @@
    [radiobuttons tool
     [[cursor ::cursor "Cursor"]
      [wire ::wire "Wire"]
-     [eraser ::eraser "Eraser"]
-     [label ::label "Label"]]]
+     [eraser ::eraser "Eraser"]]]
    [:span.sep]
    [:a {:title "Rotate selected clockwise [s]"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))}
@@ -960,6 +960,9 @@
         :on-click #(button-zoom 1)}
     [zoom-out]]
    [:span.sep]
+   [:a {:title "Add wire label [w]"
+        :on-click #(add-device "label" (viewbox-coord %))}
+    [label]]
    [:a {:title "Add resistor [r]"
         :on-click #(add-device "resistor" (viewbox-coord %))}
     "R"]
@@ -1029,6 +1032,7 @@
                 #{:n} #(add-device "nmos" (::mouse @ui))
                 #{:p} #(add-device "pmos" (::mouse @ui))
                 #{:x} #(add-device "ckt" (::mouse @ui))
+                #{:w} #(add-device "label" (::mouse @ui))
                 #{:backspace} delete-selected
                 #{:delete} delete-selected
                 #{:s}        (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))
