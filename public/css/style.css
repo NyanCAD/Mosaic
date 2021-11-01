@@ -102,7 +102,7 @@ svg.device g.transform {
 
 line.wirebb {
   stroke: transparent;
-  stroke-width: 50px;
+  stroke-width: 25px;
   fill: none;
 }
 

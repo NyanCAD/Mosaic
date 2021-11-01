@@ -453,16 +453,18 @@
         yo (delta-pos :y (:_id net) net)]
     (set (map (fn [[x y]] [(+ xo x) (+ yo y)]) (get net key)))))
 
-(defn wire-bg [name net]
-  #_(let [wires (offset-coords :wires net)]
-    [:g {:on-mouse-down #(drag-start name ::wire %)}
-     (doall (for [[x y] wires]
-              [:rect.tetris.wire {:x (* x grid-size)
-                                  :y (* y grid-size)
-                                  :key [x y]
-                                  :width grid-size
-                                  :height grid-size
-                                  :class (when (contains? (::selected @ui) name) :selected)}]))]))
+(defn wire-bg [key wire]
+  (let [name (or (:name wire) key)
+        x (delta-pos :x key wire)
+        y (delta-pos :y key wire)
+        rx (delta-pos :rx key wire)
+        ry (delta-pos :ry key wire)]
+    [:g.wire {:on-mouse-down #(drag-start key ::device %)}
+     ; TODO drag-start ::wire nodes (with reverse) 
+     [:line.wirebb {:x1 (* (+ x 0.5) grid-size)
+                    :y1 (* (+ y 0.5) grid-size)
+                    :x2 (* (+ x rx 0.5) grid-size)
+                    :y2 (* (+ y ry 0.5) grid-size)}]]))
 
 #_(defn draw-wire [x y wires]
   (let [neigbours (wire-neighbours wires x y)
@@ -554,11 +556,7 @@
      [:line.wire {:x1 (* (+ x 0.5) grid-size)
                   :y1 (* (+ y 0.5) grid-size)
                   :x2 (* (+ x rx 0.5) grid-size)
-                  :y2 (* (+ y ry 0.5) grid-size)}]
-     [:line.wirebb {:x1 (* (+ x 0.5) grid-size)
-                    :y1 (* (+ y 0.5) grid-size)
-                    :x2 (* (+ x rx 0.5) grid-size)
-                    :y2 (* (+ y ry 0.5) grid-size)}]]))
+                  :y2 (* (+ y ry 0.5) grid-size)}]]))
 
 (defn label-conn [key label]
   [device 1 key label
