@@ -72,7 +72,7 @@
 ; just so they can be "reloaded" without a full page reload
 ; maybe it's more "correct" to use an atom, but then to use schematic you'd have to @@schematic, yuk
 ; and either way they are pretty static
-(declare group dbname sync schematic impl)
+(declare group dbname sync schematic modeldb)
 
 (defonce local (pouch-atom (pouchdb "local") "local"))
 
@@ -97,14 +97,22 @@
 (defonce selected (r/cursor ui [::selected]))
 (defonce delta (r/cursor ui [::delta]))
 
+(defn ascii-patern [pattern]
+  (for [[y s] (map-indexed vector pattern)
+        [x c] (map-indexed vector s)
+        :when (not= c " ")]
+    [x y c]))
+
 (def mosfet-shape
-  [" D"
-   "GB"
-   " S"])
+  (ascii-patern
+   [" D"
+    "GB"
+    " S"]))
 
 (def twoport-shape
-  ["P"
-   "N"])
+  (ascii-patern
+   ["P"
+    "N"]))
 
 (declare mosfet-sym wire-sym wire-bg label-conn
          resistor-sym capacitor-sym inductor-sym
@@ -114,79 +122,43 @@
 (def models {"pmos" {::bg mosfet-shape
                      ::conn mosfet-shape
                      ::sym #'mosfet-sym
-                     ::props {:model :text
-                              :m :number
-                              :nf :number
-                              :w :number
-                              :l :number}}
+                     ::props {:m {:tooltip "multiplier"}
+                              :nf {:tooltip "number of fingers"}
+                              :w {:tooltip "width" :unit "meter"}
+                              :l {:tooltip "lenght" :unit "meter"}}}
              "nmos" {::bg mosfet-shape
                      ::conn mosfet-shape
                      ::sym #'mosfet-sym
-                     ::props {:model :text
-                              :m :number
-                              :nf :number
-                              :w :number
-                              :l :number}}
+                     ::props {:m {:tooltip "multiplier"}
+                              :nf {:tooltip "number of fingers"}
+                              :w {:tooltip "width" :unit "meter"}
+                              :l {:tooltip "lenght" :unit "meter"}}}
              "resistor" {::bg twoport-shape
                          ::conn twoport-shape
                          ::sym #'resistor-sym
-                         ::props {:resistance :number}}
+                         ::props {:resistance {:tooltip "Resistance" :unit "Ohm"}}}
              "capacitor" {::bg twoport-shape
                           ::conn twoport-shape
                           ::sym #'capacitor-sym
-                          ::props {:capacitance :number}}
+                          ::props {:capacitance {:tooltip "Capacitance" :unit "Farad"}}}
              "inductor" {::bg twoport-shape
                          ::conn twoport-shape
                          ::sym #'inductor-sym
-                         ::props {:inductance :number}}
+                         ::props {:inductance {:tooltip "Inductance" :unit "Henry"}}}
              "vsource" {::bg twoport-shape
                         ::conn twoport-shape
                         ::sym #'vsource-sym
-                        ::props {:dc :number
-                                 :ac :number
-                                 :type {:none {}
-                                        :sin {:offset :number
-                                              :amplitude :number
-                                              :frequency :number
-                                              :delay :number
-                                              :damping :number
-                                              :phase :number}
-                                        :pulse {:initial :number
-                                                :pulse :number
-                                                :delay :number
-                                                :rise :number
-                                                :fall :number
-                                                :width :number
-                                                :period :number
-                                                :phase :number}}}}
+                        ::props {:dc {:tooltip "DC voltage" :unit "Volt"}
+                                 :ac {:tooltip "AC voltage" :unit "Volt"}}}
              "isource" {::bg twoport-shape
                         ::conn twoport-shape
                         ::sym #'isource-sym
-                        ::props {:dc :number
-                                 :ac :number
-                                 :type {:none {}
-                                        :sin {:offset :number
-                                              :amplitude :number
-                                              :frequency :number
-                                              :delay :number
-                                              :damping :number
-                                              :phase :number}
-                                        :pulse {:initial :number
-                                                :pulse :number
-                                                :delay :number
-                                                :rise :number
-                                                :fall :number
-                                                :width :number
-                                                :period :number
-                                                :phase :number}}}}
+                        ::props {:dc {:tooltip "DC current" :unit "Ampere"}
+                                 :ac {:tooltip "AC current" :unit "Ampere"}}}
              "diode" {::bg twoport-shape
                       ::conn twoport-shape
                       ::sym #'diode-sym
-                      ::props {:model :text}}
-             "ckt" {::bg #'circuit-shape
-                    ::conn #'circuit-conn
-                    ::sym #'circuit-sym
-                    ::props {:model :text}}
+                      ::props {}}
              "wire" {::bg #'wire-bg
                      ::conn []
                      ::sym #'wire-sym
@@ -244,12 +216,7 @@
     (swap! ui assoc ::selected #{})
     (swap! schematic #(apply dissoc %1 %2) selected)))
 
-(defn remove-wire [sch selected coord]
-  #_(let [[x y] (map #(.floor js/Math %) coord)
-        xo (get-in sch [selected :x])
-        yo (get-in sch [selected :y])
-        coord [(- x xo) (- y yo)]]
-    (update-in sch [selected :wires] sdisj coord)))
+(defn remove-wire [sch selected coord])
 
 (defn drag-view [e]
   (swap! ui update ::zoom
@@ -410,18 +377,21 @@
           elements)]])
 
 (defn pattern-size [pattern]
-  (apply max (count pattern) (map count pattern)))
+  (inc (apply max (mapcat (partial take 2) pattern))))
 
 (defn draw-pattern [size pattern prim k v]
   [apply device size k v
-    (for [[y s] (map-indexed #(vector (* grid-size %1) %2) pattern)
-          [x c] (map-indexed #(vector (* grid-size %1) %2) s)
-          :when (not= c " ")]
-      ^{:key [x y]} [prim x y k v])])
+    (for [[x y c] pattern]
+      ^{:key [x y]} [prim (* x grid-size) (* y grid-size) k v])])
 
 
 (defn get-model [layer model]
-  (let [m (get-in models [(:cell model) layer])]
+  (let [m (-> models
+              (get (:cell model)
+                   {::bg #'circuit-shape
+                    ::conn #'circuit-conn
+                    ::sym #'circuit-sym})
+              (get layer))]
     ;; (assert m "no model")
     (cond
       (fn? m) m
@@ -448,11 +418,6 @@
                          (- x size) (- y size)
                          (+ x size) (- y size)])}])
 
-(defn offset-coords [key net]
-  (let [xo (delta-pos :x (:_id net) net)
-        yo (delta-pos :y (:_id net) net)]
-    (set (map (fn [[x y]] [(+ xo x) (+ yo y)]) (get net key)))))
-
 (defn wire-bg [key wire]
   (let [name (or (:name wire) key)
         x (delta-pos :x key wire)
@@ -466,20 +431,6 @@
                     :x2 (* (+ x rx 0.5) grid-size)
                     :y2 (* (+ y ry 0.5) grid-size)}]]))
 
-#_(defn draw-wire [x y wires]
-  (let [neigbours (wire-neighbours wires x y)
-        num (count neigbours)]
-    [:<>
-     (when (> num 2) [:circle.wire {:cx (* (+ x 0.5) grid-size)
-                                    :cy (* (+ y 0.5) grid-size)
-                                    :r (/ grid-size 10)}])
-     (for [[x2 y2] neigbours
-           :when (or (< x x2) (< y y2))]
-       [:line.wire {:x1 (* (+ x 0.5) grid-size)
-                    :y1 (* (+ y 0.5) grid-size)
-                    :x2 (* (+ x2 0.5) grid-size)
-                    :y2 (* (+ y2 0.5) grid-size)
-                    :key [x y x2 y2]}])]))
 
 (defn build-wire-index [sch]
   (transduce
@@ -497,33 +448,10 @@
 
 (def wire-index (r/track build-current-wire-index))
 
-;; (defn find-overlapping []
-;;   (into #{}
-;;         (comp
-;;          (map val)
-;;          (filter (fn [tiles] (< (transduce (map ::cross) + tiles) 2)))
-;;          (filter (fn [tiles] (> (count tiles) 1)))
-;;          (mapcat #(map ::key %)))
-;;         @wire-index))
-
 (defn clean-selected [ui sch]
   (update ui ::selected
           (fn [sel]
             (into #{} (filter #(contains? sch %)) sel))))
-
-;; (defn split-net [wires]
-;;   (loop [perimeter #{(first wires)}
-;;          contiguous #{}
-;;          remainder (set wires)]
-;;     (if (empty? perimeter)
-;;       (lazy-seq (cons {:cell "wire" :transform IV :x 0 :y 0 :wires contiguous}
-;;                       (if (empty? remainder)
-;;                         nil
-;;                         (split-net remainder))))
-;;       (recur
-;;        (into #{} (mapcat #(apply wire-neighbours remainder %)) perimeter)
-;;        (clojure.set/union contiguous perimeter)
-;;        (clojure.set/difference remainder perimeter)))))
 
 (defn drag-end [e]
   (let [bg? (= (.-target e) (.-currentTarget e))
@@ -664,41 +592,33 @@
      [lines shape]
      [varrow 0.5 1.1 0.2]]))
 
-(defn circuit-shape [k _v]
-  (let [model (r/cursor (.-cache schematic) [k :props :model])]
-    (fn [k v]
-      (let [ptnstr (get-in @impl [(str "implementations" sep @model) :bg] "#")
-            pattern (clojure.string/split ptnstr "\n")]
-        (draw-pattern (pattern-size pattern) pattern
-                      tetris k v)))))
+(defn circuit-shape [k v]
+  (let [model (:cell v)
+        ptnstr (get-in @modeldb [(str "models" sep model) :bg] "#")
+        pattern (clojure.string/split ptnstr "\n")]
+    (draw-pattern (pattern-size pattern) pattern
+                  tetris k v)))
 
-(defn circuit-pattern [ckt]
-  (let [model (get-in ckt [:props :model])
-        ptnstr (get-in @impl [(str "implementations" sep model) :conn] "#")]
-    (clojure.string/split ptnstr "\n")))
-
-(defn circuit-conn [k _v]
-  (let [model (r/cursor (.-cache schematic) [k :props :model])]
-    (fn [k v]
-      (let [ptnstr (get-in @impl [(str "implementations" sep @model) :bg] "#")
-            bgptn (clojure.string/split ptnstr "\n")
-            ptnstr (get-in @impl [(str "implementations" sep @model) :conn] "#")
-            pattern (clojure.string/split ptnstr "\n")]
-        (draw-pattern (pattern-size bgptn) pattern
-                      port k v)))))
+(defn circuit-conn [k v]
+  (let [model (:cell v)
+        ptnstr (get-in @modeldb [(str "models" sep model) :bg] "#")
+        bgptn (clojure.string/split ptnstr "\n")
+        ptnstr (get-in @modeldb [(str "models" sep model) :conn] "#")
+        pattern (clojure.string/split ptnstr "\n")]
+    (draw-pattern (pattern-size bgptn) pattern
+                  port k v)))
 
 (defn ckt-url [model]
   (str "?" (.toString (js/URLSearchParams. #js{:schem model :db dbname :sync sync}))))
 
-(defn circuit-sym [k _v]
-  (let [model (r/cursor (.-cache schematic) [k :props :model])]
-    (fn [k v]
-      (let [ptnstr (get-in @impl [(str "implementations" sep @model) :bg] "#")
-            pattern (clojure.string/split ptnstr "\n")]
-        [device (pattern-size pattern) k v
-         [:image {:href (get-in @impl [(str "implementations" sep @model) :sym])
-                  :on-mouse-down #(.preventDefault %) ; prevent dragging the image
-                  :on-double-click #(.assign js/window.location (ckt-url @model))}]]))))
+(defn circuit-sym [k v]
+  (let [model (:cell v)
+        ptnstr (get-in @modeldb [(str "models" sep model) :bg] "#")
+        pattern (clojure.string/split ptnstr "\n")]
+    [device (pattern-size pattern) k v
+     [:image {:href (get-in @modeldb [(str "models" sep model) :sym])
+              :on-mouse-down #(.preventDefault %) ; prevent dragging the image
+              :on-double-click #(.assign js/window.location (ckt-url model))}]]))
   
 (defn add-device [cell [x y]]
   (let [name (make-name cell)]
@@ -713,86 +633,6 @@
                        #js{:type "application/edn"})]
     (.createObjectURL js/URL blob)))
 
-(defn open-schematic [e]
-  (let [data (.text (aget (.. e -target -files) 0))]
-    (.then data (fn [data]
-                  (let [parsed (clojure.edn/read-string
-                                {:readers {'transform transform}}
-                                data)]
-                    (if (s/valid? ::schematic parsed)
-                      (swap! schematic into parsed) ; TODO rethink
-                      (js/alert (s/explain-str ::schematic parsed))))))))
-
-(defn device-ports [{gx :x gy :y tran :transform cell :cell :as dev}]
-  (let [pattern (get-in models [cell ::conn])
-        pattern (if (= cell "ckt") (circuit-pattern dev) pattern)
-        size (pattern-size pattern)
-        mid (- (/ size 2) 0.5)]
-    (into {}
-          (for [[y s] (map-indexed vector pattern)
-                [x c] (map-indexed vector s)
-                :when (not= c " ")
-                :let [p (.transformPoint (transform tran) (point (- x mid) (- y mid)))
-                      nx (+ (.-x p) mid)
-                      ny (+ (.-y p) mid)
-                      rx (.round js/Math (+ gx nx))
-                      ry (.round js/Math (+ gy ny))]]
-            [(keyword c) [rx ry]]))))
-
-(defn device-nets [wires dev]
-  (into {}
-        (map (fn [[k v]] [k (get-in wires [v 0 ::name] (make-name "NC"))]))
-        (device-ports dev)))
-
-(defn print-props [mprops dprops]
-  (apply str
-         (interpose " "
-                    (for [[prop typ] mprops
-                          :let [val (get dprops prop)]
-                          :when (and (not= prop :model) val)]
-                      (cond
-                        (map? typ) (str (name val) "("
-                                        (apply str (interpose " "
-                                                              (map #(get dprops %) (keys (get typ val)))))
-                                        ")")
-          ; coll? :checkbox?
-                        :else (str (name prop) "=" val))))))
-
-(defn spicename [n]
-  (peek (clojure.string/split n "-")))
-
-(defn ciruit-spice [sch]
-  (let [wires (build-wire-index sch)]
-    (apply str
-           (for [[key device] sch
-                 :let [loc (device-nets wires device)
-                       cell (:cell device)
-                       props (:props device)
-                       name (or (:name device) (spicename key))
-                       mprops (get-in models [cell ::props])
-                       propstr (print-props mprops props)]]
-             (case cell
-               "resistor" (str "R" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
-               "capacitor" (str "C" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
-               "inductor" (str "L" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
-               "diode" (str "D" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " (:model props) "\n")
-               "vsource" (str "V" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
-               "isource" (str "I" name " " (spicename (:P loc)) " " (spicename (:N loc)) " " propstr "\n")
-               "pmos" (str "M" name " " (spicename (:D loc)) " " (spicename (:G loc)) " " (spicename (:S loc)) " " (spicename (:B loc)) " " (:model props) " " propstr "\n")
-               "nmos" (str "M" name " " (spicename (:D loc)) " " (spicename (:G loc)) " " (spicename (:S loc)) " " (spicename (:B loc)) " " (:model props) " " propstr "\n")
-               "ckt" (str "X" name " " (clojure.string/join " " (map spicename (vals loc))) " " (:model props) "\n")
-               nil)))))
-
-(defn export-spice [sch]
-  (str "* schematic\n"
-       (ciruit-spice sch)
-       ".end\n"))
-
-(defn spice-url []
-  (let [blob (js/Blob. #js[(export-spice @schematic)]
-                       #js{:type "application/spice"})]
-    (.createObjectURL js/URL blob)))
-
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
 (def zoom-out (r/adapt-react-class icons/ZoomOut))
@@ -805,9 +645,7 @@
 (def wire (r/adapt-react-class icons/Pencil))
 (def label (r/adapt-react-class icons/Tag))
 (def delete (r/adapt-react-class icons/Trash))
-(def save (r/adapt-react-class icons/Download))
-(def open (r/adapt-react-class icons/Upload))
-(def export (r/adapt-react-class icons/FileEarmarkCode))
+(def save (r/adapt-react-class icons/Save))
 (def copyi (r/adapt-react-class icons/Files))
 (def cuti (r/adapt-react-class icons/Scissors))
 (def pastei (r/adapt-react-class icons/Clipboard))
@@ -826,44 +664,44 @@
 (defn deviceprops [key]
   (let [props (r/cursor (.-cache schematic) [key :props])
         cell (r/cursor (.-cache schematic) [key :cell])
-        name (r/cursor (.-cache schematic) [key :name])
-        model (get models @cell)]
+        name (r/cursor (.-cache schematic) [key :name])]
     (fn [key]
       [:<>
        [:h1 @cell ": " (or @name key)]
-       (when (= @cell "ckt")
-         [:a {:href (ckt-url (:model @props))} "Edit"])
        [:div.properties
-        [:label {:for "name"} "name"]
+        (when-not (contains? models @cell)
+          [:<>
+           [:a {:href (ckt-url (:model @props))} "Edit"]
+           [:label {:for "cell" :title "cell name"} "cell"]
+           [:input {:id "cell"
+                    :type "text"
+                    :default-value @cell
+                    :on-change #(swap! schematic assoc-in [key :cell] (.. % -target -value))}]])
+        [:label {:for "name" :title "Instance name"} "name"]
         [:input {:id "name"
                  :type "text"
                  :default-value @name
                  :on-change #(swap! schematic assoc-in [key :name] (.. % -target -value))}]
-        (doall (for [[prop typ] (::props model)
-                     :let [opts (cond
-                                  (map? typ) (keys typ)
-                                  (coll? typ) type)
-                           kv (if (map? typ)
-                                (get typ (get @props prop))
-                                {prop typ})]]
+        [:label {:for "model" :title "Device model"} "model"]
+        [:input {:id "model"
+                 :type "text"
+                 :default-value (:model @props)
+                 :on-change #(swap! schematic assoc-in [key :props :model] (.. % -target -value))}]
+        (doall (for [[prop meta] (::props (get models @cell))]
                  [:<> {:key prop}
-                  (when opts
-                    [:<>
-                     [:label {:for prop} prop]
-                     [:select {:id prop
-                               :on-change #(swap! schematic assoc-in [key :props prop] (keyword (.. % -target -value)))
-                               :value (get @props prop)}
-                      (doall (for [opt opts]
-                               [:option {:key opt} opt]))]])
-                  (doall (for [[prop _] kv]
-                           [:<> {:key prop}
-                            [:label {:for prop} prop]
-                            [:input {:id prop
-                                     :type "text"
-                                     :default-value (get @props prop)
-                                     :on-change #(swap! schematic assoc-in [key :props prop] (.. % -target -value))}]]))]))]])))
+                  [:label {:for prop :title (:tooltip meta)} prop]
+                  [:input {:id prop
+                           :type "text"
+                           :default-value (get @props prop)
+                           :on-change #(swap! schematic assoc-in [key :props prop] (.. % -target -value))}]]))
+        [:label {:for "spice" :title "Extra spice data"} "spice"]
+        [:input {:id "spice"
+                 :type "text"
+                 :default-value (:spice @props)
+                 :on-change #(swap! schematic assoc-in [key :props :spice] (.. % -target -value))}]]])))
+
 (defn schemprops []
-  (let [props (r/cursor (.-cache impl) [(str "implementations" sep group)])]
+  (let [props (r/cursor (.-cache modeldb) [(str "models" sep group)])]
     (fn []
       [:<>
        [:h1 group]
@@ -874,18 +712,18 @@
                     :cols 4
                     :placeholder (clojure.string/join "\n" mosfet-shape)
                     :default-value (:bg @props)
-                    :on-change #(swap! impl assoc-in [(str "implementations" sep group) :bg] (.. % -target -value))}]
+                    :on-change #(swap! modeldb assoc-in [(str "models" sep group) :bg] (.. % -target -value))}]
         [:label {:for "ports" :title "ASCII pattern for the device ports"} "ports"]
         [:textarea {:id "ports"
                     :rows 4
                     :cols 4
                     :placeholder (clojure.string/join "\n" mosfet-shape)
                     :default-value (:conn @props)
-                    :on-change #(swap! impl assoc-in [(str "implementations" sep group) :conn] (.. % -target -value))}]
+                    :on-change #(swap! modeldb assoc-in [(str "models" sep group) :conn] (.. % -target -value))}]
         [:label {:for "symurl" :title "image url for this component"} "url"]
         [:input {:id "symurl" :type "text"
                  :default-value (:sym @props)
-                 :on-change #(swap! impl assoc-in [(str "implementations" sep group) :sym] (.. % -target -value))}]]])))
+                 :on-change #(swap! modeldb assoc-in [(str "models" sep group) :sym] (.. % -target -value))}]]])))
 
 (defn copy []
   (let [sel @selected
@@ -905,18 +743,10 @@
 
 (defn menu-items []
   [:<>
-   [:a {:title "Save"
+   [:a {:title "Save Snapshot"
         :on-mouse-enter #(set! (.. % -target -href) (save-url))
         :download "schematic.edn"}
     [save]]
-   [:a {:title "Export SPICE netlist"
-        :on-mouse-enter #(set! (.. % -target -href) (spice-url))
-        :download "schematic.cir"}
-    [export]]
-   [:label {:title "Open schematic"}
-    [:input {:type "file"
-             :on-change open-schematic}]
-    [open]]
    [:select {:on-change #(swap! ui assoc ::theme (.. % -target -value))}
     [:option {:value "tetris"} "Tetris"]
     [:option {:value "eyesore"} "Classic"]]
@@ -1076,7 +906,7 @@
   ([group* dbname* sync*] ; fully specified
    (let [db (pouchdb dbname*)
          schematic* (pouch-atom db group* (r/atom {}))
-         impl* (pouch-atom db "implementations" (r/atom {}))]
+         impl* (pouch-atom db "models" (r/atom {}))]
      (when sync* ; pass nil to disable synchronization
        (.sync db (str sync* dbname*) #js{:live true, :retry true}))
      (set-validator! (.-cache schematic*)
@@ -1084,21 +914,9 @@
      (set! group group*)
      (set! dbname dbname*)
      (set! sync sync*)
-     (set! impl impl*)
+     (set! modeldb impl*)
      (set! schematic schematic*))
    (render)))
-
-(defn add-spice-callback [a f]
-  (add-watch a :spice #(f (export-spice %4)))
-  (f (export-spice @a)))
-
-(defn ^:export current-spice-callback [f]
-  (add-spice-callback schematic f))
-
-(defn ^:export spice-callback [db sch f]
-  (let [db (pouchdb db)
-        pa (pouch-atom db sch)]
-    (add-spice-callback pa f)))
 
 (defn ^:export clear []
   (swap! schematic #(apply dissoc %1 %2) (set (keys @schematic))))
