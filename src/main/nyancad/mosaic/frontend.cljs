@@ -751,7 +751,7 @@
        [:div.properties
         (when-not (contains? models @cell)
           [:<>
-           [:a {:href (ckt-url (:model @props))} "Edit"]
+           [:a {:href (ckt-url @cell)} "Edit"]
            [:label {:for "cell" :title "cell name"} "cell"]
            [:input {:id "cell"
                     :type "text"
