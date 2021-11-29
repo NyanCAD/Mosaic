@@ -22,6 +22,50 @@
   ([s val] (disj (set s) val))
   ([s val & vals] (apply disj (set s) val vals)))
 
+(defn bisect-left
+  ([a x] (bisect-left a x identity))
+  ([a x key]
+   (loop [lo 0 hi (count a)]
+     (if (< lo hi)
+       (let [mid (quot (+ lo hi) 2)]
+         (if (< (compare (key (get a mid)) x) 0)
+           (recur (inc mid) hi)
+           (recur lo mid)))
+       lo))))
+
+(defn insert [v i x] (vec (concat (subvec v 0 i) [x] (subvec v i))))
+(defn dissjoc [v i] (vec (concat (subvec v 0 i) (subvec v (inc i)))))
+
+(defn set-coord [v c]
+  (let [v (vec v)
+        kf #(subvec % 0 2)
+        xy (kf c)
+        idx (bisect-left v xy kf)
+        val (get v idx)]
+    (if (and (vector? val) (= xy (kf val)))
+      (assoc v idx c)
+      (insert v idx c))))
+
+(defn remove-coord [v c]
+  (let [v (vec v)
+        kf #(subvec % 0 2)
+        xy (kf c)
+        idx (bisect-left v xy kf)
+        val (get v idx)]
+    (println v xy idx val)
+    (if (and (vector? val) (= xy (kf val)))
+      (dissjoc v idx)
+      v)))
+
+(defn has-coord [v c]
+  (let [v (vec v)
+        kf #(subvec % 0 2)
+        xy (kf c)
+        idx (bisect-left v xy kf)
+        val (get v idx)]
+    (and (vector? val) (= xy (kf val)))))
+
+
 (defn transform [[a b c d e f]]
   (.fromMatrix js/DOMMatrixReadOnly
                #js {:a a, :b b, :c c, :d d, :e e, :f f}))
@@ -363,6 +407,7 @@
     (get v xy)))
 
 (defn device [size k v & elements]
+  (assert (js/isFinite size))
   [:svg.device {:x (* (delta-pos :x k v) grid-size)
                 :y (* (delta-pos :y k v) grid-size)
                 :width (* size grid-size)
@@ -377,7 +422,10 @@
           elements)]])
 
 (defn pattern-size [pattern]
-  (inc (apply max (mapcat (partial take 2) pattern))))
+  (let [size (inc (apply max (mapcat (partial take 2) pattern)))]
+    (if (js/isFinite size)
+      size
+      1)))
 
 (defn draw-pattern [size pattern prim k v]
   [apply device size k v
@@ -594,17 +642,14 @@
 
 (defn circuit-shape [k v]
   (let [model (:cell v)
-        ptnstr (get-in @modeldb [(str "models" sep model) :bg] "#")
-        pattern (clojure.string/split ptnstr "\n")]
+        pattern (get-in @modeldb [(str "models" sep model) :bg] [[0 0 "%"]])]
     (draw-pattern (pattern-size pattern) pattern
                   tetris k v)))
 
 (defn circuit-conn [k v]
   (let [model (:cell v)
-        ptnstr (get-in @modeldb [(str "models" sep model) :bg] "#")
-        bgptn (clojure.string/split ptnstr "\n")
-        ptnstr (get-in @modeldb [(str "models" sep model) :conn] "#")
-        pattern (clojure.string/split ptnstr "\n")]
+        bgptn (get-in @modeldb [(str "models" sep model) :bg] [[0 0 "%"]])
+        pattern (get-in @modeldb [(str "models" sep model) :conn] [[0 0 "%"]])]
     (draw-pattern (pattern-size bgptn) pattern
                   port k v)))
 
@@ -613,8 +658,7 @@
 
 (defn circuit-sym [k v]
   (let [model (:cell v)
-        ptnstr (get-in @modeldb [(str "models" sep model) :bg] "#")
-        pattern (clojure.string/split ptnstr "\n")]
+        pattern (get-in @modeldb [(str "models" sep model) :bg] [])]
     [device (pattern-size pattern) k v
      [:image {:href (get-in @modeldb [(str "models" sep model) :sym])
               :on-mouse-down #(.preventDefault %) ; prevent dragging the image
@@ -660,6 +704,28 @@
                       :checked (= name @cursor)
                       :on-change #(reset! cursor name)}]
              [:label {:for name :title disp} [icon]]]))])
+
+(defn shape-selector [key layer]
+  (let [path [(str "models" sep key) layer]
+        shape (r/cursor (.-cache modeldb) path)
+        handler nil]
+    (fn [key layer]
+      (println @shape)
+      (let [size (max 3 (inc (pattern-size @shape)))]
+        [:table
+         [:tbody
+          (doall
+           (for [y (range size)]
+             [:tr {:key y}
+              (doall
+               (for [x  (range size)]
+                 [:td {:key x}
+                  [:input {:type "checkbox"
+                           :checked (has-coord @shape [x y])
+                           :on-change (fn [^js e]
+                                        (if (.. e -target -checked)
+                                          (swap! modeldb update-in path set-coord [x y "#"])
+                                          (swap! modeldb update-in path remove-coord [x y "#"])))}]]))]))]]))))
 
 (defn deviceprops [key]
   (let [props (r/cursor (.-cache schematic) [key :props])
@@ -707,19 +773,9 @@
        [:h1 group]
        [:div.properties
         [:label {:for "background" :title "ASCII pattern for the device background"} "bg"]
-        [:textarea {:id "background"
-                    :rows 4
-                    :cols 4
-                    :placeholder (clojure.string/join "\n" mosfet-shape)
-                    :default-value (:bg @props)
-                    :on-change #(swap! modeldb assoc-in [(str "models" sep group) :bg] (.. % -target -value))}]
+        [shape-selector group :bg]
         [:label {:for "ports" :title "ASCII pattern for the device ports"} "ports"]
-        [:textarea {:id "ports"
-                    :rows 4
-                    :cols 4
-                    :placeholder (clojure.string/join "\n" mosfet-shape)
-                    :default-value (:conn @props)
-                    :on-change #(swap! modeldb assoc-in [(str "models" sep group) :conn] (.. % -target -value))}]
+        [shape-selector group :conn]
         [:label {:for "symurl" :title "image url for this component"} "url"]
         [:input {:id "symurl" :type "text"
                  :default-value (:sym @props)
