@@ -707,8 +707,7 @@
 
 (defn shape-selector [key layer]
   (let [path [(str "models" sep key) layer]
-        shape (r/cursor (.-cache modeldb) path)
-        handler nil]
+        shape (r/cursor (.-cache modeldb) path)]
     (fn [key layer]
       (println @shape)
       (let [size (max 3 (inc (pattern-size @shape)))]
@@ -718,14 +717,29 @@
            (for [y (range size)]
              [:tr {:key y}
               (doall
-               (for [x  (range size)]
+               (for [x  (range size)
+                     :let [handler (fn [^js e]
+                                     (if (.. e -target -checked)
+                                       (swap! modeldb update-in path set-coord [x y "#"])
+                                       (swap! modeldb update-in path remove-coord [x y "#"])))]]
                  [:td {:key x}
                   [:input {:type "checkbox"
                            :checked (has-coord @shape [x y])
-                           :on-change (fn [^js e]
-                                        (if (.. e -target -checked)
-                                          (swap! modeldb update-in path set-coord [x y "#"])
-                                          (swap! modeldb update-in path remove-coord [x y "#"])))}]]))]))]]))))
+                           :on-change handler}]]))]))]]))))
+
+(defn port-namer [key]
+  (let [path [(str "models" sep key) :conn]
+        shape (r/cursor (.-cache modeldb) path)]
+    (fn [key]
+      [:<>
+       (for [[x y name] @shape
+             :let [handler #(swap! modeldb update-in path set-coord [x y (.. % -target -value)])]]
+         [:<> {:key [x y]}
+          [:label {:for (str "port" x ":" y) :title "Port name"} x "/" y]
+          [:input {:id (str "port" x ":" y)
+                   :type "text"
+                   :default-value name
+                   :on-change handler}]])])))
 
 (defn deviceprops [key]
   (let [props (r/cursor (.-cache schematic) [key :props])
@@ -776,6 +790,7 @@
         [shape-selector group :bg]
         [:label {:for "ports" :title "ASCII pattern for the device ports"} "ports"]
         [shape-selector group :conn]
+        [port-namer group]
         [:label {:for "symurl" :title "image url for this component"} "url"]
         [:input {:id "symurl" :type "text"
                  :default-value (:sym @props)
