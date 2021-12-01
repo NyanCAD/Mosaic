@@ -653,16 +653,17 @@
     (draw-pattern (pattern-size bgptn) pattern
                   port k v)))
 
-(defn ckt-url [model]
-  (str "?" (.toString (js/URLSearchParams. #js{:schem model :db dbname :sync sync}))))
+(defn ckt-url [cell model]
+  (str "?" (.toString (js/URLSearchParams. #js{:schem (str cell "$" model) :db dbname :sync sync}))))
 
 (defn circuit-sym [k v]
-  (let [model (:cell v)
-        pattern (get-in @modeldb [(str "models" sep model) :bg] [])]
+  (let [cell (:cell v)
+        model (get-in v [:props :model]) 
+        pattern (get-in @modeldb [(str "models" sep cell) :bg] [])]
     [device (pattern-size pattern) k v
-     [:image {:href (get-in @modeldb [(str "models" sep model) :sym])
+     [:image {:href (get-in @modeldb [(str "models" sep cell) :sym])
               :on-mouse-down #(.preventDefault %) ; prevent dragging the image
-              :on-double-click #(.assign js/window.location (ckt-url model))}]]))
+              :on-double-click #(.assign js/window.location (ckt-url cell model))}]]))
   
 (defn add-device [cell [x y]]
   (let [name (make-name cell)]
@@ -751,7 +752,7 @@
        [:div.properties
         (when-not (contains? models @cell)
           [:<>
-           [:a {:href (ckt-url @cell)} "Edit"]
+           [:a {:href (ckt-url @cell (:model @props))} "Edit"]
            [:label {:for "cell" :title "cell name"} "cell"]
            [:input {:id "cell"
                     :type "text"
