@@ -18,10 +18,10 @@ jobs:
         run: |
           npm install
           npx shadow-cljs release frontend
-      - name: copy to pages
-        run: |
-          cp -r public app
-          git checkout gh-pages
-          git add app
-          git commit -m "publish app"
-          git push
+
+      - name: Deploy 🚀
+        uses: JamesIves/github-pages-deploy-action@4.1.7
+        with:
+          branch: gh-pages
+          folder: public
+          target-folder: app
