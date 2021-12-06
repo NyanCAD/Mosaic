@@ -1,12 +1,12 @@
 ## Modern schematic entry and simulation
 
-Mosaic is a tool for designing and simulating analog integrated circuit designs.
+Mosaic is a tool for designing and simulating analog integrated circuit designs. I focuses on a modern, easy to use interface, instant design feedback, and design reuse, verification, and automation.
 
-![demo](mosaic.gif)
+[Try it out](/Mosaic/app)
 
-### Current status
+![demo](jupyter.gif)
 
-There is not much to see here yet. Behind the scenes there is a lot of design work going on. A few minor visible outputs of that are
+### Related tools
 
-* A [podcast](https://anchor.fm/pepijn-de-vos0) where I talk with IC designers. (the majority of the interviews so far were in private)
 * [SimServer](https://github.com/NyanCAD/SimServer), an RPC API for streaming data from Ngspice, Xyce, CXXRTL & more
+* [Pyttoresque](https://github.com/NyanCAD/Pyttoresque), a Python library for doing simulation and analysis
