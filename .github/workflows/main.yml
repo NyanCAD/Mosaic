@@ -18,3 +18,10 @@ jobs:
         run: |
           npm install
           npx shadow-cljs release frontend
+      - name: copy to pages
+        run: |
+          cp -r public app
+          git checkout gh-pages
+          git add app
+          git commit -m "publish app"
+          git push
