@@ -7,5 +7,13 @@
   background-image: url("/Mosaic/Mosaic Logo Designs/Final Designs/Mosiac Logo.png");
   background-repeat: no-repeat;
   background-position: center;
-  background-color: #0e1a32
+  background-color: #0e1a32;
+}
+
+h1#project_title, h2#project_tagline {
+  visibility: hidden;
+}
+
+#footer_wrap.outer {
+    background-color: #0e1a32;
 }
