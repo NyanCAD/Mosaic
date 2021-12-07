@@ -7,9 +7,11 @@
             [cljs.core.async :refer [go <!]]
             clojure.edn
             clojure.set
-            clojure.string))
+            clojure.string
+            goog.functions))
 
 (def grid-size 50)
+(def debounce #(goog.functions/debounce % 1000))
 
 (defn sign [n] (if (> n 0) 1 -1))
 
@@ -734,7 +736,7 @@
     (fn [key]
       [:<>
        (for [[x y name] @shape
-             :let [handler #(swap! modeldb update-in path set-coord [x y (.. % -target -value)])]]
+             :let [handler (debounce #(swap! modeldb update-in path set-coord [x y (.. % -target -value)]))]]
          [:<> {:key [x y]}
           [:label {:for (str "port" x ":" y) :title "Port name"} x "/" y]
           [:input {:id (str "port" x ":" y)
@@ -757,29 +759,29 @@
            [:input {:id "cell"
                     :type "text"
                     :default-value @cell
-                    :on-change #(swap! schematic assoc-in [key :cell] (.. % -target -value))}]])
+                    :on-change (debounce #(swap! schematic assoc-in [key :cell] (.. % -target -value)))}]])
         [:label {:for "name" :title "Instance name"} "name"]
         [:input {:id "name"
                  :type "text"
                  :default-value @name
-                 :on-change #(swap! schematic assoc-in [key :name] (.. % -target -value))}]
+                 :on-change (debounce #(swap! schematic assoc-in [key :name] (.. % -target -value)))}]
         [:label {:for "model" :title "Device model"} "model"]
         [:input {:id "model"
                  :type "text"
                  :default-value (:model @props)
-                 :on-change #(swap! schematic assoc-in [key :props :model] (.. % -target -value))}]
+                 :on-change (debounce #(swap! schematic assoc-in [key :props :model] (.. % -target -value)))}]
         (doall (for [[prop meta] (::props (get models @cell))]
                  [:<> {:key prop}
                   [:label {:for prop :title (:tooltip meta)} prop]
                   [:input {:id prop
                            :type "text"
                            :default-value (get @props prop)
-                           :on-change #(swap! schematic assoc-in [key :props prop] (.. % -target -value))}]]))
+                           :on-change (debounce #(swap! schematic assoc-in [key :props prop] (.. % -target -value)))}]]))
         [:label {:for "spice" :title "Extra spice data"} "spice"]
         [:input {:id "spice"
                  :type "text"
                  :default-value (:spice @props)
-                 :on-change #(swap! schematic assoc-in [key :props :spice] (.. % -target -value))}]]])))
+                 :on-change (debounce #(swap! schematic assoc-in [key :props :spice] (.. % -target -value)))}]]])))
 
 (defn schemprops []
   (let [props (r/cursor (.-cache modeldb) [(str "models" sep group)])]
@@ -795,7 +797,7 @@
         [:label {:for "symurl" :title "image url for this component"} "url"]
         [:input {:id "symurl" :type "text"
                  :default-value (:sym @props)
-                 :on-change #(swap! modeldb assoc-in [(str "models" sep group) :sym] (.. % -target -value))}]]])))
+                 :on-blur #(swap! modeldb assoc-in [(str "models" sep group) :sym] (.. % -target -value))}]]])))
 
 (defn copy []
   (let [sel @selected
