@@ -160,7 +160,7 @@
    ["P"
     "N"]))
 
-(declare mosfet-sym wire-sym wire-bg label-conn
+(declare mosfet-sym wire-sym wire-bg label-sym
          resistor-sym capacitor-sym inductor-sym
          vsource-sym isource-sym diode-sym
          circuit-shape circuit-conn circuit-sym)
@@ -210,9 +210,27 @@
                      ::sym #'wire-sym
                      ::props {}}
              "label" {::bg []
-                      ::conn #'label-conn
-                      ::sym (constantly nil)
+                      ::conn []
+                      ::sym #'label-sym
                       ::props {}}})
+
+(defn build-wire-index [sch]
+  (reduce
+   (fn [idx {:keys [:_id :x :y :rx :ry :cell]}]
+     (cond
+       (= cell "wire") (-> idx
+                           (update [x y] conj _id)
+                           (update [(+ x rx) (+ y ry)] conj _id))
+       (contains? models cell) (reduce
+                                (fn [idx [rx ry _]] (update idx [(+ x rx) (+ y ry)] conj _id))
+                                idx (get-in models [cell ::conn]))
+       :else idx)) ;TODO custom components
+   {} (vals sch)))
+
+(defn build-current-wire-index []
+  (build-wire-index @schematic))
+
+(def wire-index (r/track build-current-wire-index))
 
 (defn viewbox-coord [e]
   (let [^js el (js/document.getElementById "mosaic_canvas")
@@ -337,25 +355,30 @@
           {drx :rx dry :ry} @delta
           dev (get @schematic selected)
           x (js/Math.round (+ (:x dev) (:rx dev) drx)) ; use end pos of previous wire instead
-          y (js/Math.round (+ (:y dev) (:ry dev) dry))]
+          y (js/Math.round (+ (:y dev) (:ry dev) dry))
+          on-port (contains? @wire-index [x y])
+          same-tile (and (< (js/Math.abs drx) 0.5) (< (js/Math.abs dry) 0.5))]
       (go
         (<! (swap! schematic update selected
                    (fn [{rx :rx ry :ry :as dev}]
                      (assoc dev
                             :rx (js/Math.round (+ rx drx))
                             :ry (js/Math.round (+ ry dry))))))
-        (if (and (< (js/Math.abs drx) 0.5) (< (js/Math.abs dry) 0.5))
-          (do
-            (delete-selected)
-            (swap! ui assoc ; the dragged wire stayed at the same tile, exit
-                   ::dragging nil
-                   ::delta {:x 0 :y 0 :rx 0 :ry 0}))
-          (do
-            (swap! ui assoc ; add the rounding error to delta
-                   ::delta {:x 0 :y 0
-                            :rx (- drx (js/Math.round drx))
-                            :ry (- dry (js/Math.round dry))})
-            (add-wire-segment [x y])))))))
+        (cond
+          same-tile (do
+                      (delete-selected)
+                      (swap! ui assoc ; the dragged wire stayed at the same tile, exit
+                             ::dragging nil
+                             ::delta {:x 0 :y 0 :rx 0 :ry 0}))
+          on-port (swap! ui assoc ; the wire landed on a port or wire, exit
+                         ::dragging nil
+                         ::delta {:x 0 :y 0 :rx 0 :ry 0})
+          :else (do
+                  (swap! ui assoc ; add the rounding error to delta
+                         ::delta {:x 0 :y 0
+                                  :rx (- drx (js/Math.round drx))
+                                  :ry (- dry (js/Math.round dry))})
+                  (add-wire-segment [x y])))))))
 
 (defn drag-start [k type e]
   ; skip the button press from a drag initiated from a toolbar button
@@ -482,22 +505,6 @@
                     :y2 (* (+ y ry 0.5) grid-size)}]]))
 
 
-(defn build-wire-index [sch]
-  (transduce
-   (filter #(= (:cell %) "wire"))
-   (completing
-    (fn [idx {:keys [:_id :x :y :rx :ry]}]
-      (println _id)
-      (-> idx
-          (update [x y] conj _id)
-          (update [(+ x rx) (+ y ry)] conj _id))))
-   {} (vals sch)))
-
-(defn build-current-wire-index []
-  (build-wire-index @schematic))
-
-(def wire-index (r/track build-current-wire-index))
-
 (defn clean-selected [ui sch]
   (update ui ::selected
           (fn [sel]
@@ -536,7 +543,7 @@
                   :x2 (* (+ x rx 0.5) grid-size)
                   :y2 (* (+ y ry 0.5) grid-size)}]]))
 
-(defn label-conn [key label]
+(defn label-sym [key label]
   [device 1 key label
    [lines [[[0.5 0.5]
             [0.3 0.3]
