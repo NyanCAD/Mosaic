@@ -8,6 +8,7 @@
             clojure.edn
             clojure.set
             clojure.string
+            [clojure.zip :as zip]
             goog.functions))
 
 (def grid-size 50)
@@ -142,6 +143,39 @@
 (defonce tool (r/cursor ui [::tool]))
 (defonce selected (r/cursor ui [::selected]))
 (defonce delta (r/cursor ui [::delta]))
+
+(defonce undotree (atom (zip/seq-zip (list nil))))
+
+(defn undo-state [ut]
+  (some-> ut zip/down zip/rightmost zip/node))
+
+(defn newdo [ut state]
+  (swap! ut #(-> %
+                 (zip/insert-child (list state))
+                 zip/down))
+  (undo-state @ut))
+
+(defn undo [ut]
+  (swap! ut #(if (undo-state (zip/up %)) (zip/up %) %))
+  (undo-state @ut))
+
+(defn redo [ut]
+  (swap! ut #(if (undo-state (zip/down %)) (zip/down %) %))
+  (undo-state @ut))
+
+(defn restore [state]
+  (go
+    (remove-watch schematic ::undo)
+    (<! (swap! schematic into state)) ; TODO delete documents
+    (add-watch schematic ::undo #(newdo undotree %4))))
+
+(defn undo-schematic []
+  (when-let [st (undo undotree)]
+    (restore st)))
+
+(defn redo-schematic []
+  (when-let [st (redo undotree)]
+    (restore st)))
 
 (defn ascii-patern [pattern]
   (for [[y s] (map-indexed vector pattern)
@@ -695,6 +729,8 @@
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
 (def zoom-out (r/adapt-react-class icons/ZoomOut))
+(def redoi (r/adapt-react-class icons/Arrow90degRight))
+(def undoi (r/adapt-react-class icons/Arrow90degLeft))
 (def rotatecw (r/adapt-react-class icons/ArrowClockwise))
 (def rotateccw (r/adapt-react-class icons/ArrowCounterclockwise))
 (def mirror-vertical (r/adapt-react-class icons/SymmetryVertical))
@@ -872,6 +908,12 @@
    [:a {:title "zoom out [scroll wheel/pinch]"
         :on-click #(button-zoom 1)}
     [zoom-out]]
+   [:a {:title "undo [ctrl+z]"
+        :on-click undo-schematic}
+    [undoi]]
+   [:a {:title "redo [ctrl+shift+z]"
+        :on-click redo-schematic}
+    [redoi]]
    [:span.sep]
    [:a {:title "Add wire label [w]"
         :on-click #(add-device "label" (viewbox-coord %))}
@@ -954,7 +996,9 @@
                 #{:f}        (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipX %)))
                 #{:control :c} copy
                 #{:control :x} cut
-                #{:control :v} paste})
+                #{:control :v} paste
+                #{:control :z} undo-schematic
+                #{:control :shift :z} redo-schematic})
 
 (defn keyset [e]
   (letfn [(conj-when [s e c] (if c (conj s e) s))]
@@ -995,6 +1039,7 @@
        (.sync db (str sync* dbname*) #js{:live true, :retry true}))
      (set-validator! (.-cache schematic*)
                      #(or (s/valid? ::schematic %) (.log js/console (pr-str %) (s/explain-str ::schematic %))))
+     (add-watch schematic* ::undo #(newdo undotree %4))
      (set! group group*)
      (set! dbname dbname*)
      (set! sync sync*)
