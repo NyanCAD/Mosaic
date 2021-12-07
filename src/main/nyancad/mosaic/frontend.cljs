@@ -118,7 +118,7 @@
 ; just so they can be "reloaded" without a full page reload
 ; maybe it's more "correct" to use an atom, but then to use schematic you'd have to @@schematic, yuk
 ; and either way they are pretty static
-(declare group dbname sync schematic modeldb)
+(declare group dbname sync schematic modeldb snapshots)
 
 (defonce local (pouch-atom (pouchdb "local") "local"))
 
@@ -680,6 +680,11 @@
                        #js{:type "application/edn"})]
     (.createObjectURL js/URL blob)))
 
+(defn snapshot []
+  (swap! snapshots assoc (str "snapshots" sep group "#" (.toISOString (js/Date. )))
+         {:schematic @schematic
+          :preview (.-outerHTML (js/document.getElementById "mosaic_canvas"))}))
+
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
 (def zoom-out (r/adapt-react-class icons/ZoomOut))
@@ -818,8 +823,7 @@
 (defn menu-items []
   [:<>
    [:a {:title "Save Snapshot"
-        :on-mouse-enter #(set! (.. % -target -href) (save-url))
-        :download "schematic.edn"}
+        :on-click snapshot}
     [save]]
    [:select {:on-change #(swap! ui assoc ::theme (.. % -target -value))}
     [:option {:value "tetris"} "Tetris"]
@@ -979,8 +983,7 @@
    (init group dbname default-sync))
   ([group* dbname* sync*] ; fully specified
    (let [db (pouchdb dbname*)
-         schematic* (pouch-atom db group* (r/atom {}))
-         impl* (pouch-atom db "models" (r/atom {}))]
+         schematic* (pouch-atom db group* (r/atom {}))]
      (when sync* ; pass nil to disable synchronization
        (.sync db (str sync* dbname*) #js{:live true, :retry true}))
      (set-validator! (.-cache schematic*)
@@ -988,7 +991,8 @@
      (set! group group*)
      (set! dbname dbname*)
      (set! sync sync*)
-     (set! modeldb impl*)
+     (set! modeldb (pouch-atom db "models" (r/atom {})))
+     (set! snapshots (pouch-atom db "snapshots" (r/atom {})))
      (set! schematic schematic*))
    (render)))
 
