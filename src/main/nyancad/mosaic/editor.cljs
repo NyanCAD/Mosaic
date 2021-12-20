@@ -1,119 +1,18 @@
-(ns nyancad.mosaic.frontend
+(ns nyancad.mosaic.editor
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
             [nyancad.hipflask :refer [pouch-atom pouchdb update-keys sep]]
-            [react-bootstrap-icons :as icons]
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go <!]]
             clojure.edn
             clojure.set
             clojure.string
-            [clojure.zip :as zip]
-            goog.functions))
+            goog.functions
+            [nyancad.mosaic.common :as cm
+             :refer [grid-size debounce sconj set-coord remove-coord has-coord
+                     point transform transform-vec
+                     mosfet-shape twoport-shape]]))
 
-(def grid-size 50)
-(def debounce #(goog.functions/debounce % 1000))
-
-(defn sign [n] (if (> n 0) 1 -1))
-
-; like conj but coerces to set
-(defn sconj
-  ([s val] (conj (set s) val))
-  ([s val & vals] (apply conj (set s) val vals)))
-
-(defn sdisj
-  ([s val] (disj (set s) val))
-  ([s val & vals] (apply disj (set s) val vals)))
-
-(defn bisect-left
-  ([a x] (bisect-left a x identity))
-  ([a x key]
-   (loop [lo 0 hi (count a)]
-     (if (< lo hi)
-       (let [mid (quot (+ lo hi) 2)]
-         (if (< (compare (key (get a mid)) x) 0)
-           (recur (inc mid) hi)
-           (recur lo mid)))
-       lo))))
-
-(defn insert [v i x] (vec (concat (subvec v 0 i) [x] (subvec v i))))
-(defn dissjoc [v i] (vec (concat (subvec v 0 i) (subvec v (inc i)))))
-
-(defn set-coord [v c]
-  (let [v (vec v)
-        kf #(subvec % 0 2)
-        xy (kf c)
-        idx (bisect-left v xy kf)
-        val (get v idx)]
-    (if (and (vector? val) (= xy (kf val)))
-      (assoc v idx c)
-      (insert v idx c))))
-
-(defn remove-coord [v c]
-  (let [v (vec v)
-        kf #(subvec % 0 2)
-        xy (kf c)
-        idx (bisect-left v xy kf)
-        val (get v idx)]
-    (println v xy idx val)
-    (if (and (vector? val) (= xy (kf val)))
-      (dissjoc v idx)
-      v)))
-
-(defn has-coord [v c]
-  (let [v (vec v)
-        kf #(subvec % 0 2)
-        xy (kf c)
-        idx (bisect-left v xy kf)
-        val (get v idx)]
-    (and (vector? val) (= xy (kf val)))))
-
-
-(defn transform [[a b c d e f]]
-  (.fromMatrix js/DOMMatrixReadOnly
-               #js {:a a, :b b, :c c, :d d, :e e, :f f}))
-(defn transform-vec [obj]
-  [(.-a obj) (.-b obj) (.-c obj) (.-d obj) (.-e obj) (.-f obj)])
-(defn point [x y] (.fromPoint js/DOMPointReadOnly (clj->js {:x x :y y})))
-(def I (js/DOMMatrixReadOnly.))
-(def IV (transform-vec I))
-
-(extend-type js/DOMMatrixReadOnly
-  IPrintWithWriter
-  (-pr-writer [obj writer _opts]
-    (write-all writer
-               "#transform ["
-               (.-a obj) " "
-               (.-b obj) " "
-               (.-c obj) " "
-               (.-d obj) " "
-               (.-e obj) " "
-               (.-f obj)
-               "]")))
-
-(s/def ::zoom (s/coll-of number? :count 4))
-(s/def ::theme #{"tetris" "eyesore"})
-(s/def ::tool #{::cursor ::eraser ::wire})
-(s/def ::selected (s/and set? (s/coll-of string?)))
-(s/def ::dragging (s/nilable #{::wire ::device ::view}))
-(s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected]
-                    :opt [::dragging]))
-
-(s/def ::x number?)
-(s/def ::y number?)
-(s/def ::name string?)
-(s/def ::transform (s/coll-of number? :count 6))
-(s/def ::cell string?)
-(s/def ::coord (s/tuple number? number?))
-(s/def ::wires (s/and set? (s/coll-of ::coord)))
-
-(defmulti cell-type :cell)
-(defmethod cell-type "wire" [_]
-  (s/keys :req-un [::rx ::ry ::cell ::x ::y]))
-(defmethod cell-type :default [_]
-  (s/keys :req-un [::cell ::transform ::x ::y]))
-(s/def ::device (s/multi-spec cell-type ::cell))
-(s/def ::schematic (s/map-of string? ::device))
 
 ; these are set on init
 ; just so they can be "reloaded" without a full page reload
@@ -136,6 +35,14 @@
                      ::delta {:x 0 :y 0 :rx 0 :ry 0}
                      ::mouse [0 0]}))
 
+(s/def ::zoom (s/coll-of number? :count 4))
+(s/def ::theme #{"tetris" "eyesore"})
+(s/def ::tool #{::cursor ::eraser ::wire})
+(s/def ::selected (s/and set? (s/coll-of string?)))
+(s/def ::dragging (s/nilable #{::wire ::device ::view}))
+(s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected]
+                    :opt [::dragging]))
+
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
 
 (defonce zoom (r/cursor ui [::zoom]))
@@ -144,55 +51,21 @@
 (defonce selected (r/cursor ui [::selected]))
 (defonce delta (r/cursor ui [::delta]))
 
-(defonce undotree (atom (zip/seq-zip (list nil))))
-
-(defn undo-state [ut]
-  (some-> ut zip/down zip/rightmost zip/node))
-
-(defn newdo [ut state]
-  (swap! ut #(-> %
-                 (zip/insert-child (list state))
-                 zip/down))
-  (undo-state @ut))
-
-(defn undo [ut]
-  (swap! ut #(if (undo-state (zip/up %)) (zip/up %) %))
-  (undo-state @ut))
-
-(defn redo [ut]
-  (swap! ut #(if (undo-state (zip/down %)) (zip/down %) %))
-  (undo-state @ut))
+(defonce undotree (cm/newundotree))
 
 (defn restore [state]
   (go
     (remove-watch schematic ::undo)
     (<! (swap! schematic into state)) ; TODO delete documents
-    (add-watch schematic ::undo #(newdo undotree %4))))
+    (add-watch schematic ::undo #(cm/newdo undotree %4))))
 
 (defn undo-schematic []
-  (when-let [st (undo undotree)]
+  (when-let [st (cm/undo undotree)]
     (restore st)))
 
 (defn redo-schematic []
-  (when-let [st (redo undotree)]
+  (when-let [st (cm/redo undotree)]
     (restore st)))
-
-(defn ascii-patern [pattern]
-  (for [[y s] (map-indexed vector pattern)
-        [x c] (map-indexed vector s)
-        :when (not= c " ")]
-    [x y c]))
-
-(def mosfet-shape
-  (ascii-patern
-   [" D"
-    "GB"
-    " S"]))
-
-(def twoport-shape
-  (ascii-patern
-   ["P"
-    "N"]))
 
 (declare mosfet-sym wire-sym wire-bg label-sym
          resistor-sym capacitor-sym inductor-sym
@@ -296,7 +169,7 @@
 
 (defn scroll-zoom [e]
   (let [[x y] (viewbox-coord e)]
-    (zoom-schematic (sign (.-deltaY e)) (* x grid-size) (* y grid-size))))
+    (zoom-schematic (cm/sign (.-deltaY e)) (* x grid-size) (* y grid-size))))
 
 (defn button-zoom [dir]
   (let [[x y w h] (::zoom @ui)]
@@ -477,7 +350,7 @@
     (into [:g.transform
            {:width (* size grid-size)
             :height (* size grid-size)
-            :transform (.toString (transform (:transform v IV)))}]
+            :transform (.toString (transform (:transform v cm/IV)))}]
           elements)]])
 
 (defn pattern-size [pattern]
@@ -710,7 +583,7 @@
   
 (defn add-device [cell [x y]]
   (let [name (make-name cell)]
-    (swap! schematic assoc name {:transform IV, :cell cell :x x :y y})
+    (swap! schematic assoc name {:transform cm/IV, :cell cell :x x :y y})
     (swap! ui assoc
            ::tool ::cursor
            ::dragging ::device
@@ -724,37 +597,11 @@
 (defn snapshot []
   (swap! snapshots assoc (str "snapshots" sep group "#" (.toISOString (js/Date. )))
          {:schematic @schematic
-          :preview (.-outerHTML (js/document.getElementById "mosaic_canvas"))}))
-
-; icons
-(def zoom-in (r/adapt-react-class icons/ZoomIn))
-(def zoom-out (r/adapt-react-class icons/ZoomOut))
-(def redoi (r/adapt-react-class icons/Arrow90degRight))
-(def undoi (r/adapt-react-class icons/Arrow90degLeft))
-(def rotatecw (r/adapt-react-class icons/ArrowClockwise))
-(def rotateccw (r/adapt-react-class icons/ArrowCounterclockwise))
-(def mirror-vertical (r/adapt-react-class icons/SymmetryVertical))
-(def mirror-horizontal (r/adapt-react-class icons/SymmetryHorizontal))
-(def cursor (r/adapt-react-class icons/HandIndex))
-(def eraser (r/adapt-react-class icons/Eraser))
-(def wire (r/adapt-react-class icons/Pencil))
-(def label (r/adapt-react-class icons/Tag))
-(def delete (r/adapt-react-class icons/Trash))
-(def save (r/adapt-react-class icons/Save))
-(def copyi (r/adapt-react-class icons/Files))
-(def cuti (r/adapt-react-class icons/Scissors))
-(def pastei (r/adapt-react-class icons/Clipboard))
-
-(defn radiobuttons [cursor m]
-  [:<>
-   (doall (for [[icon name disp] m]
-            [:<> {:key name}
-             [:input {:type "radio"
-                      :id name
-                      :value name
-                      :checked (= name @cursor)
-                      :on-change #(reset! cursor name)}]
-             [:label {:for name :title disp} [icon]]]))])
+          :_attachments {"preview.svg" {
+                          :content_type "image/svg+xml"
+                          :data (js/btoa (str
+                                          "<?xml-stylesheet type=\"text/css\" href=\"https://nyancad.github.io/Mosaic/app/css/style.css\" ?>"
+                                          (.-outerHTML (js/document.getElementById "mosaic_canvas"))))}}}))
 
 (defn shape-selector [key layer]
   (let [path [(str "models" sep key) layer]
@@ -867,57 +714,57 @@
   [:<>
    [:a {:title "Save Snapshot"
         :on-click snapshot}
-    [save]]
+    [cm/save]]
    [:select {:on-change #(swap! ui assoc ::theme (.. % -target -value))}
     [:option {:value "tetris"} "Tetris"]
     [:option {:value "eyesore"} "Classic"]]
    [:span.sep]
-   [radiobuttons tool
-    [[cursor ::cursor "Cursor"]
-     [wire ::wire "Wire"]
-     [eraser ::eraser "Eraser"]]]
+   [cm/radiobuttons tool
+    [[cm/cursor ::cursor "Cursor"]
+     [cm/wire ::wire "Wire"]
+     [cm/eraser ::eraser "Eraser"]]]
    [:span.sep]
    [:a {:title "Rotate selected clockwise [s]"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))}
-    [rotatecw]]
+    [cm/rotatecw]]
    [:a {:title "Rotate selected counter-clockwise [shift+s]"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % -90)))}
-    [rotateccw]]
+    [cm/rotateccw]]
    [:a {:title "Mirror selected horizontal [shift+f]"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipY %)))}
-    [mirror-horizontal]]
+    [cm/mirror-horizontal]]
    [:a {:title "Mirror selected vertical [f]"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipX %)))}
-    [mirror-vertical]]
+    [cm/mirror-vertical]]
    [:a {:title "Delete selected [del]"
         :on-click (fn [_] (delete-selected))}
-    [delete]]
+    [cm/delete]]
    [:a {:title "Copy selected [ctrl+c]"
         :on-click (fn [_] (copy))}
-    [copyi]]
+    [cm/copyi]]
    [:a {:title "Cut selected [ctrl+x]"
         :on-click (fn [_] (cut))}
-    [cuti]]
+    [cm/cuti]]
    [:a {:title "Paste [ctrl+v]"
         :on-click (fn [_] (paste))}
-    [pastei]]
+    [cm/pastei]]
    [:span.sep]
    [:a {:title "zoom in [scroll wheel/pinch]"
         :on-click #(button-zoom -1)}
-    [zoom-in]]
+    [cm/zoom-in]]
    [:a {:title "zoom out [scroll wheel/pinch]"
         :on-click #(button-zoom 1)}
-    [zoom-out]]
+    [cm/zoom-out]]
    [:a {:title "undo [ctrl+z]"
         :on-click undo-schematic}
-    [undoi]]
+    [cm/undoi]]
    [:a {:title "redo [ctrl+shift+z]"
         :on-click redo-schematic}
-    [redoi]]
+    [cm/redoi]]
    [:span.sep]
    [:a {:title "Add wire label [w]"
         :on-click #(add-device "label" (viewbox-coord %))}
-    [label]]
+    [cm/label]]
    [:a {:title "Add resistor [r]"
         :on-click #(add-device "resistor" (viewbox-coord %))}
     "R"]
@@ -971,6 +818,7 @@
    [:svg#mosaic_canvas {:xmlns "http://www.w3.org/2000/svg"
                         :height "100%"
                         :width "100%"
+                        :class @theme ; for export
                         :view-box @zoom
                         :on-wheel scroll-zoom
                         :on-mouse-down drag-start-background
@@ -1000,46 +848,29 @@
                 #{:control :z} undo-schematic
                 #{:control :shift :z} redo-schematic})
 
-(defn keyset [e]
-  (letfn [(conj-when [s e c] (if c (conj s e) s))]
-    (-> #{(keyword (clojure.string/lower-case (.-key e)))}
-        (conj-when :control (.-ctrlKey e))
-        (conj-when :alt (.-altKey e))
-        (conj-when :shift (.-shiftKey e))
-        (conj-when :os (.-metaKey e))
-        )))
-
-(defn keyboard-shortcuts [e]
-  (when-not (or ;; the user is typing, ignore
-             (= "INPUT" (.. e -target -tagName))
-             (= "TEXTAREA" (.. e -target -tagName)))
-    (println (keyset e))
-    ((get shortcuts (keyset e) #()))))
-
-(defn ^:dev/after-load ^:export render []
+(defn ^:dev/after-load ^:export  render []
   ;; (js/document.addEventListener "keyup" keyboard-shortcuts)
-  (set! js/document.onkeyup keyboard-shortcuts)
+  (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (rd/render [schematic-ui]
              (.getElementById js/document "mosaic_root")))
 
-(def default-sync "https://c6be5bcc-59a8-492d-91fd-59acc17fef02-bluemix.cloudantnosqldb.appdomain.cloud/")
 (defn ^:export init
   ([] ; get the params from global variables or url parameters
    (let [params (js/URLSearchParams. js/window.location.search)
          group (or js/window.schem (.get params "schem") "myschem")
          dbname (or js/window.db (.get params "db") "schematics")
-         sync (or js/window.sync (.get params "sync") default-sync)]
+         sync (or js/window.sync (.get params "sync") cm/default-sync)]
      (init group dbname sync)))
   ([group dbname] ; default sync
-   (init group dbname default-sync))
+   (init group dbname cm/default-sync))
   ([group* dbname* sync*] ; fully specified
    (let [db (pouchdb dbname*)
          schematic* (pouch-atom db group* (r/atom {}))]
-     (when sync* ; pass nil to disable synchronization
-       (.sync db (str sync* dbname*) #js{:live true, :retry true}))
+     (when (seq sync*) ; pass nil to disable synchronization
+       (.sync db (.-href (js/URL. dbname* sync*)) #js{:live true, :retry true}))
      (set-validator! (.-cache schematic*)
-                     #(or (s/valid? ::schematic %) (.log js/console (pr-str %) (s/explain-str ::schematic %))))
-     (add-watch schematic* ::undo #(newdo undotree %4))
+                     #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
+     (add-watch schematic* ::undo #(cm/newdo undotree %4))
      (set! group group*)
      (set! dbname dbname*)
      (set! sync sync*)
