@@ -12,6 +12,5 @@
  :builds
  {:frontend
   {:target :browser
-   :modules {:common {}
-             :editor {:init-fn nyancad.mosaic.editor/init :depends-on #{:common}}
-             :libman {:init-fn nyancad.mosaic.libman/init :depends-on #{:common}}}}}}
+   :compiler-options {:infer-externs :auto :optimizations :advanced}
+   :modules {:main {:entries [nyancad.mosaic.editor nyancad.mosaic.libman]}}}}}
