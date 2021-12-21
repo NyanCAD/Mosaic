@@ -75,7 +75,7 @@
    [:input {:type "submit" :value "Add library"}]])
 
 (defn schematic-selector []
-  [:div
+  [:div.schsel
    (doall (for [[id cell] @models
                 :let [cname (second (.split id ":"))]]
             [:details {:key id
@@ -91,7 +91,7 @@
                                        (.. -searchParams (append "db" (:name dbmeta "")))
                                        (.. -searchParams (append "sync" (:url dbmeta ""))))]]
                        [:li {:key key}
-                        key
+                        [:button {:on-click #(swap! selected assoc 2 key)} key] " "
                         [:a {:href (.-href url)} "edit"]]))]]))])
 
 (defn cell-adder []
@@ -119,13 +119,24 @@
             :name "model"}]
    [:input {:type "submit" :value "Add schematic"}]])
 
+(defn model-properties []
+  (let [[_ cell model] @selected
+        mod (get @models (str "models" sep cell))]
+    (when mod
+      [:div (prn-str mod)])))
+
 (defn library-manager []
-  [:div
-   [database-selector]
-   [database-adder]
-   [schematic-selector]
-   [cell-adder]
-   [model-adder]])
+  [:div#mosaic_libman
+   [:div.menu "menu"]
+   [:div.libraries
+    [database-selector]
+    [database-adder]]
+   [:div.schematics
+    [schematic-selector]
+    [cell-adder]
+    [model-adder]]
+   [:div.properties
+    [model-properties]]])
 
 (def shortcuts {})
 

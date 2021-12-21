@@ -679,20 +679,21 @@
                  :on-change (debounce #(swap! schematic assoc-in [key :props :spice] (.. % -target -value)))}]]])))
 
 (defn schemprops []
-  (let [props (r/cursor (.-cache modeldb) [(str "models" sep group)])]
+  (let [cell (first (.split group "$"))
+        props (r/cursor (.-cache modeldb) [(str "models" sep cell)])]
     (fn []
       [:<>
-       [:h1 group]
+       [:h1 cell]
        [:div.properties
         [:label {:for "background" :title "ASCII pattern for the device background"} "bg"]
-        [shape-selector group :bg]
+        [shape-selector cell :bg]
         [:label {:for "ports" :title "ASCII pattern for the device ports"} "ports"]
-        [shape-selector group :conn]
-        [port-namer group]
+        [shape-selector cell :conn]
+        [port-namer cell]
         [:label {:for "symurl" :title "image url for this component"} "url"]
         [:input {:id "symurl" :type "text"
                  :default-value (:sym @props)
-                 :on-blur #(swap! modeldb assoc-in [(str "models" sep group) :sym] (.. % -target -value))}]]])))
+                 :on-blur #(swap! modeldb assoc-in [(str "models" sep cell) :sym] (.. % -target -value))}]]])))
 
 (defn copy []
   (let [sel @selected
