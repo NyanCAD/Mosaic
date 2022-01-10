@@ -9,7 +9,7 @@
             clojure.string
             goog.functions
             [nyancad.mosaic.common :as cm
-             :refer [grid-size debounce sconj set-coord remove-coord has-coord
+             :refer [grid-size debounce sconj
                      point transform transform-vec
                      mosfet-shape twoport-shape]]))
 
@@ -353,12 +353,6 @@
             :transform (.toString (transform (:transform v cm/IV)))}]
           elements)]])
 
-(defn pattern-size [pattern]
-  (let [size (inc (apply max (mapcat (partial take 2) pattern)))]
-    (if (js/isFinite size)
-      size
-      1)))
-
 (defn draw-pattern [size pattern prim k v]
   [apply device size k v
     (for [[x y c] pattern]
@@ -375,8 +369,8 @@
     ;; (assert m "no model")
     (cond
       (fn? m) m
-      (= layer ::bg) (partial draw-pattern (pattern-size m) m tetris)
-      (= layer ::conn) (partial draw-pattern (pattern-size m) m port)
+      (= layer ::bg) (partial draw-pattern (cm/pattern-size m) m tetris)
+      (= layer ::conn) (partial draw-pattern (cm/pattern-size m) m port)
       :else (fn [k _v] (println "invalid model for" k)))))
 
 (defn lines [arcs]
@@ -559,14 +553,14 @@
 (defn circuit-shape [k v]
   (let [model (:cell v)
         pattern (get-in @modeldb [(str "models" sep model) :bg] [[0 0 "%"]])]
-    (draw-pattern (pattern-size pattern) pattern
+    (draw-pattern (cm/pattern-size pattern) pattern
                   tetris k v)))
 
 (defn circuit-conn [k v]
   (let [model (:cell v)
         bgptn (get-in @modeldb [(str "models" sep model) :bg] [[0 0 "%"]])
         pattern (get-in @modeldb [(str "models" sep model) :conn] [[0 0 "%"]])]
-    (draw-pattern (pattern-size bgptn) pattern
+    (draw-pattern (cm/pattern-size bgptn) pattern
                   port k v)))
 
 (defn ckt-url [cell model]
@@ -576,7 +570,7 @@
   (let [cell (:cell v)
         model (get-in v [:props :model]) 
         pattern (get-in @modeldb [(str "models" sep cell) :bg] [])]
-    [device (pattern-size pattern) k v
+    [device (cm/pattern-size pattern) k v
      [:image {:href (get-in @modeldb [(str "models" sep cell) :sym])
               :on-mouse-down #(.preventDefault %) ; prevent dragging the image
               :on-double-click #(.assign js/window.location (ckt-url cell model))}]]))
@@ -602,42 +596,6 @@
                           :data (js/btoa (str
                                           "<?xml-stylesheet type=\"text/css\" href=\"https://nyancad.github.io/Mosaic/app/css/style.css\" ?>"
                                           (.-outerHTML (js/document.getElementById "mosaic_canvas"))))}}}))
-
-(defn shape-selector [key layer]
-  (let [path [(str "models" sep key) layer]
-        shape (r/cursor (.-cache modeldb) path)]
-    (fn [key layer]
-      (println @shape)
-      (let [size (max 3 (inc (pattern-size @shape)))]
-        [:table
-         [:tbody
-          (doall
-           (for [y (range size)]
-             [:tr {:key y}
-              (doall
-               (for [x  (range size)
-                     :let [handler (fn [^js e]
-                                     (if (.. e -target -checked)
-                                       (swap! modeldb update-in path set-coord [x y "#"])
-                                       (swap! modeldb update-in path remove-coord [x y "#"])))]]
-                 [:td {:key x}
-                  [:input {:type "checkbox"
-                           :checked (has-coord @shape [x y])
-                           :on-change handler}]]))]))]]))))
-
-(defn port-namer [key]
-  (let [path [(str "models" sep key) :conn]
-        shape (r/cursor (.-cache modeldb) path)]
-    (fn [key]
-      [:<>
-       (for [[x y name] @shape
-             :let [handler (debounce #(swap! modeldb update-in path set-coord [x y (.. % -target -value)]))]]
-         [:<> {:key [x y]}
-          [:label {:for (str "port" x ":" y) :title "Port name"} x "/" y]
-          [:input {:id (str "port" x ":" y)
-                   :type "text"
-                   :default-value name
-                   :on-change handler}]])])))
 
 (defn deviceprops [key]
   (let [props (r/cursor (.-cache schematic) [key :props])
@@ -678,23 +636,6 @@
                  :default-value (:spice @props)
                  :on-change (debounce #(swap! schematic assoc-in [key :props :spice] (.. % -target -value)))}]]])))
 
-(defn schemprops []
-  (let [cell (first (.split group "$"))
-        props (r/cursor (.-cache modeldb) [(str "models" sep cell)])]
-    (fn []
-      [:<>
-       [:h1 cell]
-       [:div.properties
-        [:label {:for "background" :title "ASCII pattern for the device background"} "bg"]
-        [shape-selector cell :bg]
-        [:label {:for "ports" :title "ASCII pattern for the device ports"} "ports"]
-        [shape-selector cell :conn]
-        [port-namer cell]
-        [:label {:for "symurl" :title "image url for this component"} "url"]
-        [:input {:id "symurl" :type "text"
-                 :default-value (:sym @props)
-                 :on-blur #(swap! modeldb assoc-in [(str "models" sep cell) :sym] (.. % -target -value))}]]])))
-
 (defn copy []
   (let [sel @selected
         sch @schematic
@@ -721,9 +662,9 @@
     [:option {:value "eyesore"} "Classic"]]
    [:span.sep]
    [cm/radiobuttons tool
-    [[cm/cursor ::cursor "Cursor"]
-     [cm/wire ::wire "Wire"]
-     [cm/eraser ::eraser "Eraser"]]]
+    [[[cm/cursor] ::cursor "Cursor"]
+     [[cm/wire] ::wire "Wire"]
+     [[cm/eraser] ::eraser "Eraser"]]]
    [:span.sep]
    [:a {:title "Rotate selected clockwise [s]"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))}
@@ -812,10 +753,9 @@
    [:div#mosaic_menu
     [menu-items]]
    [:div#mosaic_sidebar
-    (if-let [sel (seq @selected)]
+    (when-let [sel (seq @selected)]
       (doall (for [key sel]
-               ^{:key key} [deviceprops key]))
-      [schemprops])]
+               ^{:key key} [deviceprops key])))]
    [:svg#mosaic_canvas {:xmlns "http://www.w3.org/2000/svg"
                         :height "100%"
                         :width "100%"

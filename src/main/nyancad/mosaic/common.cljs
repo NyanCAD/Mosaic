@@ -140,6 +140,12 @@
    ["P"
     "N"]))
 
+(defn pattern-size [pattern]
+  (let [size (inc (apply max (mapcat (partial take 2) pattern)))]
+    (if (js/isFinite size)
+      size
+      1)))
+
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
 (def zoom-out (r/adapt-react-class icons/ZoomOut))
@@ -161,14 +167,14 @@
 
 (defn radiobuttons [cursor m]
   [:<>
-   (doall (for [[icon name disp] m]
+   (doall (for [[label name disp] m]
             [:<> {:key name}
              [:input {:type "radio"
                       :id name
                       :value name
                       :checked (= name @cursor)
                       :on-change #(reset! cursor name)}]
-             [:label {:for name :title disp} [icon]]]))])
+             [:label {:for name :title disp} label]]))])
 
 (defn keyset [e]
   (letfn [(conj-when [s e c] (if c (conj s e) s))]

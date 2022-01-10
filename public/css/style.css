@@ -8,7 +8,7 @@
     display: flex;
     flex-direction: column;
 }
-#mosaic_libman .libraries select {
+#mosaic_libman .libraries .dbsel {
     flex-grow: 1;
 }
 #mosaic_libman .schematics {
@@ -23,11 +23,19 @@
 #mosaic_libman .schematics .schsel details {
     margin-bottom: 1em;
 }
-#mosaic_libman .schematics .schsel details li {
-    margin: 0.5em 2em;
-}
 #mosaic_libman .properties {
     grid-area: properties;
+}
+
+#mosaic_libman input[type=radio] {
+    display: none;
+}
+#mosaic_libman input[type=radio] + label {
+    display: block;
+    margin: 0.5em 1em;
+}
+#mosaic_libman input[type=radio]:checked + label {
+    background-color: rgb(175, 195, 204);
 }
 
 #mosaic_libman {
@@ -105,18 +113,18 @@
   overflow:auto;
 }
 
-#mosaic_sidebar .properties {
+#mosaic_root .properties {
   display: grid;
   grid-template-columns: [labels] auto [controls] 1fr;
   grid-auto-flow: row;
   grid-gap: .8em;
 }
-#mosaic_sidebar .properties label {
+#mosaic_root .properties label {
   grid-column: labels;
   grid-row: auto;
 }
 
-#mosaic_sidebar .properties input {
+#mosaic_root .properties input {
     grid-column: controls;
     grid-row: auto;
     box-sizing: border-box;
