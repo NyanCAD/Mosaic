@@ -96,7 +96,7 @@
                        :on-toggle #(when (.. % -target -open) (reset! selcell cname))}
              [:summary cname]
              [cm/radiobuttons selmod (for [[key mod] (:models cell)]
-                                       [key key key])]]))])
+                                       [key (name key) key])]]))])
 
 (defn cell-adder []
   [:form {:on-submit (fn [^js e]
@@ -194,7 +194,7 @@
 
 
 (defn model-properties []
-  (let [mod (when-let [m @models] (get-in m [(str "models" sep @selcell) :models @selmod]))]
+  (let [mod (when-let [m @models] (get-in m [(str "models" sep @selcell) :models (keyword @selmod)]))]
     [:details
      [:summary "Model properties"]
      (when mod
