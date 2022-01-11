@@ -194,7 +194,8 @@
 
 
 (defn model-properties []
-  (let [mod (when-let [m @models] (get-in m [(str "models" sep @selcell) :models (keyword @selmod)]))]
+  (let [sel (keyword @selmod)
+        mod (get-in @models [(str "models" sep @selcell) :models sel])]
     [:details
      [:summary "Model properties"]
      (when mod
@@ -204,7 +205,7 @@
         [:label {:for "modtype"} "Model type"]
         [:select {:id "modtype"
                   :value (:type mod)
-                  :on-change #(swap! @modelref assoc-in [(str "models" sep @selcell) :models @selmod :type] (.. % -target -value))}
+                  :on-change #(swap! @modelref assoc-in [(str "models" sep @selcell) :models sel :type] (.. % -target -value))}
          [:option {:value "schematic"} "schematic"]
          [:option {:value "spice"} "spice"]]
         (when (= (:type mod) "spice")
@@ -212,11 +213,11 @@
            [:label {:for "reftempl"} "Reference template"]
            [:input {:id "reftempl"
                     :value (:reftempl mod)
-                    :on-change #(swap! @modelref assoc-in [(str "models" sep @selcell) :models @selmod :reftempl] (.. % -target -value))}]
+                    :on-change #(swap! @modelref assoc-in [(str "models" sep @selcell) :models sel :reftempl] (.. % -target -value))}]
            [:label {:for "decltempl"} "Declaration template"]
            [:input {:id "decltempl"
                     :value (:decltempl mod)
-                    :on-change #(swap! @modelref assoc-in [(str "models" sep @selcell) :models @selmod :decltempl] (.. % -target -value))}]])])]))
+                    :on-change #(swap! @modelref assoc-in [(str "models" sep @selcell) :models sel :decltempl] (.. % -target -value))}]])])]))
 
 (defn library-manager []
   [:div#mosaic_libman
