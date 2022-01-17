@@ -1,6 +1,6 @@
 ## Modern schematic entry and simulation
 
-Mosaic is a tool for designing and simulating analog integrated circuit designs. It focuses on a modern, easy to use interface, instant design feedback, and design reuse, verification, and automation.
+Mosaic is a tool for designing and simulating analog integrated circuit designs. It focuses on a modern, easy to use interface, instant design feedback, design reuse, verification, and automation.
 
 [Try it out](/Mosaic/app)
 
