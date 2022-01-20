@@ -82,7 +82,7 @@
 (defn edit-url []
   (let [mname (str @selcell "$" @selmod)
         dbmeta (get @databases @seldb schdbmeta)]
-    (doto (js/URL. "editor.html" js/window.location)
+    (doto (js/URL. "editor" js/window.location)
       (.. -searchParams (append "schem" mname))
       (.. -searchParams (append "db" (:name dbmeta "")))
       (.. -searchParams (append "sync" (:url dbmeta ""))))))
