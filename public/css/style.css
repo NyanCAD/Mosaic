@@ -142,7 +142,7 @@
   stroke-linecap: round;
 }
 
-#mosaic_root svg.device {
+svg.device {
   overflow: visible;
 }
 

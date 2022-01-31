@@ -588,12 +588,20 @@
                        #js{:type "application/edn"})]
     (.createObjectURL js/URL blob)))
 
+(defn b64encode [s]
+  (-> s
+      js/encodeURIComponent
+      (clojure.string/replace
+       #"%([0-9A-F]{2})"
+       #(js/String.fromCharCode (str "0x" (nth % 1))))
+      js/btoa))
+
 (defn snapshot []
   (swap! snapshots assoc (str "snapshots" sep group "#" (.toISOString (js/Date. )))
          {:schematic @schematic
           :_attachments {"preview.svg" {
                           :content_type "image/svg+xml"
-                          :data (js/btoa (str
+                          :data (b64encode (str
                                           "<?xml-stylesheet type=\"text/css\" href=\"https://nyancad.github.io/Mosaic/app/css/style.css\" ?>"
                                           (.-outerHTML (js/document.getElementById "mosaic_canvas"))))}}}))
 
