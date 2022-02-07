@@ -1,0 +1,17 @@
+<svg id="Notebook" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="60" viewBox="0 0 64 60">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        opacity: 0.85;
+      }
+    </style>
+  </defs>
+  <g id="Default_State" data-name="Default State" transform="translate(-2268 -22)">
+    <rect id="Rectangle_148" data-name="Rectangle 148" class="cls-1" width="64" height="60" rx="5" transform="translate(2268 22)"/>
+    <image id="Notebook-2" data-name="Notebook" class="cls-2" width="40" height="40" transform="translate(2280 32)" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAQAAABIkb+zAAACVElEQVR42u2aPWgTYRjHf1hqtRYETS3icgYsFASLQl06RNAiQiVI42ARXVoH6WIaWycnl2ZysX5hVTLYgtaiSxYDghQRoigFB+WWIrbpIq3aT84l8StWz9wbc4f/3zPe3fO+P7i79xn+IIQQQgghhBDCr1hEiTNImgxZbCZxcJjEJkuGNIPEiWIZ6ruMjc04o1ziDAfZUvrGw/QwRg7HZeUYo4ew8b7T3KGL7X+z9QYSTLhe4OeaIEFDGfq+IL5K3x9oJMViyYsUapEUjWXoO88NmlbffIghljwvUqglhgiVpe/VX38ZHUwZW6RQU3SUpW+OWLGAE7CSgPda4Dm36eUoe7HYBMAaLCxaOEw3SR7yzo8Cn0lzjlZqXP3UNxPjCm/9ITDLTY6woaSDteICj+hkvYeRpoICy6Ro9jyTVUwgzU4jQ2XFBEwhAQlIQAISkIAEJCABCUhAAhKQgAQkIAEJSEACEpCABCQgAQlIQAISCLpANbs4TpJhxrGZwcFhBRubp9znMr0cYqsfBWo4wAUeM+/q+RlG6CbsD4E6TnCXuWAFngpESPExiIktqKKTbHAjZ228VOjvfxdY4RXDnKWdFqx8bGwbFs1EaOMUSUaxDaUW67GwiBAlwXWe/CYk7kJggQx97GGdq5MyRDsXeWM8tbiD0zxg9s8C30ezP3CNKHUlHflNDPDeeGpxLfu4xaevneaKb7mXv/SMLmo9zi3VHOO14dQiwEb6mcbBIVl8sZY+zrPb2PBVxcn8G2wmtfhtnzH284+oZ8RYalEIIYQQPuQLiX/QcpobYZoAAAAASUVORK5CYII="/>
+  </g>
+</svg>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="22.37" height="28.6" viewBox="0 0 22.37 28.6">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #222;
+      }
+    </style>
+  </defs>
+  <g id="Group_36" data-name="Group 36" transform="translate(-57.25 -774.45)">
+    <path id="Line_31" data-name="Line 31" class="cls-1" d="M1.25,18.25h-2.5V-1.25h2.5Z" transform="translate(66 780)"/>
+    <path id="Line_32" data-name="Line 32" class="cls-1" d="M1.25,13.25h-2.5V-1.25h2.5Z" transform="translate(77.892 781.5) rotate(60)"/>
+    <path id="Line_33" data-name="Line 33" class="cls-1" d="M1.25,13.25h-2.5V-1.25h2.5Z" transform="translate(67.5 790) rotate(-60)"/>
+    <path id="Line_34" data-name="Line 34" class="cls-1" d="M1.25,6.25h-2.5v-7.5h2.5Z" transform="translate(78.37 796.8)"/>
+    <path id="Polygon_2" data-name="Polygon 2" d="M5,0l5,7.5H0Z" transform="translate(72.499 790.41) rotate(-120)"/>
+    <path id="Line_36" data-name="Line 36" class="cls-1" d="M1.25,6.25h-2.5v-7.5h2.5Z" transform="translate(63.5 788.5) rotate(90)"/>
+    <path id="Line_38" data-name="Line 38" class="cls-1" d="M1.25,6.25h-2.5v-7.5h2.5Z" transform="translate(78.37 775.7)"/>
+  </g>
+</svg>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="36" height="36" viewBox="0 0 36 36">
+  <defs>
+    <style>
+      .cls-1 {
+        opacity: 0.8;
+      }
+    </style>
+  </defs>
+  <image id="outline_file_upload_black_48dp" class="cls-1" width="36" height="36" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAQAAABIkb+zAAABX0lEQVR42u3ZTW6CUBiF4TNhAq7ERbkVd0Ciy3Hgb5egG2FMYgetbS0fgnDlfte8xxnG+D4RMEaJMcYYY4wxxl6zpZZp5191TZfwlZ8s4Tc/ScJ9fnKEZn5SBDs/GUJ7fhKEx/nuCd35rgn98t0S+ue7JDyX747wfL4rwrB8NwQ7/6PHERcEO/+kWePYTCd/hPZ8NY7KH8HOP6qQTIBU6OiHYOcfvvNtgFTo4IVgAfY/+W0AqdDe62fwN78dYBFcXAU75XfPtQOkXDtv96Htv/zHACnX1tM3QTO/C3AjuPguXhj53QAp18Lzj5tugPMBAAAAAAAAAAAAAAAAQHTA0JCpXwcAgDeAm/cDAAAAAACjVg3+Hz7EoxoPOEcFnMcDyqiAcjxgrjpafq15iMtqFQ2wCnNfyLSJkr9RFurWlmk98YlUax0u/3YtlLpMcFOtdFEZ5txnjDHGGGOMvfc+AZbYOHRq2Vd/AAAAAElFTkSuQmCC"/>
+</svg>
