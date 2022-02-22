@@ -62,21 +62,13 @@
 (defn database-adder []
   [:form {:on-submit (fn [^js e]
                        (.preventDefault e)
-                       (try
-                         (let [url (js/URL. (.. e -target -dburl -value))
-                               name (subs (.-pathname url) 1)]
-                           (set! (.-pathname url) "")
-                           (swap! databases assoc (str "databases" sep name)
-                                  {:name name
-                                   :url (.-href url)}))
-                         (catch js/TypeError _
-                           (let [name (.. e -target -dburl -value)]
-                             (swap! databases assoc (str "databases" sep name)
-                                    {:name name})))))}
+                         (let [name (.. e -target -db -value)]
+                            (swap! databases assoc (str "databases" sep name)
+                                {:name name})))}
    [:input {:type "text"
-            :placeholder "https://user:pw@host:port/database"
-            :title "Add an online library by URL or a local one by name"
-            :name "dburl"}]
+            :placeholder "database"
+            :title "Add a library database"
+            :name "db"}]
    [:input {:type "submit" :value "Add library"}]])
 
 (defn edit-url []
