@@ -816,7 +816,7 @@
    (let [db (pouchdb dbname*)
          schematic* (pouch-atom db group* (r/atom {}))]
      (when (seq sync*) ; pass nil to disable synchronization
-       (.sync db (.-href (js/URL. dbname* sync*)) #js{:live true, :retry true}))
+       (.sync db sync* #js{:live true, :retry true}))
      (set-validator! (.-cache schematic*)
                      #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
      (add-watch schematic* ::undo #(cm/newdo undotree %4))
