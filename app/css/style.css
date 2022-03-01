@@ -1,12 +1,69 @@
+body, html {
+    padding: 0;
+    margin: 0;
+}
+
+#mosaic_editor, #mosaic_libman {
+    font: 400 16px/18px 'Roboto', sans-serif;
+    color: #222222A5;
+}
 /* library manager */
 
-#mosaic_libman .menu {
-    grid-area: menu;
+#mosaic_libman h1 {
+    font: 500 25px/25px 'Roboto', sans-serif;
+    letter-spacing: 0.85px;
+    color: #222222;
+    text-transform: uppercase;
 }
+
+#mosaic_libman h2 {
+    font: 500 25px/25px 'Roboto', sans-serif;
+    letter-spacing: 0.72px;
+    color: #222222;
+}
+
+#mosaic_libman button.plus {
+    font: 500 25px/25px 'Roboto', sans-serif;
+    letter-spacing: 0.85px;
+    color: #222222;
+    text-transform: uppercase;
+    padding: 5px 12px;
+}
+
+#mosaic_libman .libhead {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+#mosaic_libman .addbuttons {
+    display: flex;
+    flex-direction: row;
+    justify-content: right;
+    gap: 20px;
+    padding: 20px;
+    border-bottom: 1px solid #e7e7e7;
+}
+
+#mosaic_libman button {
+    background: #2222220A 0% 0% no-repeat padding-box;
+    box-shadow: 0px 1px 4px #00000033;
+    border-radius: 7px;
+    border: none;
+    padding: 10px 15px
+}
+
+#mosaic_libman button:active {
+    box-shadow: 0px 0px 4px #00000033;
+}
+
 #mosaic_libman .libraries {
     grid-area: libraries;
     display: flex;
     flex-direction: column;
+    padding: 1em;
+    border-right: 1px solid #e7e7e7
 }
 #mosaic_libman .libraries .dbsel {
     flex-grow: 1;
@@ -23,8 +80,29 @@
 #mosaic_libman .schematics .schsel details {
     margin-bottom: 1em;
 }
+
+#mosaic_libman .proppane {
+  grid-area: properties;
+  border-left: 1px solid #e7e7e7;
+}
+
 #mosaic_libman .properties {
-    grid-area: properties;
+  grid-area: properties;
+  display: grid;
+  grid-template-columns: [labels] auto [controls] auto;
+  grid-auto-flow: row;
+}
+
+#mosaic_libman .properties label {
+  grid-column: labels;
+  grid-row: auto;
+}
+
+#mosaic_libman .properties input {
+    grid-column: controls;
+    grid-row: auto;
+    box-sizing: border-box;
+    width: 100%;
 }
 
 #mosaic_libman input[type=radio] {
@@ -38,28 +116,50 @@
     background-color: rgb(175, 195, 204);
 }
 
+#mosaic_libman details .detailbody {
+    max-height: 0px;
+    transition: max-height 1s;
+    overflow: hidden;
+}
+#mosaic_libman details[open] .detailbody {
+    max-height: 10000px;
+}
+#mosaic_libman details summary {
+    list-style-type: none;
+}
+#mosaic_libman details summary::after {
+    content: "";
+    border: solid black;
+    border-width: 0 1px 1px 0;
+    padding: 3px;
+    transform: rotate(-45deg);
+    float: right;
+    transition: transform 100ms;
+}
+#mosaic_libman details[open] summary::after {
+    transform: rotate(45deg);
+}
+
 #mosaic_libman {
     display: grid;
     grid-template-areas:
-    'menu menu menu'
     'libraries schematics properties';
-    grid-template-rows: 3em 1fr;
+    grid-template-rows: 1fr;
     grid-template-columns: 1fr 2fr 2fr;
-    grid-gap: 1em;
 }
 
 /* editor */
-#mosaic_root * {
+#mosaic_editor * {
   margin: 0;
   padding: 0;
 }
 
-#mosaic_root h1, #mosaic_root h2, #mosaic_root h3, #mosaic_root h4, #mosaic_root h5, #mosaic_root h6 {
+#mosaic_editor h1, #mosaic_editor h2, #mosaic_editor h3, #mosaic_editor h4, #mosaic_editor h5, #mosaic_editor h6 {
   font-size: 1.1em;
   margin: 0.5em 0;
 }
 
-#mosaic_root, #mosaic_app, #mosaic_libman {
+#mosaic_editor, #mosaic_app, #mosaic_libman {
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -113,18 +213,18 @@
   overflow:auto;
 }
 
-#mosaic_root .properties {
+#mosaic_editor .properties {
   display: grid;
   grid-template-columns: [labels] auto [controls] 1fr;
   grid-auto-flow: row;
   grid-gap: .8em;
 }
-#mosaic_root .properties label {
+#mosaic_editor .properties label {
   grid-column: labels;
   grid-row: auto;
 }
 
-#mosaic_root .properties input {
+#mosaic_editor .properties input {
     grid-column: controls;
     grid-row: auto;
     box-sizing: border-box;
@@ -137,7 +237,7 @@
 }
 
 
-#mosaic_root svg {
+#mosaic_editor svg {
   overflow: hidden;
   stroke-linecap: round;
 }
