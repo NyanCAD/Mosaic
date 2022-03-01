@@ -2,11 +2,16 @@
   (:require [reagent.core :as r]
             [react-bootstrap-icons :as icons]
             [clojure.spec.alpha :as s]
+            reagent.ratom
+            nyancad.hipflask
             clojure.edn
             clojure.set
             clojure.string
             [clojure.zip :as zip]
             goog.functions))
+
+; allow taking a cursor of a pouch atom
+(extend-type ^js nyancad.hipflask/PAtom reagent.ratom/IReactiveAtom)
 
 (def grid-size 50)
 (def debounce #(goog.functions/debounce % 1000))

@@ -833,7 +833,7 @@
   ;; (js/document.addEventListener "keyup" keyboard-shortcuts)
   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (rd/render [schematic-ui]
-             (.getElementById js/document "mosaic_root")))
+             (.getElementById js/document "mosaic_editor")))
 
 (defn ^:export init
   ([] ; get the params from global variables or url parameters
