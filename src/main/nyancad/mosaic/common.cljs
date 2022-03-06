@@ -135,6 +135,12 @@
     "GB"
     " S"]))
 
+(def bjt-conn
+  (ascii-patern
+   [" C"
+    "B "
+    " E"]))
+
 (def twoport-shape
   (ascii-patern
    ["P"

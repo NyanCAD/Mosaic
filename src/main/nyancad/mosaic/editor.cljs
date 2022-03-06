@@ -11,7 +11,7 @@
             [nyancad.mosaic.common :as cm
              :refer [grid-size debounce sconj
                      point transform transform-vec
-                     mosfet-shape twoport-shape]]))
+                     mosfet-shape twoport-shape bjt-conn]]))
 
 
 ; these are set on init
@@ -70,7 +70,8 @@
 (declare mosfet-sym wire-sym wire-bg label-sym
          resistor-sym capacitor-sym inductor-sym
          vsource-sym isource-sym diode-sym
-         circuit-shape circuit-conn circuit-sym)
+         circuit-shape circuit-conn circuit-sym
+         bjt-sym)
 ; should probably be in state eventually
 (def models {"pmos" {::bg mosfet-shape
                      ::conn mosfet-shape
@@ -82,6 +83,20 @@
              "nmos" {::bg mosfet-shape
                      ::conn mosfet-shape
                      ::sym #'mosfet-sym
+                     ::props {:m {:tooltip "multiplier"}
+                              :nf {:tooltip "number of fingers"}
+                              :w {:tooltip "width" :unit "meter"}
+                              :l {:tooltip "lenght" :unit "meter"}}}
+             "npn" {::bg mosfet-shape
+                     ::conn bjt-conn
+                     ::sym #'bjt-sym
+                     ::props {:m {:tooltip "multiplier"}
+                              :nf {:tooltip "number of fingers"}
+                              :w {:tooltip "width" :unit "meter"}
+                              :l {:tooltip "lenght" :unit "meter"}}}
+             "pnp" {::bg mosfet-shape
+                     ::conn bjt-conn
+                     ::sym #'bjt-sym
                      ::props {:m {:tooltip "multiplier"}
                               :nf {:tooltip "number of fingers"}
                               :w {:tooltip "width" :unit "meter"}
@@ -473,6 +488,23 @@
        [harrow 1.2 1.5 0.15]
        [harrow 1.35 1.5 -0.15])]))
 
+(defn bjt-sym [k v]
+  (let [shape [[[0.5 1.5]
+                [1 1.5]]
+               [[1 1.1]
+                [1 1.9]]
+               [[1.5 0.5]
+                [1.5 1]
+                [1 1.4]
+                [1 1.6]
+                [1.5 2]
+                [1.5 2.5]]]]
+    [device 3 k v
+     [lines shape]
+     (if (= (:cell v) "npn")
+       [harrow 1.35 1.7 -0.15]
+       [harrow 1.2 1.7 0.15])]))
+
 (defn resistor-sym [k v]
   (let [shape [[[0.5 0.5]
                 [0.5 0.7]]
@@ -736,6 +768,12 @@
    [:a {:title "Add N-channel mosfet [n]"
         :on-click #(add-device "nmos" (viewbox-coord %))}
     "N"]
+   [:a {:title "Add PNP bjt"
+        :on-click #(add-device "pnp" (viewbox-coord %))}
+    "QP"]
+   [:a {:title "Add NPN"
+        :on-click #(add-device "npn" (viewbox-coord %))}
+    "QN"]
    [:a {:title "Add P-channel mosfet [p]"
         :on-click #(add-device "pmos" (viewbox-coord %))}
     "P"]
