@@ -393,18 +393,12 @@
    (for [arc arcs]
      ^{:key arc} [:polyline {:points (map #(* % grid-size) (flatten arc))}])])
 
-(defn harrow [x y size]
-  [:polygon.arrow {:points
+(defn arrow [x y size rotate]
+  [:polygon.arrow {:transform (str "rotate(" rotate " " (* x grid-size) " " (* y grid-size) ")")
+                   :points
                    (map #(* % grid-size)
                         [x y
                          (+ x size) (+ y size)
-                         (+ x size) (- y size)])}])
-
-(defn varrow [x y size]
-  [:polygon.arrow {:points
-                   (map #(* % grid-size)
-                        [x y
-                         (- x size) (- y size)
                          (+ x size) (- y size)])}])
 
 (defn wire-bg [key wire]
@@ -485,8 +479,8 @@
     [device 3 k v
      [lines shape]
      (if (= (:cell v) "nmos")
-       [harrow 1.2 1.5 0.15]
-       [harrow 1.35 1.5 -0.15])]))
+       [arrow 1.2 1.5 0.15 0]
+       [arrow 1.4 1.5 0.15 180])]))
 
 (defn bjt-sym [k v]
   (let [shape [[[0.5 1.5]
@@ -502,8 +496,8 @@
     [device 3 k v
      [lines shape]
      (if (= (:cell v) "npn")
-       [harrow 1.35 1.7 -0.15]
-       [harrow 1.2 1.7 0.15])]))
+       [arrow 1.4 1.92 0.15 -145]
+       [arrow 1.13 1.7 0.15 35])]))
 
 (defn resistor-sym [k v]
   (let [shape [[[0.5 0.5]
@@ -555,7 +549,7 @@
       {:cx (/ grid-size 2)
        :cy grid-size
        :r (* grid-size 0.4)}]
-     [varrow 0.5 0.7 -0.15]]))
+     [arrow 0.5 0.7 0.15 90]]))
 
 (defn vsource-sym [k v]
   (let [shape [[[0.5 0.5]
@@ -580,7 +574,7 @@
                 [0.5 1.5]]]]
     [device 2 k v
      [lines shape]
-     [varrow 0.5 1.1 0.2]]))
+     [arrow 0.5 1.1 0.2 270]]))
 
 (defn circuit-shape [k v]
   (let [model (:cell v)
