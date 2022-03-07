@@ -170,11 +170,13 @@ line.wirebb {
   /* stroke: rgb(90, 90, 90) !important; */
 }
 
-.tetris svg.device.nmos rect.tetris {
+.tetris svg.device.nmos rect.tetris,
+.tetris svg.device.npn rect.tetris {
   fill: rgb(216, 236, 243);
 }
 
-.tetris svg.device.pmos rect.tetris {
+.tetris svg.device.pmos rect.tetris,
+.tetris svg.device.pnp rect.tetris {
   fill: rgb(243, 231, 216);
 }
 
