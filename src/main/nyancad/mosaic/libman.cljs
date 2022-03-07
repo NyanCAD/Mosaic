@@ -45,7 +45,8 @@
              [:div.detailbody
               [cm/radiobuttons selcell (for [[key cell] @pa
                                              :let [cname (second (.split key ":"))]]
-                                         [cname key cname])]]]))])
+                                         ; inactive, active, key, title
+                                         [(get cell :name cname) [cm/renamable (r/cursor pa [key :name])] key cname])]]]))])
 
 (defn edit-url []
   (let [mname (str @selcell "$" @selmod)
@@ -56,35 +57,13 @@
       (.. -searchParams (append "sync" (:url dbmeta ""))))))
 
 (defn schematic-selector [db]
-  (let [cell (get @db @selcell)]
+  (let [cellname @selcell
+        cell (get @db cellname)]
     (println @selcell @db)
      [cm/radiobuttons selmod (for [[key mod] (:models cell)]
-                               [key (name key) key])]))
+                               ; inactive, active, key, title
+                               [(get mod :name key) [cm/renamable (r/cursor db [cellname :models key :name])] (name key) key])]))
 
-;; (defn cell-adder []
-;;   [:form {:on-submit (fn [^js e]
-;;                        (.preventDefault e)
-;;                        (let [cell (.. e -target -cell -value)
-;;                              models @modelref]
-;;                          (swap! models assoc (str "models" sep cell)  {})))}
-;;    [:input {:type "text"
-;;             :placeholder "cell name"
-;;             :title "Add a cell to the selected library"
-;;             :name "cell"}]
-;;    [:input {:type "submit" :value "Add cell"}]])
-
-;; (defn model-adder []
-;;   [:form {:on-submit (fn [^js e]
-;;                        (.preventDefault e)
-;;                        (let [model (.. e -target -model -value)
-;;                              cell @selcell
-;;                              models @modelref]
-;;                          (swap! models assoc-in [(str "models" sep cell) :models model] {})))}
-;;    [:input {:type "text"
-;;             :placeholder "schematic name"
-;;             :title "Add a schematic to the selected cell"
-;;             :name "model"}]
-;;    [:input {:type "submit" :value "Add schematic"}]])
 
 (defn db-properties []
   (let [id @seldb
@@ -173,12 +152,16 @@
 ;;                     :on-change #(swap! @modelref assoc-in [(str "models" sep @selcell) :models sel :decltempl] (.. % -target -value))}]])])]))
 
 (defn cell-view []
-  (let [db (get-dbatom @seldb)]
+  (let [db (get-dbatom @seldb)
+        add-cell #(let [name (js/prompt "Enter the name of the new cell")]
+                    (swap! db assoc (str "models" sep name) {:name name}))
+        add-schem #(let [name (js/prompt "Enter the name of the new schematic")]
+                    (swap! db assoc-in [@selcell :models name] {:name name}))]
     [:<>
     [:div.schsel
      [:div.addbuttons
-      [:button "+ Add cell"]
-      [:button "+ Add schematic"]]
+      [:button {:on-click add-cell} "+ Add cell"]
+      [:button {:on-click add-schem} "+ Add schematic"]]
      [:h2 "Cell " (when-let [cell @selcell] (second (.split cell ":")))]
      [schematic-selector db]]
     [:div.proppane
@@ -191,7 +174,10 @@
    [:div.libraries
     [:div.libhead
      [:h1 "Library"]
-     [:button.plus "+"]]
+     [:button.plus {:on-click
+                    #(let [name (js/prompt "Enter the name of the new database")]
+                        (swap! databases assoc (str "databases" sep name) {:name name}))}
+      "+"]]
     [database-selector]
     [db-properties]]
    [cell-view]])
