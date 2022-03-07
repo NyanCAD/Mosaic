@@ -696,9 +696,10 @@
     [:option {:value "eyesore"} "Classic"]]
    [:span.sep]
    [cm/radiobuttons tool
-    [[[cm/cursor] ::cursor "Cursor"]
-     [[cm/wire] ::wire "Wire"]
-     [[cm/eraser] ::eraser "Eraser"]]]
+   ; inactive, active, key, title
+    [[[cm/cursor] [cm/cursor] ::cursor "Cursor"]
+     [[cm/wire] [cm/wire] ::wire "Wire"]
+     [[cm/eraser] [cm/eraser] ::eraser "Eraser"]]]
    [:span.sep]
    [:a {:title "Rotate selected clockwise [s]"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))}
@@ -762,15 +763,15 @@
    [:a {:title "Add N-channel mosfet [n]"
         :on-click #(add-device "nmos" (viewbox-coord %))}
     "N"]
-   [:a {:title "Add PNP bjt"
-        :on-click #(add-device "pnp" (viewbox-coord %))}
-    "QP"]
-   [:a {:title "Add NPN"
-        :on-click #(add-device "npn" (viewbox-coord %))}
-    "QN"]
    [:a {:title "Add P-channel mosfet [p]"
         :on-click #(add-device "pmos" (viewbox-coord %))}
     "P"]
+   [:a {:title "Add PNP BJT"
+        :on-click #(add-device "pnp" (viewbox-coord %))}
+    "QP"]
+   [:a {:title "Add NPN BJT"
+        :on-click #(add-device "npn" (viewbox-coord %))}
+    "QN"]
    [:a {:title "Add subcircuit [x]"
         :on-click #(add-device "ckt" (viewbox-coord %))}
     "X"]])

@@ -178,14 +178,37 @@
 
 (defn radiobuttons [cursor m]
   [:<>
-   (doall (for [[label name disp] m]
+   (doall (for [[label active-label name disp] m]
             [:<> {:key name}
              [:input {:type "radio"
                       :id name
                       :value name
                       :checked (= name @cursor)
                       :on-change #(reset! cursor name)}]
-             [:label {:for name :title disp} label]]))])
+             [:label {:for name :title disp}
+              (if (= name @cursor) active-label label)]]))])
+
+(defn renamable [cursor]
+  (r/with-let [active (r/atom false)
+               to (atom nil)
+               edit #(reset! active true)]
+    (if (or @active (empty? @cursor))
+      [:form {:on-submit (fn [^js e]
+                           (js/console.log e)
+                           (.preventDefault e)
+                           (reset! cursor (.. e -target -elements -namefield -value))
+                           (reset! active false))}
+       [:input {:type :text
+                :name "namefield"
+                :auto-focus true
+                :default-value @cursor
+                :on-blur (fn [e]
+                           (reset! cursor (.. e -target -value))
+                           (reset! active false))}]]
+      [:span {:on-click #(if (= (.-detail %) 1)
+                           (reset! to (js/window.setTimeout edit 1000))
+                           (js/window.clearTimeout @to))}
+       @cursor])))
 
 (defn keyset [e]
   (letfn [(conj-when [s e c] (if c (conj s e) s))]
