@@ -176,17 +176,21 @@
 (def cuti (r/adapt-react-class icons/Scissors))
 (def pastei (r/adapt-react-class icons/Clipboard))
 
-(defn radiobuttons [cursor m]
-  [:<>
-   (doall (for [[label active-label name disp] m]
-            [:<> {:key name}
-             [:input {:type "radio"
-                      :id name
-                      :value name
-                      :checked (= name @cursor)
-                      :on-change #(reset! cursor name)}]
-             [:label {:for name :title disp}
-              (if (= name @cursor) active-label label)]]))])
+(defn radiobuttons
+([cursor m] (radiobuttons cursor m nil))
+([cursor m dblclk]
+ [:<>
+  (doall (for [[label active-label name disp] m]
+           [:<> {:key name}
+            [:input {:type "radio"
+                     :id name
+                     :value name
+                     :checked (= name @cursor)
+                     :on-change #(reset! cursor name)}]
+            [:label {:for name
+                     :title disp
+                     :on-double-click (when dblclk (dblclk name))}
+             (if (= name @cursor) active-label label)]]))]))
 
 (defn renamable [cursor]
   (r/with-let [active (r/atom false)

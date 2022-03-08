@@ -7,6 +7,13 @@ body, html {
     font: 400 16px/18px 'Roboto', sans-serif;
     color: #222222A5;
 }
+
+input, textarea {
+    background: #00000008 0% 0% no-repeat padding-box;
+    border: 2px solid #2222220D;
+    border-radius: 5px;
+    padding: 5px 10px;
+}
 /* library manager */
 
 #mosaic_libman h1 {
@@ -18,6 +25,12 @@ body, html {
 
 #mosaic_libman h2 {
     font: 500 25px/25px 'Roboto', sans-serif;
+    letter-spacing: 0.72px;
+    color: #222222;
+}
+
+#mosaic_libman h3 {
+    font: 500 20px/25px 'Roboto', sans-serif;
     letter-spacing: 0.72px;
     color: #222222;
 }
@@ -42,28 +55,84 @@ body, html {
     flex-direction: row;
     justify-content: right;
     gap: 20px;
-    padding: 20px;
+    padding: 20px 20px;
     border-bottom: 1px solid #e7e7e7;
 }
 
-#mosaic_libman button {
-    background: #2222220A 0% 0% no-repeat padding-box;
+#mosaic_libman .schsel h2 {
+    padding: 0 20px;
+}
+
+#mosaic_libman .schsel .schematics {
+    padding: 0 20px;
+}
+
+
+#mosaic_libman button, #mosaic_libman .buttongroup {
+    background: #f8f8f8 0% 0% no-repeat padding-box;
     box-shadow: 0px 1px 4px #00000033;
     border-radius: 7px;
     border: none;
-    padding: 10px 15px
+    padding: 10px 15px;
 }
 
 #mosaic_libman button:active {
-    box-shadow: 0px 0px 4px #00000033;
+    box-shadow: 0px 0px 4px hsla(0, 0%, 0%, 0.2);
+}
+#mosaic_libman button.primary,
+#mosaic_libman .buttongroup.primary {
+    background-color: #0E1A32;
+    color: white;
+}
+#mosaic_libman .buttongroup.primary > button,
+#mosaic_libman .buttongroup summary::after {
+    color: white;
+    border-color: white;
+}
+#mosaic_libman .buttongroup.primary > button:disabled {
+    color: grey;
+}
+
+#mosaic_libman .buttongroup {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0;
+    position: relative;
+}
+
+#mosaic_libman .buttongroup summary {
+    padding: 10px 15px;
+    border-left: 1px solid rgb(224, 224, 224);
+}
+
+#mosaic_libman .buttongroup summary::after {
+    transform: rotate(45deg);
+    top:-5px;
+    left:0px;
+}
+
+#mosaic_libman .buttongroup details > button {
+    position: absolute;
+    left: 0;
+    bottom: -100%;
+    width: 100%;
+}
+
+#mosaic_libman .buttongroup > button {
+    background: none;
+    box-shadow: none;
 }
 
 #mosaic_libman .libraries {
     grid-area: libraries;
     display: flex;
     flex-direction: column;
+    border-right: 1px solid #e7e7e7;
+    overflow: hidden;
+}
+#mosaic_libman .libraries > *{
     padding: 1em;
-    border-right: 1px solid #e7e7e7
 }
 #mosaic_libman .libraries .dbsel {
     flex-grow: 1;
@@ -73,24 +142,31 @@ body, html {
     display: flex;
     flex-direction: column;
 }
-#mosaic_libman .schematics .schsel {
+#mosaic_libman .cellsel {
     flex-grow: 1;
-    /* padding: 1em; */
+    overflow: auto;
 }
-#mosaic_libman .schematics .schsel details {
+#mosaic_libman .cellsel details {
     margin-bottom: 1em;
+}
+
+#mosaic_libman .dbprops {
+    padding-top: 0;
+    background-color: #00000007;
 }
 
 #mosaic_libman .proppane {
   grid-area: properties;
   border-left: 1px solid #e7e7e7;
+  padding: 20px;
 }
 
 #mosaic_libman .properties {
-  grid-area: properties;
-  display: grid;
-  grid-template-columns: [labels] auto [controls] auto;
-  grid-auto-flow: row;
+    display: grid;
+    grid-template-columns: [labels] auto [controls] auto;
+    grid-auto-flow: row;
+    row-gap: 1em;
+    align-items: center;
 }
 
 #mosaic_libman .properties label {
@@ -110,10 +186,12 @@ body, html {
 }
 #mosaic_libman input[type=radio] + label {
     display: block;
-    margin: 0.5em 1em;
+    padding: 10px 15px;
+    margin: 5px 0 0 5px;
 }
 #mosaic_libman input[type=radio]:checked + label {
-    background-color: rgb(175, 195, 204);
+    background-color: rgba(0, 0, 0, 0.041);
+    border-radius: 7px;
 }
 
 #mosaic_libman details .detailbody {
@@ -127,6 +205,15 @@ body, html {
 #mosaic_libman details summary {
     list-style-type: none;
 }
+#mosaic_libman .libraries details summary {
+    padding: 10px 15px;
+    border-radius: 7px;
+}
+#mosaic_libman details[open] summary {
+    background: #0E1A32 0% 0% no-repeat padding-box;
+    color:white;
+}
+
 #mosaic_libman details summary::after {
     content: "";
     border: solid black;
@@ -134,10 +221,15 @@ body, html {
     padding: 3px;
     transform: rotate(-45deg);
     float: right;
+    position: relative;
+    top:4px;
+    left:-4px;
     transition: transform 100ms;
 }
 #mosaic_libman details[open] summary::after {
     transform: rotate(45deg);
+    border: solid white;
+    border-width: 0 1px 1px 0;
 }
 
 #mosaic_libman {
