@@ -16,8 +16,6 @@
 ; stores the names of the schematics in the current db
 (defonce modelcache (r/atom {}))
 (defonce dbcache (atom {}))
-;; (defonce modelref (atom nil))
-;; (def models (r/track #(get @modelcache @seldb)))
 
 (def schdbmeta {:name "schematics" :url cm/default-sync})
 
@@ -35,10 +33,10 @@
       pa)))
 
 (defn database-selector []
-  [:div.schsel
+  [:div.cellsel
    (doall (for [[id db] (concat [[:schematics schdbmeta]] @databases)
                 :let [pa (get-dbatom id)]]
-            [:details {:key id
+            [:details.tree {:key id
                        :open (= id @seldb)
                        :on-toggle #(when (.. % -target -open) (reset! seldb id))}
              [:summary (:name db)]
@@ -48,8 +46,8 @@
                                          ; inactive, active, key, title
                                          [(get cell :name cname) [cm/renamable (r/cursor pa [key :name])] key cname])]]]))])
 
-(defn edit-url []
-  (let [mname (str @selcell "$" @selmod)
+(defn edit-url [cell mod]
+  (let [mname (str cell "$" mod)
         dbmeta (get @databases @seldb schdbmeta)]
     (doto (js/URL. "editor" js/window.location)
       (.. -searchParams (append "schem" mname))
@@ -59,10 +57,14 @@
 (defn schematic-selector [db]
   (let [cellname @selcell
         cell (get @db cellname)]
-    (println @selcell @db)
-     [cm/radiobuttons selmod (for [[key mod] (:models cell)]
-                               ; inactive, active, key, title
-                               [(get mod :name key) [cm/renamable (r/cursor db [cellname :models key :name])] (name key) key])]))
+    [:div.schematics
+     [cm/radiobuttons selmod
+      (for [[key mod] (:models cell)]
+        ; inactive, active, key, title
+        [(get mod :name key)
+         [cm/renamable (r/cursor db [cellname :models key :name])]
+         (name key) key])
+      (fn [key] #(js/window.open (edit-url (second (.split cellname ":")) key), '_blank'))]]))
 
 
 (defn db-properties []
@@ -70,14 +72,16 @@
         db (get @databases id schdbmeta)]
      (when id
        [:div.dbprops
-        [:label {:for "dbname"} "Name"]
-        [:input {:id "dbname"
-                 :value (:name db)
-                 :on-change #(swap! databases assoc-in [id :name] (.. % -target -value))}]
-        [:label {:for "dburl"} "URL"]
-        [:input {:id "dburl"
-                 :value (:url db)
-                 :on-change #(swap! databases assoc-in [id :url] (.. % -target -value))}]])))
+        [:h3 "Library properties"]
+        [:div.properties
+         [:label {:for "dbname"} "Name"]
+         [:input {:id "dbname"
+                  :value (:name db)
+                  :on-change #(swap! databases assoc-in [id :name] (.. % -target -value))}]
+         [:label {:for "dburl"} "URL"]
+         [:input {:id "dburl"
+                  :value (:url db)
+                  :on-change #(swap! databases assoc-in [id :url] (.. % -target -value))}]]])))
 
 (defn shape-selector [shape]
   (println @shape)
@@ -125,47 +129,48 @@
                  :on-blur #(swap! db assoc-in [cell :sym] (.. % -target -value))}]]])))
 
 
-;; (defn model-properties []
-;;   (let [sel (keyword @selmod)
-;;         mod (get-in @models [(str "models" sep @selcell) :models sel])]
-;;     [:details
-;;      [:summary "Model properties"]
-;;      (when mod
-;;        [:div.properties
-;;     ;;    (prn-str mod)
-;;         [:a {:href (edit-url)} "edit"]
-;;         [:label {:for "modtype"} "Model type"]
-;;         [:select {:id "modtype"
-;;                   :value (:type mod)
-;;                   :on-change #(swap! @modelref assoc-in [(str "models" sep @selcell) :models sel :type] (.. % -target -value))}
-;;          [:option {:value "schematic"} "schematic"]
-;;          [:option {:value "spice"} "spice"]]
-;;         (when (= (:type mod) "spice")
-;;           [:<>
-;;            [:label {:for "reftempl"} "Reference template"]
-;;            [:input {:id "reftempl"
-;;                     :value (:reftempl mod)
-;;                     :on-change #(swap! @modelref assoc-in [(str "models" sep @selcell) :models sel :reftempl] (.. % -target -value))}]
-;;            [:label {:for "decltempl"} "Declaration template"]
-;;            [:input {:id "decltempl"
-;;                     :value (:decltempl mod)
-;;                     :on-change #(swap! @modelref assoc-in [(str "models" sep @selcell) :models sel :decltempl] (.. % -target -value))}]])])]))
+(defn model-preview [db]
+  (let [mod (r/cursor db [@selcell :models (keyword @selmod)])]
+    (println (keys (get-in @db [@selcell :models])))
+    (if (= (:type @mod) "spice")
+      [:div.properties
+       [:label {:for "reftempl"} "Reference template"]
+       [:textarea {:id "reftempl"
+                :value (:reftempl @mod "X{name} {ports} {properties}")
+                :on-change #(swap! mod assoc :reftempl (.. % -target -value))}]
+       [:label {:for "decltempl"} "Declaration template"]
+       [:textarea {:id "decltempl"
+                :value (:decltempl @mod)
+                :on-change #(swap! mod assoc :decltempl (.. % -target -value))}]]
+      "TODO: preview")))
 
 (defn cell-view []
   (let [db (get-dbatom @seldb)
-        add-cell #(let [name (js/prompt "Enter the name of the new cell")]
+        add-cell #(when-let [name (and @seldb (js/prompt "Enter the name of the new cell"))]
                     (swap! db assoc (str "models" sep name) {:name name}))
-        add-schem #(let [name (js/prompt "Enter the name of the new schematic")]
-                    (swap! db assoc-in [@selcell :models name] {:name name}))]
+        add-schem #(when-let [name (and @seldb @selcell (js/prompt "Enter the name of the new schematic"))]
+                    (swap! db assoc-in [@selcell :models (keyword name)] {:name name, :type "schematic"}))
+        add-spice #(when-let [name (and @seldb @selcell (js/prompt "Enter the name of the new SPICE model"))]
+                    (swap! db assoc-in [@selcell :models (keyword name)] {:name name :type "spice"}))]
     [:<>
     [:div.schsel
      [:div.addbuttons
-      [:button {:on-click add-cell} "+ Add cell"]
-      [:button {:on-click add-schem} "+ Add schematic"]]
+      [:button {:on-click add-cell
+                :disabled (nil? @seldb)}
+       "+ Add cell"]
+      [:div.buttongroup.primary
+       [:button {:on-click add-schem
+                 :disabled (or (nil? @seldb) (nil? @selcell))}
+        "+ Add schematic"]
+       [:details
+        [:summary.button]
+        [:button {:on-click add-spice
+                  :disabled (or (nil? @seldb) (nil? @selcell))}
+         "+ Add SPICE model"]]]]
      [:h2 "Cell " (when-let [cell @selcell] (second (.split cell ":")))]
      [schematic-selector db]]
     [:div.proppane
-     [:div.preview "preview"]
+     [:div.preview [model-preview db]]
      [cell-properties db]]
      ]))
 
