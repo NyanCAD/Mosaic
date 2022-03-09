@@ -640,9 +640,9 @@
                                           (.-outerHTML (js/document.getElementById "mosaic_canvas"))))}}}))
 
 (defn deviceprops [key]
-  (let [props (r/cursor (.-cache schematic) [key :props])
-        cell (r/cursor (.-cache schematic) [key :cell])
-        name (r/cursor (.-cache schematic) [key :name])]
+  (let [props (r/cursor schematic [key :props])
+        cell (r/cursor schematic [key :cell])
+        name (r/cursor schematic [key :name])]
     (fn [key]
       [:<>
        [:h1 @cell ": " (or @name key)]
@@ -654,29 +654,32 @@
            [:input {:id "cell"
                     :type "text"
                     :default-value @cell
-                    :on-change (debounce #(swap! schematic assoc-in [key :cell] (.. % -target -value)))}]])
+                    :on-change (debounce #(reset! cell (.. % -target -value)))}]])
         [:label {:for "name" :title "Instance name"} "name"]
         [:input {:id "name"
                  :type "text"
                  :default-value @name
-                 :on-change (debounce #(swap! schematic assoc-in [key :name] (.. % -target -value)))}]
+                 :on-change (debounce #(reset! name (.. % -target -value)))}]
         [:label {:for "model" :title "Device model"} "model"]
-        [:input {:id "model"
-                 :type "text"
-                 :default-value (:model @props)
-                 :on-change (debounce #(swap! schematic assoc-in [key :props :model] (.. % -target -value)))}]
+        [:select {:id "model"
+                  :type "text"
+                  :default-value (:model @props)
+                  :on-change #(swap! props assoc :model (.. % -target -value))}
+         [:option]
+         (for [m (keys (get-in  @modeldb [(str "models" sep @cell) :models]))]
+           [:option m])]
         (doall (for [[prop meta] (::props (get models @cell))]
                  [:<> {:key prop}
                   [:label {:for prop :title (:tooltip meta)} prop]
                   [:input {:id prop
                            :type "text"
                            :default-value (get @props prop)
-                           :on-change (debounce #(swap! schematic assoc-in [key :props prop] (.. % -target -value)))}]]))
+                           :on-change (debounce #(swap! props assoc prop (.. % -target -value)))}]]))
         [:label {:for "spice" :title "Extra spice data"} "spice"]
         [:input {:id "spice"
                  :type "text"
                  :default-value (:spice @props)
-                 :on-change (debounce #(swap! schematic assoc-in [key :props :spice] (.. % -target -value)))}]]])))
+                 :on-change (debounce #(swap! props assoc :spice (.. % -target -value)))}]]])))
 
 (defn copy []
   (let [sel @selected
@@ -822,6 +825,7 @@
      [:line.grid {:x1 0 :y1 0 :x2 grid-size :y2 0}]
      [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]]
     [:rect {:fill "url(#gridfill)"
+            :on-mouse-up drag-end
             :x (* -50 grid-size)
             :y (* -50 grid-size)
             :width (* 100 grid-size)
