@@ -168,6 +168,7 @@
 (def mirror-horizontal (r/adapt-react-class icons/SymmetryHorizontal))
 (def cursor (r/adapt-react-class icons/HandIndex))
 (def eraser (r/adapt-react-class icons/Eraser))
+(def move (r/adapt-react-class icons/ArrowsMove))
 (def wire (r/adapt-react-class icons/Pencil))
 (def label (r/adapt-react-class icons/Tag))
 (def delete (r/adapt-react-class icons/Trash))

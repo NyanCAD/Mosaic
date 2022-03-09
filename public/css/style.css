@@ -328,6 +328,16 @@ input, textarea {
   grid-column: 2;
 }
 
+#mosaic_canvas.pan {
+    cursor: grab;
+}
+
+#mosaic_canvas.eraser .wire:hover,
+#mosaic_canvas.eraser .device.port:hover,
+#mosaic_canvas.eraser .device:hover .tetris {
+    opacity: 0.5;
+}
+
 
 #mosaic_editor svg {
   overflow: hidden;

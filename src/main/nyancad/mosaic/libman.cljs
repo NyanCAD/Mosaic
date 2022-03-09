@@ -190,6 +190,6 @@
 (def shortcuts {})
 
 (defn ^:dev/after-load ^:export init []
-  (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
+;;   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (rd/render [library-manager]
              (.getElementById js/document "mosaic_libman")))

@@ -320,7 +320,8 @@
                          (case @tool
                            ::cursor ::device
                            ::wire ::wire
-                           ::eraser type)))]
+                           ::eraser type
+                           ::pan ::view)))]
           (when (not= (::dragging uiv) ::wire)
             (swap! ui (fn [ui]
                         (-> ui
@@ -422,6 +423,7 @@
             (into #{} (filter #(contains? sch %)) sel))))
 
 (defn drag-end [e]
+  (.stopPropagation e)
   (let [bg? (= (.-target e) (.-currentTarget e))
         selected (::selected @ui)
         {dx :x dy :y drx :rx dry :ry} @delta
@@ -710,7 +712,8 @@
    ; inactive, active, key, title
     [[[cm/cursor] [cm/cursor] ::cursor "Cursor"]
      [[cm/wire] [cm/wire] ::wire "Wire"]
-     [[cm/eraser] [cm/eraser] ::eraser "Eraser"]]]
+     [[cm/eraser] [cm/eraser] ::eraser "Eraser"]
+     [[cm/move] [cm/move] ::pan "Pan"]]]
    [:span.sep]
    [:a {:title "Rotate selected clockwise [s]"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))}
@@ -811,7 +814,7 @@
    [:svg#mosaic_canvas {:xmlns "http://www.w3.org/2000/svg"
                         :height "100%"
                         :width "100%"
-                        :class @theme ; for export
+                        :class [@theme @tool] ; for export
                         :view-box @zoom
                         :on-wheel scroll-zoom
                         :on-mouse-down drag-start-background
