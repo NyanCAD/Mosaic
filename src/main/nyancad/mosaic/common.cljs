@@ -224,7 +224,9 @@
         )))
 
 (defn keyboard-shortcuts [shortcuts e]
-  (when-not (or ;; the user is typing, ignore
+  (when-not (or ;; it's a repeat event
+             (.-repeat e)
+             ;; the user is typing, ignore
              (= "INPUT" (.. e -target -tagName))
              (= "TEXTAREA" (.. e -target -tagName)))
     (println (keyset e))
