@@ -362,13 +362,14 @@ line.wirebb {
   fill: none;
 }
 
-line.grid {
+
+/* tetris theme */
+.tetris line.grid {
   stroke: lightgray;
   stroke-width: 0.5px;
   fill: none;
 }
 
-/* tetris theme */
 .tetris rect.tetris {
   fill: rgb(238, 238, 238);
   stroke: rgb(238, 238, 238);
@@ -449,6 +450,15 @@ line.grid {
 }
 
 /* eyesore theme */
+
+.eyesore line.grid {
+  stroke: lightgray;
+  stroke-width: 1px;
+  stroke-dasharray: 1 99999;
+  stroke-linecap: butt;
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
 
 .eyesore svg#mosaic_canvas {
   shape-rendering: crispEdges;
