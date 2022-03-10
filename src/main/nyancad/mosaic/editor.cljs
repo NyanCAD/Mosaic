@@ -825,8 +825,8 @@
                 :pattern-units "userSpaceOnUse"
                 :width grid-size
                 :height grid-size}
-     [:line.grid {:x1 0 :y1 0 :x2 grid-size :y2 0}]
-     [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]]
+      [:line.grid {:x1 0 :y1 0 :x2 grid-size :y2 0}]
+      [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]]
     [:rect {:fill "url(#gridfill)"
             :on-mouse-up drag-end
             :x (* -50 grid-size)

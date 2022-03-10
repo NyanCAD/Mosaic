@@ -329,13 +329,16 @@ input, textarea {
 }
 
 #mosaic_canvas.pan {
-    cursor: grab;
+    cursor: url(icons/arrows-move.svg) 6 0, grab;
+}
+
+#mosaic_canvas.wire {
+    cursor: url(icons/pencil.svg) 0 16, crosshair;
 }
 
 #mosaic_canvas.eraser .wire:hover,
-#mosaic_canvas.eraser .device.port:hover,
-#mosaic_canvas.eraser .device:hover .tetris {
-    opacity: 0.5;
+#mosaic_canvas.eraser .device {
+    cursor: url(icons/eraser.svg) 6 14, crosshair;
 }
 
 
