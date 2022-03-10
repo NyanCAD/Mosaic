@@ -371,23 +371,31 @@ line.grid {
 /* tetris theme */
 .tetris rect.tetris {
   fill: rgb(238, 238, 238);
+  stroke: rgb(238, 238, 238);
+  stroke-width: 8px;
+  rx: 10px;
 }
 
 .tetris svg.device.selected rect.tetris,
-.tetris svg.port.selected polyline,
 .tetris rect.tetris.selected {
   fill: rgb(229, 216, 243) !important;
-  /* stroke: rgb(90, 90, 90) !important; */
+  stroke: rgb(229, 216, 243) !important;
+}
+
+.tetris svg.port.selected polyline {
+  fill: rgb(229, 216, 243) !important;
 }
 
 .tetris svg.device.nmos rect.tetris,
 .tetris svg.device.npn rect.tetris {
   fill: rgb(216, 236, 243);
+  stroke: rgb(216, 236, 243);
 }
 
 .tetris svg.device.pmos rect.tetris,
 .tetris svg.device.pnp rect.tetris {
   fill: rgb(243, 231, 216);
+  stroke: rgb(243, 231, 216);
 }
 
 .tetris svg.device.capacitor rect.tetris,
@@ -395,10 +403,15 @@ line.grid {
 .tetris svg.device.resistor rect.tetris,
 .tetris svg.device.diode rect.tetris {
   fill: rgb(216, 243, 226);
+  stroke: rgb(216, 243, 226);
 }
 
 .tetris svg.device.vsource rect.tetris,
-.tetris svg.device.isource rect.tetris,
+.tetris svg.device.isource rect.tetris {
+  fill: rgb(243, 243, 216);
+  stroke: rgb(243, 243, 216);
+}
+
 .tetris svg.device.port polyline {
   fill: rgb(243, 243, 216);
 }
