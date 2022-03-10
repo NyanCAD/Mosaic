@@ -134,6 +134,12 @@
         :when (not= c " ")]
     [x y c]))
 
+(def active-bg
+  (ascii-patern
+   ["  "
+    " B"
+    "  "]))
+
 (def mosfet-shape
   (ascii-patern
    [" D"
@@ -146,9 +152,16 @@
     "B "
     " E"]))
 
-(def twoport-shape
+(def twoport-bg
+  (ascii-patern
+   [" "
+    "%"
+    " "]))
+
+(def twoport-conn
   (ascii-patern
    ["P"
+    " "
     "N"]))
 
 (defn pattern-size [pattern]

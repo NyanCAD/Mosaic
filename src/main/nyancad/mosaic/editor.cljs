@@ -11,7 +11,7 @@
             [nyancad.mosaic.common :as cm
              :refer [grid-size debounce sconj
                      point transform transform-vec
-                     mosfet-shape twoport-shape bjt-conn]]))
+                     mosfet-shape bjt-conn]]))
 
 
 ; these are set on init
@@ -73,58 +73,58 @@
          circuit-shape circuit-conn circuit-sym
          bjt-sym)
 ; should probably be in state eventually
-(def models {"pmos" {::bg mosfet-shape
+(def models {"pmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym #'mosfet-sym
                      ::props {:m {:tooltip "multiplier"}
                               :nf {:tooltip "number of fingers"}
                               :w {:tooltip "width" :unit "meter"}
                               :l {:tooltip "lenght" :unit "meter"}}}
-             "nmos" {::bg mosfet-shape
+             "nmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym #'mosfet-sym
                      ::props {:m {:tooltip "multiplier"}
                               :nf {:tooltip "number of fingers"}
                               :w {:tooltip "width" :unit "meter"}
                               :l {:tooltip "lenght" :unit "meter"}}}
-             "npn" {::bg mosfet-shape
+             "npn" {::bg cm/active-bg
                      ::conn bjt-conn
                      ::sym #'bjt-sym
                      ::props {:m {:tooltip "multiplier"}
                               :nf {:tooltip "number of fingers"}
                               :w {:tooltip "width" :unit "meter"}
                               :l {:tooltip "lenght" :unit "meter"}}}
-             "pnp" {::bg mosfet-shape
+             "pnp" {::bg cm/active-bg
                      ::conn bjt-conn
                      ::sym #'bjt-sym
                      ::props {:m {:tooltip "multiplier"}
                               :nf {:tooltip "number of fingers"}
                               :w {:tooltip "width" :unit "meter"}
                               :l {:tooltip "lenght" :unit "meter"}}}
-             "resistor" {::bg twoport-shape
-                         ::conn twoport-shape
+             "resistor" {::bg cm/twoport-bg
+                         ::conn cm/twoport-conn
                          ::sym #'resistor-sym
                          ::props {:resistance {:tooltip "Resistance" :unit "Ohm"}}}
-             "capacitor" {::bg twoport-shape
-                          ::conn twoport-shape
+             "capacitor" {::bg cm/twoport-bg
+                          ::conn cm/twoport-conn
                           ::sym #'capacitor-sym
                           ::props {:capacitance {:tooltip "Capacitance" :unit "Farad"}}}
-             "inductor" {::bg twoport-shape
-                         ::conn twoport-shape
+             "inductor" {::bg cm/twoport-bg
+                         ::conn cm/twoport-conn
                          ::sym #'inductor-sym
                          ::props {:inductance {:tooltip "Inductance" :unit "Henry"}}}
-             "vsource" {::bg twoport-shape
-                        ::conn twoport-shape
+             "vsource" {::bg cm/twoport-bg
+                        ::conn cm/twoport-conn
                         ::sym #'vsource-sym
                         ::props {:dc {:tooltip "DC voltage" :unit "Volt"}
                                  :ac {:tooltip "AC voltage" :unit "Volt"}}}
-             "isource" {::bg twoport-shape
-                        ::conn twoport-shape
+             "isource" {::bg cm/twoport-bg
+                        ::conn cm/twoport-conn
                         ::sym #'isource-sym
                         ::props {:dc {:tooltip "DC current" :unit "Ampere"}
                                  :ac {:tooltip "AC current" :unit "Ampere"}}}
-             "diode" {::bg twoport-shape
-                      ::conn twoport-shape
+             "diode" {::bg cm/twoport-bg
+                      ::conn cm/twoport-conn
                       ::sym #'diode-sym
                       ::props {}}
              "wire" {::bg #'wire-bg
@@ -338,7 +338,16 @@
 (defn drag-start-background [e]
   (cond
     (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
-    (= ::wire @tool) (add-wire (viewbox-coord e) (nil? (::dragging @ui)))))
+    (and (= (.-button e) 0)
+         (= ::wire @tool)) (add-wire (viewbox-coord e) (nil? (::dragging @ui)))))
+
+(defn context-menu [e]
+  (when (or (::dragging @ui)
+            (not= (::tool @ui) ::cursor))
+    (swap! ui assoc
+           ::dragging nil
+           ::tool ::cursor)
+    (.preventDefault e)))
 
 (defn tetris [x y _ _]
   [:rect.tetris {:x x, :y y
@@ -386,7 +395,7 @@
     ;; (assert m "no model")
     (cond
       (fn? m) m
-      (= layer ::bg) (partial draw-pattern (cm/pattern-size m) m tetris)
+      (= layer ::bg) (partial draw-pattern 3 m tetris) ;; TODO
       (= layer ::conn) (partial draw-pattern (cm/pattern-size m) m port)
       :else (fn [k _v] (println "invalid model for" k)))))
 
@@ -475,72 +484,73 @@
 
 (defn mosfet-sym [k v]
   (let [shape [[[0.5 1.5]
-                [1 1.5]]
-               [[1 1]
-                [1 2]]
+                [1.1 1.5]]
+               [[1.1 1.1]
+                [1.1 1.9]]
                [[1.5 0.5]
-                [1.5 1]
-                [1.1 1]
-                [1.1 2]
-                [1.5 2]
+                [1.5 1.1]
+                [1.2 1.1]
+                [1.2 1.9]
+                [1.5 1.9]
                 [1.5 2.5]]
                [[1.5 1.5]
-                [1.1 1.5]]]]
+                [1.2 1.5]]]]
     [device 3 k v
      [lines shape]
      (if (= (:cell v) "nmos")
-       [arrow 1.2 1.5 0.15 0]
-       [arrow 1.4 1.5 0.15 180])]))
+       [arrow 1.3 1.5 0.12 0]
+       [arrow 1.4 1.5 0.12 180])]))
 
 (defn bjt-sym [k v]
   (let [shape [[[0.5 1.5]
-                [1 1.5]]
-               [[1 1.1]
-                [1 1.9]]
+                [1.15 1.5]]
+               [[1.15 1.15]
+                [1.15 1.85]]
                [[1.5 0.5]
-                [1.5 1]
-                [1 1.4]
-                [1 1.6]
-                [1.5 2]
+                [1.5 1.1]
+                [1.15 1.4]
+                [1.15 1.6]
+                [1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
      [lines shape]
      (if (= (:cell v) "npn")
-       [arrow 1.4 1.92 0.15 -145]
-       [arrow 1.13 1.7 0.15 35])]))
+       [arrow 1.4 1.81 0.12 -140]
+       [arrow 1.25 1.68 0.12 40])]))
 
 (defn resistor-sym [k v]
   (let [shape [[[0.5 0.5]
-                [0.5 0.7]]
-               [[0.5 1.3]
-                [0.5 1.5]]]]
-    [device 2 k v
-     [:rect.outline {:x (* 0.4 grid-size)
-             :y (* 0.7 grid-size)
-             :width (* 0.2 grid-size)
-             :height (* 0.6 grid-size)}]
+                [0.5 1.1]]
+               [[0.5 1.9]
+                [0.5 2.5]]]]
+    [device 3 k v
+     [:rect.outline {:x (* 0.35 grid-size)
+             :y (* 1.1 grid-size)
+             :width (* 0.3 grid-size)
+             :height (* 0.8 grid-size)}]
      [lines shape]]))
 
 (defn capacitor-sym [k v]
   (let [shape [[[0.5 0.5]
-                [0.5 0.9]]
-               [[0.2 0.9]
-                [0.8 0.9]]
-               [[0.2 1.1]
-                [0.8 1.1]]
-               [[0.5 1.1]
-                [0.5 1.5]]]]
-    [device 2 k v
+                [0.5 1.4]]
+               [[0.1 1.4]
+                [0.9 1.4]]
+               [[0.1 1.6]
+                [0.9 1.6]]
+               [[0.5 1.6]
+                [0.5 2.5]]]]
+    [device 3 k v
      [lines shape]]))
 
 (defn inductor-sym [k v]
   (let [shape [[[0.5 0.5]
-                [0.5 0.7]]
-               [[0.5 1.3]
-                [0.5 1.5]]]]
-    [device 2 k v
+                [0.5 1.1]]
+               [[0.5 1.9]
+                [0.5 2.5]]]]
+    [device 3 k v
      [lines shape]
-     [:path {:d "M25,35
+     [:path {:d "M25,55
+                 a5,5 90 0,0 0,10
                  a5,5 90 0,0 0,10
                  a5,5 90 0,0 0,10
                  a5,5 90 0,0 0,10
@@ -548,43 +558,43 @@
 
 (defn isource-sym [k v]
   (let [shape [[[0.5 0.5]
-                [0.5 0.6]]
-               [[0.5 0.85]
-                [0.5 1.25]]
-               [[0.5 1.4]
-                [0.5 1.5]]]]
-    [device 2 k v
+                [0.5 1.1]]
+               [[0.5 1.35]
+                [0.5 1.75]]
+               [[0.5 1.9]
+                [0.5 2.5]]]]
+    [device 3 k v
      [lines shape]
      [:circle.outline
       {:cx (/ grid-size 2)
-       :cy grid-size
+       :cy (* grid-size 1.5)
        :r (* grid-size 0.4)}]
-     [arrow 0.5 0.7 0.15 90]]))
+     [arrow 0.5 1.2 0.15 90]]))
 
 (defn vsource-sym [k v]
   (let [shape [[[0.5 0.5]
-                [0.5 0.6]]
-               [[0.5 1.4]
-                [0.5 1.5]]]]
-    [device 2 k v
+                [0.5 1.1]]
+               [[0.5 1.9]
+                [0.5 2.5]]]]
+    [device 3 k v
      [lines shape]
      [:circle.outline
       {:cx (/ grid-size 2)
-       :cy grid-size
+       :cy (* grid-size 1.5)
        :r (* grid-size 0.4)}]
-     [:text {:x 25 :y 45 :text-anchor "middle"} "+"]
-     [:text {:x 25 :y 65 :text-anchor "middle"} "−"]]))
+     [:text {:x 25 :y 70 :text-anchor "middle"} "+"]
+     [:text {:x 25 :y 90 :text-anchor "middle"} "−"]]))
 
 (defn diode-sym [k v]
   (let [shape [[[0.5 0.5]
-                [0.5 0.9]]
-               [[0.3 1.1]
-                [0.7 1.1]]
-               [[0.5 1.1]
-                [0.5 1.5]]]]
-    [device 2 k v
+                [0.5 1.4]]
+               [[0.3 1.6]
+                [0.7 1.6]]
+               [[0.5 1.6]
+                [0.5 2.5]]]]
+    [device 3 k v
      [lines shape]
-     [arrow 0.5 1.1 0.2 270]]))
+     [arrow 0.5 1.6 0.2 270]]))
 
 (defn circuit-shape [k v]
   (let [model (:cell v)
@@ -819,7 +829,8 @@
                         :on-wheel scroll-zoom
                         :on-mouse-down drag-start-background
                         :on-mouse-up drag-end
-                        :on-mouse-move drag}
+                        :on-mouse-move drag
+                        :on-context-menu context-menu}
     [:defs
      [:pattern {:id "gridfill",
                 :pattern-units "userSpaceOnUse"
