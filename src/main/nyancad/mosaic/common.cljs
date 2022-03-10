@@ -168,6 +168,7 @@
 (def mirror-horizontal (r/adapt-react-class icons/SymmetryHorizontal))
 (def cursor (r/adapt-react-class icons/HandIndex))
 (def eraser (r/adapt-react-class icons/Eraser))
+(def move (r/adapt-react-class icons/ArrowsMove))
 (def wire (r/adapt-react-class icons/Pencil))
 (def label (r/adapt-react-class icons/Tag))
 (def delete (r/adapt-react-class icons/Trash))
@@ -224,7 +225,9 @@
         )))
 
 (defn keyboard-shortcuts [shortcuts e]
-  (when-not (or ;; the user is typing, ignore
+  (when-not (or ;; it's a repeat event
+             (.-repeat e)
+             ;; the user is typing, ignore
              (= "INPUT" (.. e -target -tagName))
              (= "TEXTAREA" (.. e -target -tagName)))
     (println (keyset e))

@@ -63,8 +63,11 @@
         ; inactive, active, key, title
         [(get mod :name key)
          [cm/renamable (r/cursor db [cellname :models key :name])]
-         (name key) key])
-      (fn [key] #(js/window.open (edit-url (second (.split cellname ":")) key), '_blank'))]]))
+         key key])
+      (fn [key]
+        (println cell key)
+        (when (= (get-in cell [:models key :type]) "schematic")
+          #(js/window.open (edit-url (second (.split cellname ":")) key), '_blank')))]]))
 
 
 (defn db-properties []
@@ -190,6 +193,6 @@
 (def shortcuts {})
 
 (defn ^:dev/after-load ^:export init []
-  (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
+;;   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (rd/render [library-manager]
              (.getElementById js/document "mosaic_libman")))

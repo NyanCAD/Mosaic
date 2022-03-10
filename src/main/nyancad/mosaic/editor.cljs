@@ -37,7 +37,7 @@
 
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme #{"tetris" "eyesore"})
-(s/def ::tool #{::cursor ::eraser ::wire})
+(s/def ::tool #{::cursor ::eraser ::wire ::pan})
 (s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view}))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected]
@@ -67,7 +67,7 @@
   (when-let [st (cm/redo undotree)]
     (restore st)))
 
-(declare mosfet-sym wire-sym wire-bg label-sym
+(declare mosfet-sym wire-sym wire-bg port-sym
          resistor-sym capacitor-sym inductor-sym
          vsource-sym isource-sym diode-sym
          circuit-shape circuit-conn circuit-sym
@@ -131,9 +131,9 @@
                      ::conn []
                      ::sym #'wire-sym
                      ::props {}}
-             "label" {::bg []
+             "port" {::bg []
                       ::conn []
-                      ::sym #'label-sym
+                      ::sym #'port-sym
                       ::props {}}})
 
 (defn build-wire-index [sch]
@@ -257,7 +257,8 @@
   (case @tool
     ::eraser (eraser-drag e)
     ::wire (wire-drag e)
-    ::cursor (cursor-drag e)))
+    ::cursor (cursor-drag e)
+    ::pan (when (> (.-buttons e) 0) (drag-view e))))
 
 (defn add-wire-segment [[x y]]
   (let [name (make-name "wire")]
@@ -319,7 +320,8 @@
                          (case @tool
                            ::cursor ::device
                            ::wire ::wire
-                           ::eraser type)))]
+                           ::eraser type
+                           ::pan ::view)))]
           (when (not= (::dragging uiv) ::wire)
             (swap! ui (fn [ui]
                         (-> ui
@@ -421,6 +423,7 @@
             (into #{} (filter #(contains? sch %)) sel))))
 
 (defn drag-end [e]
+  (.stopPropagation e)
   (let [bg? (= (.-target e) (.-currentTarget e))
         selected (::selected @ui)
         {dx :x dy :y drx :rx dry :ry} @delta
@@ -453,15 +456,22 @@
                   :x2 (* (+ x rx 0.5) grid-size)
                   :y2 (* (+ y ry 0.5) grid-size)}]]))
 
-(defn label-sym [key label]
+(defn port-sym [key label]
   [device 1 key label
    [lines [[[0.5 0.5]
             [0.3 0.3]
-            [-0.5 0.3]
-            [-0.5 0.7]
+            [0 0.3]
+            [0 0.7]
             [0.3 0.7]
             [0.5 0.5]]]]
-   [:text {:x (* -0.4 grid-size) :y (* 0.6 grid-size)} (:name label)]])
+   [:text {:text-anchor "middle"
+           :dominant-baseline "middle"
+           :transform (-> (:transform label)
+                          transform
+                          (.translate (/ grid-size 2) (/ grid-size -2))
+                          .inverse
+                          .toString)}
+    (:name label)]])
 
 (defn mosfet-sym [k v]
   (let [shape [[[0.5 1.5]
@@ -531,9 +541,9 @@
     [device 2 k v
      [lines shape]
      [:path {:d "M25,35
-                 a5,5 90 0,1 0,10
-                 a5,5 90 0,1 0,10
-                 a5,5 90 0,1 0,10
+                 a5,5 90 0,0 0,10
+                 a5,5 90 0,0 0,10
+                 a5,5 90 0,0 0,10
                  "}]]))
 
 (defn isource-sym [k v]
@@ -632,9 +642,9 @@
                                           (.-outerHTML (js/document.getElementById "mosaic_canvas"))))}}}))
 
 (defn deviceprops [key]
-  (let [props (r/cursor (.-cache schematic) [key :props])
-        cell (r/cursor (.-cache schematic) [key :cell])
-        name (r/cursor (.-cache schematic) [key :name])]
+  (let [props (r/cursor schematic [key :props])
+        cell (r/cursor schematic [key :cell])
+        name (r/cursor schematic [key :name])]
     (fn [key]
       [:<>
        [:h1 @cell ": " (or @name key)]
@@ -646,29 +656,32 @@
            [:input {:id "cell"
                     :type "text"
                     :default-value @cell
-                    :on-change (debounce #(swap! schematic assoc-in [key :cell] (.. % -target -value)))}]])
+                    :on-change (debounce #(reset! cell (.. % -target -value)))}]])
         [:label {:for "name" :title "Instance name"} "name"]
         [:input {:id "name"
                  :type "text"
                  :default-value @name
-                 :on-change (debounce #(swap! schematic assoc-in [key :name] (.. % -target -value)))}]
+                 :on-change (debounce #(reset! name (.. % -target -value)))}]
         [:label {:for "model" :title "Device model"} "model"]
-        [:input {:id "model"
-                 :type "text"
-                 :default-value (:model @props)
-                 :on-change (debounce #(swap! schematic assoc-in [key :props :model] (.. % -target -value)))}]
+        [:select {:id "model"
+                  :type "text"
+                  :default-value (:model @props)
+                  :on-change #(swap! props assoc :model (.. % -target -value))}
+         [:option]
+         (for [m (keys (get-in  @modeldb [(str "models" sep @cell) :models]))]
+           [:option m])]
         (doall (for [[prop meta] (::props (get models @cell))]
                  [:<> {:key prop}
                   [:label {:for prop :title (:tooltip meta)} prop]
                   [:input {:id prop
                            :type "text"
                            :default-value (get @props prop)
-                           :on-change (debounce #(swap! schematic assoc-in [key :props prop] (.. % -target -value)))}]]))
+                           :on-change (debounce #(swap! props assoc prop (.. % -target -value)))}]]))
         [:label {:for "spice" :title "Extra spice data"} "spice"]
         [:input {:id "spice"
                  :type "text"
                  :default-value (:spice @props)
-                 :on-change (debounce #(swap! schematic assoc-in [key :props :spice] (.. % -target -value)))}]]])))
+                 :on-change (debounce #(swap! props assoc :spice (.. % -target -value)))}]]])))
 
 (defn copy []
   (let [sel @selected
@@ -699,7 +712,8 @@
    ; inactive, active, key, title
     [[[cm/cursor] [cm/cursor] ::cursor "Cursor"]
      [[cm/wire] [cm/wire] ::wire "Wire"]
-     [[cm/eraser] [cm/eraser] ::eraser "Eraser"]]]
+     [[cm/eraser] [cm/eraser] ::eraser "Eraser"]
+     [[cm/move] [cm/move] ::pan "Pan"]]]
    [:span.sep]
    [:a {:title "Rotate selected clockwise [s]"
         :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))}
@@ -739,8 +753,8 @@
         :on-click redo-schematic}
     [cm/redoi]]
    [:span.sep]
-   [:a {:title "Add wire label [w]"
-        :on-click #(add-device "label" (viewbox-coord %))}
+   [:a {:title "Add port [p]"
+        :on-click #(add-device "port" (viewbox-coord %))}
     [cm/label]]
    [:a {:title "Add resistor [r]"
         :on-click #(add-device "resistor" (viewbox-coord %))}
@@ -760,18 +774,18 @@
    [:a {:title "Add current source [i]"
         :on-click #(add-device "isource" (viewbox-coord %))}
     "I"]
-   [:a {:title "Add N-channel mosfet [n]"
+   [:a {:title "Add N-channel mosfet [m]"
         :on-click #(add-device "nmos" (viewbox-coord %))}
     "N"]
-   [:a {:title "Add P-channel mosfet [p]"
+   [:a {:title "Add P-channel mosfet [shift+m]"
         :on-click #(add-device "pmos" (viewbox-coord %))}
     "P"]
-   [:a {:title "Add PNP BJT"
-        :on-click #(add-device "pnp" (viewbox-coord %))}
-    "QP"]
-   [:a {:title "Add NPN BJT"
+   [:a {:title "Add NPN BJT [b]"
         :on-click #(add-device "npn" (viewbox-coord %))}
     "QN"]
+   [:a {:title "Add PNP BJT [shift+b]"
+        :on-click #(add-device "pnp" (viewbox-coord %))}
+    "QP"]
    [:a {:title "Add subcircuit [x]"
         :on-click #(add-device "ckt" (viewbox-coord %))}
     "X"]])
@@ -800,12 +814,25 @@
    [:svg#mosaic_canvas {:xmlns "http://www.w3.org/2000/svg"
                         :height "100%"
                         :width "100%"
-                        :class @theme ; for export
+                        :class [@theme @tool] ; for export
                         :view-box @zoom
                         :on-wheel scroll-zoom
                         :on-mouse-down drag-start-background
                         :on-mouse-up drag-end
                         :on-mouse-move drag}
+    [:defs
+     [:pattern {:id "gridfill",
+                :pattern-units "userSpaceOnUse"
+                :width grid-size
+                :height grid-size}
+      [:line.grid {:x1 0 :y1 0 :x2 grid-size :y2 0}]
+      [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]]
+    [:rect {:fill "url(#gridfill)"
+            :on-mouse-up drag-end
+            :x (* -50 grid-size)
+            :y (* -50 grid-size)
+            :width (* 100 grid-size)
+            :height (* 100 grid-size)}]
     [schematic-elements]]])
 
 (def shortcuts {#{:c} #(add-device "capacitor" (::mouse @ui))
@@ -814,12 +841,17 @@
                 #{:d} #(add-device "diode" (::mouse @ui))
                 #{:v} #(add-device "vsource" (::mouse @ui))
                 #{:i} #(add-device "isource" (::mouse @ui))
-                #{:n} #(add-device "nmos" (::mouse @ui))
-                #{:p} #(add-device "pmos" (::mouse @ui))
+                #{:m} #(add-device "nmos" (::mouse @ui))
+                #{:shift :m} #(add-device "pmos" (::mouse @ui))
+                #{:b} #(add-device "npn" (::mouse @ui))
+                #{:shift :b} #(add-device "pnp" (::mouse @ui))
                 #{:x} #(add-device "ckt" (::mouse @ui))
-                #{:w} #(add-device "label" (::mouse @ui))
+                #{:p} #(add-device "port" (::mouse @ui))
                 #{:backspace} delete-selected
                 #{:delete} delete-selected
+                #{:w} #(swap! ui assoc ::tool ::wire)
+                #{:escape} #(swap! ui assoc ::tool ::cursor)
+                #{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool (::prev-tool %))))
                 #{:s}        (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))
                 #{:shift :s} (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % -90)))
                 #{:shift :f} (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipY %)))
@@ -830,9 +862,13 @@
                 #{:control :z} undo-schematic
                 #{:control :shift :z} redo-schematic})
 
+(def immediate-shortcuts
+  {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))})
+
 (defn ^:dev/after-load ^:export  render []
   ;; (js/document.addEventListener "keyup" keyboard-shortcuts)
   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
+  (set! js/document.onkeydown (partial cm/keyboard-shortcuts immediate-shortcuts))
   (rd/render [schematic-ui]
              (.getElementById js/document "mosaic_editor")))
 
