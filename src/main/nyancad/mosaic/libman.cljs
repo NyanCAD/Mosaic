@@ -63,8 +63,11 @@
         ; inactive, active, key, title
         [(get mod :name key)
          [cm/renamable (r/cursor db [cellname :models key :name])]
-         (name key) key])
-      (fn [key] #(js/window.open (edit-url (second (.split cellname ":")) key), '_blank'))]]))
+         key key])
+      (fn [key]
+        (println cell key)
+        (when (= (get-in cell [:models key :type]) "schematic")
+          #(js/window.open (edit-url (second (.split cellname ":")) key), '_blank')))]]))
 
 
 (defn db-properties []
