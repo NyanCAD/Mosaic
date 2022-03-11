@@ -67,7 +67,7 @@
   (when-let [st (cm/redo undotree)]
     (restore st)))
 
-(declare mosfet-sym wire-sym wire-bg port-sym
+(declare mosfet-sym wire-sym port-sym
          resistor-sym capacitor-sym inductor-sym
          vsource-sym isource-sym diode-sym
          circuit-shape circuit-conn circuit-sym
@@ -127,7 +127,7 @@
                       ::conn cm/twoport-conn
                       ::sym #'diode-sym
                       ::props {}}
-             "wire" {::bg #'wire-bg
+             "wire" {::bg []
                      ::conn []
                      ::sym #'wire-sym
                      ::props {}}
@@ -349,11 +349,6 @@
            ::tool ::cursor)
     (.preventDefault e)))
 
-(defn tetris [x y _ _]
-  [:rect.tetris {:x x, :y y
-                 :width grid-size
-                 :height grid-size}])
-
 (defn port [x y _ _]
   [:circle.port {:cx (+ x (/ grid-size 2))
                  :cy (+ y (/ grid-size 2))
@@ -379,6 +374,12 @@
             :transform (.toString (transform (:transform v cm/IV)))}]
           elements)]])
 
+(defn draw-background [[width height] k v]
+  [apply device (+ 2 (max width height)) k v
+  [[:rect.tetris {:x grid-size :y grid-size
+                  :width (* width grid-size)
+                  :height (* height grid-size)}]]])
+
 (defn draw-pattern [size pattern prim k v]
   [apply device size k v
     (for [[x y c] pattern]
@@ -395,7 +396,7 @@
     ;; (assert m "no model")
     (cond
       (fn? m) m
-      (= layer ::bg) (partial draw-pattern 3 m tetris) ;; TODO
+      (= layer ::bg) (partial draw-background m)
       (= layer ::conn) (partial draw-pattern (cm/pattern-size m) m port)
       :else (fn [k _v] (println "invalid model for" k)))))
 
@@ -411,19 +412,6 @@
                         [x y
                          (+ x size) (+ y size)
                          (+ x size) (- y size)])}])
-
-(defn wire-bg [key wire]
-  (let [name (or (:name wire) key)
-        x (delta-pos :x key wire)
-        y (delta-pos :y key wire)
-        rx (delta-pos :rx key wire)
-        ry (delta-pos :ry key wire)]
-    [:g.wire {:on-mouse-down #(drag-start key ::device %)}
-     ; TODO drag-start ::wire nodes (with reverse) 
-     [:line.wirebb {:x1 (* (+ x 0.5) grid-size)
-                    :y1 (* (+ y 0.5) grid-size)
-                    :x2 (* (+ x rx 0.5) grid-size)
-                    :y2 (* (+ y ry 0.5) grid-size)}]]))
 
 
 (defn clean-selected [ui sch]
@@ -460,6 +448,10 @@
         ry (delta-pos :ry key wire)]
     [:g.wire {:on-mouse-down #(drag-start key ::device %)}
      ; TODO drag-start ::wire nodes (with reverse) 
+     [:line.wirebb {:x1 (* (+ x 0.5) grid-size)
+                    :y1 (* (+ y 0.5) grid-size)
+                    :x2 (* (+ x rx 0.5) grid-size)
+                    :y2 (* (+ y ry 0.5) grid-size)}]
      [:line.wire {:x1 (* (+ x 0.5) grid-size)
                   :y1 (* (+ y 0.5) grid-size)
                   :x2 (* (+ x rx 0.5) grid-size)
@@ -519,37 +511,37 @@
        [arrow 1.25 1.68 0.12 40])]))
 
 (defn resistor-sym [k v]
-  (let [shape [[[0.5 0.5]
-                [0.5 1.1]]
-               [[0.5 1.9]
-                [0.5 2.5]]]]
+  (let [shape [[[1.5 0.5]
+                [1.5 1.1]]
+               [[1.5 1.9]
+                [1.5 2.5]]]]
     [device 3 k v
-     [:rect.outline {:x (* 0.35 grid-size)
+     [:rect.outline {:x (* 1.35 grid-size)
              :y (* 1.1 grid-size)
              :width (* 0.3 grid-size)
              :height (* 0.8 grid-size)}]
      [lines shape]]))
 
 (defn capacitor-sym [k v]
-  (let [shape [[[0.5 0.5]
-                [0.5 1.4]]
-               [[0.1 1.4]
-                [0.9 1.4]]
-               [[0.1 1.6]
-                [0.9 1.6]]
-               [[0.5 1.6]
-                [0.5 2.5]]]]
+  (let [shape [[[1.5 0.5]
+                [1.5 1.4]]
+               [[1.1 1.4]
+                [1.9 1.4]]
+               [[1.1 1.6]
+                [1.9 1.6]]
+               [[1.5 1.6]
+                [1.5 2.5]]]]
     [device 3 k v
      [lines shape]]))
 
 (defn inductor-sym [k v]
-  (let [shape [[[0.5 0.5]
-                [0.5 1.1]]
-               [[0.5 1.9]
-                [0.5 2.5]]]]
+  (let [shape [[[1.5 0.5]
+                [1.5 1.1]]
+               [[1.5 1.9]
+                [1.5 2.5]]]]
     [device 3 k v
      [lines shape]
-     [:path {:d "M25,55
+     [:path {:d "M75,55
                  a5,5 90 0,0 0,10
                  a5,5 90 0,0 0,10
                  a5,5 90 0,0 0,10
@@ -557,56 +549,55 @@
                  "}]]))
 
 (defn isource-sym [k v]
-  (let [shape [[[0.5 0.5]
-                [0.5 1.1]]
-               [[0.5 1.35]
-                [0.5 1.75]]
-               [[0.5 1.9]
-                [0.5 2.5]]]]
+  (let [shape [[[1.5 0.5]
+                [1.5 1.1]]
+               [[1.5 1.35]
+                [1.5 1.75]]
+               [[1.5 1.9]
+                [1.5 2.5]]]]
     [device 3 k v
      [lines shape]
      [:circle.outline
-      {:cx (/ grid-size 2)
+      {:cx (* grid-size 1.5)
        :cy (* grid-size 1.5)
        :r (* grid-size 0.4)}]
-     [arrow 0.5 1.2 0.15 90]]))
+     [arrow 1.5 1.2 0.15 90]]))
 
 (defn vsource-sym [k v]
-  (let [shape [[[0.5 0.5]
-                [0.5 1.1]]
-               [[0.5 1.9]
-                [0.5 2.5]]]]
+  (let [shape [[[1.5 0.5]
+                [1.5 1.1]]
+               [[1.5 1.9]
+                [1.5 2.5]]]]
     [device 3 k v
      [lines shape]
      [:circle.outline
-      {:cx (/ grid-size 2)
+      {:cx (* grid-size 1.5)
        :cy (* grid-size 1.5)
        :r (* grid-size 0.4)}]
-     [:text {:x 25 :y 70 :text-anchor "middle"} "+"]
-     [:text {:x 25 :y 90 :text-anchor "middle"} "−"]]))
+     [:text {:x 75 :y 70 :text-anchor "middle"} "+"]
+     [:text {:x 75 :y 90 :text-anchor "middle"} "−"]]))
 
 (defn diode-sym [k v]
-  (let [shape [[[0.5 0.5]
-                [0.5 1.4]]
-               [[0.3 1.6]
-                [0.7 1.6]]
-               [[0.5 1.6]
-                [0.5 2.5]]]]
+  (let [shape [[[1.5 0.5]
+                [1.5 1.4]]
+               [[1.3 1.6]
+                [1.7 1.6]]
+               [[1.5 1.6]
+                [1.5 2.5]]]]
     [device 3 k v
      [lines shape]
-     [arrow 0.5 1.6 0.2 270]]))
+     [arrow 1.5 1.6 0.2 270]]))
 
 (defn circuit-shape [k v]
   (let [model (:cell v)
-        pattern (get-in @modeldb [(str "models" sep model) :bg] [[0 0 "%"]])]
-    (draw-pattern (cm/pattern-size pattern) pattern
-                  tetris k v)))
+        size (get-in @modeldb [(str "models" sep model) :bg] [1 1])]
+    (draw-background size k v)))
 
 (defn circuit-conn [k v]
   (let [model (:cell v)
-        bgptn (get-in @modeldb [(str "models" sep model) :bg] [[0 0 "%"]])
-        pattern (get-in @modeldb [(str "models" sep model) :conn] [[0 0 "%"]])]
-    (draw-pattern (cm/pattern-size bgptn) pattern
+        [width height] (get-in @modeldb [(str "models" sep model) :bg] [1 1])
+        pattern (get-in @modeldb [(str "models" sep model) :conn] [[1 1 "%"]])]
+    (draw-pattern (+ 2 (max width height)) pattern
                   port k v)))
 
 (defn ckt-url [cell model]

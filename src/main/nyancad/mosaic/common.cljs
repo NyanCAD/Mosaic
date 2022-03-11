@@ -134,11 +134,7 @@
         :when (not= c " ")]
     [x y c]))
 
-(def active-bg
-  (ascii-patern
-   ["  "
-    " B"
-    "  "]))
+(def active-bg [1 1])
 
 (def mosfet-shape
   (ascii-patern
@@ -152,17 +148,13 @@
     "B "
     " E"]))
 
-(def twoport-bg
-  (ascii-patern
-   [" "
-    "%"
-    " "]))
+(def twoport-bg [1 1])
 
 (def twoport-conn
   (ascii-patern
-   ["P"
-    " "
-    "N"]))
+   [" P"
+    "  "
+    " N"]))
 
 (defn pattern-size [pattern]
   (let [size (inc (apply max (mapcat (partial take 2) pattern)))]

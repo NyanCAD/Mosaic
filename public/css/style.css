@@ -373,7 +373,7 @@ line.wirebb {
 .tetris rect.tetris {
   fill: rgb(238, 238, 238);
   stroke: rgb(238, 238, 238);
-  stroke-width: 8px;
+  stroke-width: calc(10px*0.8284271247461903); /* 2*rx*(sqrt(2)-1) */
   rx: 10px;
 }
 
