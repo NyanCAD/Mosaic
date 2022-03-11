@@ -606,8 +606,8 @@
 (defn circuit-sym [k v]
   (let [cell (:cell v)
         model (get-in v [:props :model]) 
-        pattern (get-in @modeldb [(str "models" sep cell) :bg] [])]
-    [device (cm/pattern-size pattern) k v
+        [width height] (get-in @modeldb [(str "models" sep cell) :bg] [1 1])]
+    [device (+ 2 (max width height)) k v
      [:image {:href (get-in @modeldb [(str "models" sep cell) :sym])
               :on-mouse-down #(.preventDefault %) ; prevent dragging the image
               :on-double-click #(.assign js/window.location (ckt-url cell model))}]]))
