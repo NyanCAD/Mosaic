@@ -37,8 +37,8 @@
    (doall (for [[id db] (concat [[:schematics schdbmeta]] @databases)
                 :let [pa (get-dbatom id)]]
             [:details.tree {:key id
-                       :open (= id @seldb)
-                       :on-toggle #(when (.. % -target -open) (reset! seldb id))}
+                            :open (= id @seldb)
+                            :on-toggle #(when (.. % -target -open) (reset! seldb id))}
              [:summary (:name db)]
              [:div.detailbody
               [cm/radiobuttons selcell (for [[key cell] @pa
@@ -73,42 +73,59 @@
 (defn db-properties []
   (let [id @seldb
         db (get @databases id schdbmeta)]
-     (when id
-       [:div.dbprops
-        [:h3 "Library properties"]
-        [:div.properties
-         [:label {:for "dbname"} "Name"]
-         [:input {:id "dbname"
-                  :value (:name db)
-                  :on-change #(swap! databases assoc-in [id :name] (.. % -target -value))}]
-         [:label {:for "dburl"} "URL"]
-         [:input {:id "dburl"
-                  :value (:url db)
-                  :on-change #(swap! databases assoc-in [id :url] (.. % -target -value))}]]])))
+    (when id
+      [:div.dbprops
+       [:h3 "Library properties"]
+       [:div.properties
+        [:label {:for "dbname"} "Name"]
+        [:input {:id "dbname"
+                 :value (:name db)
+                 :on-change #(swap! databases assoc-in [id :name] (.. % -target -value))}]
+        [:label {:for "dburl"} "URL"]
+        [:input {:id "dburl"
+                 :value (:url db)
+                 :on-change #(swap! databases assoc-in [id :url] (.. % -target -value))}]]])))
 
-(defn shape-selector [shape]
-  (println @shape)
-  (let [size (max 3 (inc (cm/pattern-size @shape)))]
+(defn shape-selector [cell]
+  (println @cell)
+  (let [[width height] (:bg @cell)
+        width (+ 2 width)
+        height (+ 2 height)]
+    (println width height)
     [:table
      [:tbody
       (doall
-       (for [y (range size)]
+       (for [y (range height)]
          [:tr {:key y}
           (doall
-           (for [x  (range size)
+           (for [x  (range width)
                  :let [handler (fn [^js e]
                                  (if (.. e -target -checked)
-                                   (swap! shape cm/set-coord [x y "#"])
-                                   (swap! shape cm/remove-coord [x y "#"])))]]
+                                   (swap! cell update :conn cm/set-coord [x y "#"])
+                                   (swap! cell update :conn cm/remove-coord [x y "#"])))]]
              [:td {:key x}
               [:input {:type "checkbox"
-                       :checked (cm/has-coord @shape [x y])
+                       :checked (cm/has-coord (:conn @cell) [x y])
                        :on-change handler}]]))]))]]))
 
-(defn port-namer [shape]
+(defn background-selector [cell]
+  (println @cell)
   [:<>
-   (for [[x y name] @shape
-         :let [handler (cm/debounce #(swap! shape cm/set-coord [x y (.. % -target -value)]))]]
+   [:label {:for "bgwidth" :title "Width of the background tile"} "Background width"]
+   [:input {:id "bgwidth"
+            :type "number"
+            :default-value (get (:bg @cell) 0 1)
+            :on-change (cm/debounce #(swap! cell update :bg (fnil assoc [0 0]) 0 (js/parseInt (.. % -target -value))))}]
+   [:label {:for "bgheight" :title "Width of the background tile"} "Background height"]
+   [:input {:id "bgheigt"
+            :type "number"
+            :default-value (get (:bg @cell) 1 1)
+            :on-change (cm/debounce #(swap! cell update :bg (fnil assoc [0 0]) 1 (js/parseInt (.. % -target -value))))}]])
+
+(defn port-namer [cell]
+  [:<>
+   (for [[x y name] (:conn @cell)
+         :let [handler (cm/debounce #(swap! cell update :conn cm/set-coord [x y (.. % -target -value)]))]]
      [:<> {:key [x y]}
       [:label {:for (str "port" x ":" y) :title "Port name"} x "/" y]
       [:input {:id (str "port" x ":" y)
@@ -117,15 +134,15 @@
                :on-change handler}]])])
 
 (defn cell-properties [db]
-  (let [cell @selcell]
-     (when cell
+  (let [cell @selcell
+        sc (r/cursor db [cell])]
+    (when cell
       [:<>
        [:div.properties
-        [:label {:for "background" :title "ASCII pattern for the device background"} "bg"]
-        [shape-selector (r/cursor db [cell :bg])]
-        [:label {:for "ports" :title "ASCII pattern for the device ports"} "ports"]
-        [shape-selector (r/cursor db [cell :conn])]
-        [port-namer (r/cursor db [cell :conn])]
+        [background-selector sc]
+        [:label {:for "ports" :title "pattern for the device ports"} "ports"]
+        [shape-selector sc]
+        [port-namer sc]
         [:label {:for "symurl" :title "image url for this component"} "url"]
         [:input {:id "symurl" :type "text"
                  :default-value (get-in @db [cell :sym])
@@ -139,12 +156,12 @@
       [:div.properties
        [:label {:for "reftempl"} "Reference template"]
        [:textarea {:id "reftempl"
-                :value (:reftempl @mod "X{name} {ports} {properties}")
-                :on-change #(swap! mod assoc :reftempl (.. % -target -value))}]
+                   :value (:reftempl @mod "X{name} {ports} {properties}")
+                   :on-change #(swap! mod assoc :reftempl (.. % -target -value))}]
        [:label {:for "decltempl"} "Declaration template"]
        [:textarea {:id "decltempl"
-                :value (:decltempl @mod)
-                :on-change #(swap! mod assoc :decltempl (.. % -target -value))}]]
+                   :value (:decltempl @mod)
+                   :on-change #(swap! mod assoc :decltempl (.. % -target -value))}]]
       "TODO: preview")))
 
 (defn cell-view []
@@ -152,30 +169,29 @@
         add-cell #(when-let [name (and @seldb (js/prompt "Enter the name of the new cell"))]
                     (swap! db assoc (str "models" sep name) {:name name}))
         add-schem #(when-let [name (and @seldb @selcell (js/prompt "Enter the name of the new schematic"))]
-                    (swap! db assoc-in [@selcell :models (keyword name)] {:name name, :type "schematic"}))
+                     (swap! db assoc-in [@selcell :models (keyword name)] {:name name, :type "schematic"}))
         add-spice #(when-let [name (and @seldb @selcell (js/prompt "Enter the name of the new SPICE model"))]
-                    (swap! db assoc-in [@selcell :models (keyword name)] {:name name :type "spice"}))]
+                     (swap! db assoc-in [@selcell :models (keyword name)] {:name name :type "spice"}))]
     [:<>
-    [:div.schsel
-     [:div.addbuttons
-      [:button {:on-click add-cell
-                :disabled (nil? @seldb)}
-       "+ Add cell"]
-      [:div.buttongroup.primary
-       [:button {:on-click add-schem
-                 :disabled (or (nil? @seldb) (nil? @selcell))}
-        "+ Add schematic"]
-       [:details
-        [:summary.button]
-        [:button {:on-click add-spice
+     [:div.schsel
+      [:div.addbuttons
+       [:button {:on-click add-cell
+                 :disabled (nil? @seldb)}
+        "+ Add cell"]
+       [:div.buttongroup.primary
+        [:button {:on-click add-schem
                   :disabled (or (nil? @seldb) (nil? @selcell))}
-         "+ Add SPICE model"]]]]
-     [:h2 "Cell " (when-let [cell @selcell] (second (.split cell ":")))]
-     [schematic-selector db]]
-    [:div.proppane
-     [:div.preview [model-preview db]]
-     [cell-properties db]]
-     ]))
+         "+ Add schematic"]
+        [:details
+         [:summary.button]
+         [:button {:on-click add-spice
+                   :disabled (or (nil? @seldb) (nil? @selcell))}
+          "+ Add SPICE model"]]]]
+      [:h2 "Cell " (when-let [cell @selcell] (second (.split cell ":")))]
+      [schematic-selector db]]
+     [:div.proppane
+      [:div.preview [model-preview db]]
+      [cell-properties db]]]))
 
 (defn library-manager []
   [:<>
@@ -184,7 +200,7 @@
      [:h1 "Library"]
      [:button.plus {:on-click
                     #(let [name (js/prompt "Enter the name of the new database")]
-                        (swap! databases assoc (str "databases" sep name) {:name name}))}
+                       (swap! databases assoc (str "databases" sep name) {:name name}))}
       "+"]]
     [database-selector]
     [db-properties]]
