@@ -323,9 +323,10 @@ input, textarea {
     width: 100%;
 }
 
-#mosaic_canvas {
+#mosaic_editor #mosaic_canvas {
   grid-row: 2;
   grid-column: 2;
+  overflow: hidden;
 }
 
 #mosaic_canvas.pan {
@@ -343,12 +344,12 @@ input, textarea {
 
 
 #mosaic_editor svg {
-  overflow: hidden;
+  overflow: visible;
   stroke-linecap: round;
 }
 
-svg.device {
-  overflow: visible !important;
+#mosaic_editor svg.staging {
+    opacity: 0.5;
 }
 
 svg.device g.transform {
