@@ -346,14 +346,17 @@
     (and (= (.-button e) 0)
          (= ::wire @tool)) (add-wire (viewbox-coord e) (nil? (::dragging @ui)))))
 
+(defn cancel []
+  (swap! ui assoc
+           ::dragging nil
+           ::tool ::cursor
+           ::staging nil))
+
 (defn context-menu [e]
   (println "context-menu")
   (when (or (::dragging @ui)
             (not= (::tool @ui) ::cursor))
-    (swap! ui assoc
-           ::dragging nil
-           ::tool ::cursor
-           ::staging nil)
+    (cancel)
     (.preventDefault e)))
 
 (defn port [x y _ _]
@@ -873,7 +876,7 @@
                 #{:backspace} delete-selected
                 #{:delete} delete-selected
                 #{:w} #(swap! ui assoc ::tool ::wire)
-                #{:escape} #(swap! ui assoc ::tool ::cursor)
+                #{:escape} cancel
                 #{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool (::prev-tool %))))
                 #{:s}        (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))
                 #{:shift :s} (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % -90)))
