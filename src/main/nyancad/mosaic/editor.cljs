@@ -32,16 +32,16 @@
                      ::theme "tetris"
                      ::tool ::cursor
                      ::selected #{}
-                     ::delta {:x 0 :y 0 :rx 0 :ry 0}
                      ::mouse [0 0]}))
 
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme #{"tetris" "eyesore"})
-(s/def ::tool #{::cursor ::eraser ::wire ::pan})
+(s/def ::tool #{::cursor ::eraser ::wire ::pan ::device})
 (s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view}))
+(s/def ::staging (s/nilable :nyancad.mosaic.common/device))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected]
-                    :opt [::dragging]))
+                    :opt [::dragging ::staging]))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
 
@@ -50,6 +50,8 @@
 (defonce tool (r/cursor ui [::tool]))
 (defonce selected (r/cursor ui [::selected]))
 (defonce delta (r/cursor ui [::delta]))
+(defonce staging (r/cursor ui [::staging]))
+
 
 (defonce undotree (cm/newundotree))
 
@@ -192,6 +194,9 @@
                     (+ x (/ w 2))
                     (+ y (/ h 2)))))
 
+(defn commit-staged [dev]
+  (swap! schematic assoc (make-name (:cell dev)) dev))
+
 (defn transform-selected [sch selected tf]
   (let [f (comp transform-vec tf transform)]
     (update-keys sch selected
@@ -221,12 +226,19 @@
                  (update :y #(+ % dy)))))))
 
 (defn drag-wire [e]
-  (let [[dx dy] (map #(/ % grid-size) (viewbox-movement e))]
-    (swap! delta
+  (let [[x y] (viewbox-coord e)]
+    (swap! staging
            (fn [d]
-             (-> d
-                 (update :rx #(+ % dx))
-                 (update :ry #(+ % dy)))))))
+             (assoc d
+                    :rx (- x (:x d) 0.5)
+                    :ry (- y (:y d) 0.5))))))
+
+(defn drag-staged-device [e]
+  (let [[x y] (viewbox-coord e)
+        [width height] (get-in models [(:cell @staging) ::bg])
+        xm (js/Math.round (- x width 0.5))
+        ym (js/Math.round (- y height 0.5))]
+    (swap! staging assoc :x xm :y ym)))
 
 (defn wire-drag [e]
   (case (::dragging @ui)
@@ -258,95 +270,90 @@
     ::eraser (eraser-drag e)
     ::wire (wire-drag e)
     ::cursor (cursor-drag e)
-    ::pan (when (> (.-buttons e) 0) (drag-view e))))
+    ::pan (when (> (.-buttons e) 0) (drag-view e))
+    ::device (drag-staged-device e)))
 
 (defn add-wire-segment [[x y]]
-  (let [name (make-name "wire")]
-    (swap! schematic assoc name
-           {:cell "wire"
-            :x (js/Math.floor x)
-            :y (js/Math.floor y)
-            :rx 0 :ry 0})
-    (swap! ui assoc
-           ::dragging ::wire
-           ::selected #{name})))
+  (println "add-wire-segment")
+  (swap! ui assoc
+         ::staging {:cell "wire"
+                    :x (js/Math.floor x)
+                    :y (js/Math.floor y)
+                    :rx 0 :ry 0}
+         ::dragging ::wire))
 
 (defn add-wire [[x y] first?]
+  (println "add-wire")
   (if first?
     (add-wire-segment [x y]) ; just add a new wire, else finish old wire
-    (let [selected (first (::selected @ui))
-          {drx :rx dry :ry} @delta
-          dev (get @schematic selected)
-          x (js/Math.round (+ (:x dev) (:rx dev) drx)) ; use end pos of previous wire instead
-          y (js/Math.round (+ (:y dev) (:ry dev) dry))
+    (let [dev (update-keys @staging #{:rx :ry} js/Math.round)
+          {rx :rx ry :ry} dev
+          x (js/Math.round (+ (:x dev) rx)) ; use end pos of previous wire instead
+          y (js/Math.round (+ (:y dev) ry))
           on-port (contains? @wire-index [x y])
-          same-tile (and (< (js/Math.abs drx) 0.5) (< (js/Math.abs dry) 0.5))]
-      (go
-        (<! (swap! schematic update selected
-                   (fn [{rx :rx ry :ry :as dev}]
-                     (assoc dev
-                            :rx (js/Math.round (+ rx drx))
-                            :ry (js/Math.round (+ ry dry))))))
-        (cond
-          same-tile (do
-                      (delete-selected)
-                      (swap! ui assoc ; the dragged wire stayed at the same tile, exit
-                             ::dragging nil
-                             ::delta {:x 0 :y 0 :rx 0 :ry 0}))
-          on-port (swap! ui assoc ; the wire landed on a port or wire, exit
-                         ::dragging nil
-                         ::delta {:x 0 :y 0 :rx 0 :ry 0})
-          :else (do
-                  (swap! ui assoc ; add the rounding error to delta
-                         ::delta {:x 0 :y 0
-                                  :rx (- drx (js/Math.round drx))
-                                  :ry (- dry (js/Math.round dry))})
-                  (add-wire-segment [x y])))))))
+          same-tile (and (< (js/Math.abs rx) 0.5) (< (js/Math.abs ry) 0.5))]
+      (cond
+        same-tile (swap! ui assoc ; the dragged wire stayed at the same tile, exit
+                         ::staging nil
+                         ::dragging nil)
+        on-port (go (<! (commit-staged dev)) ; the wire landed on a port or wire, commit and exit
+                    (swap! ui assoc
+                           ::staging nil
+                           ::dragging nil))
+        :else (go
+                (<! (commit-staged dev)) ; commit and start new segment
+                (add-wire-segment [x y]))))))
 
 (defn drag-start [k type e]
-  ; skip the button press from a drag initiated from a toolbar button
-  (let [uiv @ui]
-    (when (not= (::dragging uiv) ::device)
-      ; primary mouse click
-      (when (= (.-button e) 0)
-        (.stopPropagation e) ; prevent bg drag
-        (letfn [(update-selection [sel]
-                  (if (or (contains? sel k)
-                          (.-shiftKey e))
-                    (sconj sel k)
-                    #{k}))
-                (drag-type [ui]
-                  (assoc ui ::dragging
-                         (case @tool
-                           ::cursor ::device
-                           ::wire ::wire
-                           ::eraser type
-                           ::pan ::view)))]
-          (when (not= (::dragging uiv) ::wire)
-            (swap! ui (fn [ui]
-                        (-> ui
-                            (update ::selected update-selection)
-                            (drag-type))))))
-        (case [@tool type]
-          [::eraser ::device] (delete-selected)
-          [::eraser ::wire] (swap! schematic remove-wire
-                                   (first (::selected @ui))
-                                   (viewbox-coord e)) ;; TODO
-          [::wire ::device] (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
-          nil)))))
+  (println "drag-start")
+  (let [uiv @ui
+        update-selection
+        (fn [sel]
+          (if (or (contains? sel k)
+                  (.-shiftKey e))
+            (sconj sel k)
+            #{k}))
+        drag-type
+        (fn [ui]
+          (assoc ui ::dragging
+                 (case @tool
+                   ::cursor ::device
+                   ::wire ::wire
+                   ::eraser type
+                   ::pan ::view)))]
+    ; skip the mouse down when initiated from a toolbar button
+    ; only when primary mouse click
+    (when (and (not= (::tool uiv) ::device)
+               (= (.-button e) 0))
+      (.stopPropagation e) ; prevent bg drag
+      (when (not= (::dragging uiv) ::wire)
+        (swap! ui (fn [ui]
+                    (-> ui
+                        (update ::selected update-selection)
+                        (drag-type)))))
+      (case [@tool type]
+        [::eraser ::device] (delete-selected)
+        [::eraser ::wire] (swap! schematic remove-wire
+                                 (first (::selected @ui))
+                                 (viewbox-coord e)) ;; TODO
+        [::wire ::device] (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
+        nil))))
 
 (defn drag-start-background [e]
+  (println "drag-start-background")
   (cond
     (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
     (and (= (.-button e) 0)
          (= ::wire @tool)) (add-wire (viewbox-coord e) (nil? (::dragging @ui)))))
 
 (defn context-menu [e]
+  (println "context-menu")
   (when (or (::dragging @ui)
             (not= (::tool @ui) ::cursor))
     (swap! ui assoc
            ::dragging nil
-           ::tool ::cursor)
+           ::tool ::cursor
+           ::staging nil)
     (.preventDefault e)))
 
 (defn port [x y _ _]
@@ -354,15 +361,10 @@
                  :cy (+ y (/ grid-size 2))
                  :r (/ grid-size 10)}])
 
-(defn delta-pos [xy k v]
-  (if (contains? @selected k)
-    (+ (get v xy) (get @delta xy))
-    (get v xy)))
-
 (defn device [size k v & elements]
   (assert (js/isFinite size))
-  [:svg.device {:x (* (delta-pos :x k v) grid-size)
-                :y (* (delta-pos :y k v) grid-size)
+  [:svg.device {:x (* (:x v) grid-size)
+                :y (* (:y v) grid-size)
                 :width (* size grid-size)
                 :height (* size grid-size)
                 :class [(:cell v) (when (contains? @selected k) :selected)]}
@@ -375,10 +377,10 @@
           elements)]])
 
 (defn draw-background [[width height] k v]
-  [apply device (+ 2 (max width height)) k v
-  [[:rect.tetris {:x grid-size :y grid-size
+  [device (+ 2 (max width height)) k v
+   [:rect.tetris {:x grid-size :y grid-size
                   :width (* width grid-size)
-                  :height (* height grid-size)}]]])
+                  :height (* height grid-size)}]])
 
 (defn draw-pattern [size pattern prim k v]
   [apply device size k v
@@ -386,7 +388,7 @@
       ^{:key [x y]} [prim (* x grid-size) (* y grid-size) k v])])
 
 
-(defn get-model [layer model]
+(defn get-model [layer model k v]
   (let [m (-> models
               (get (:cell model)
                    {::bg #'circuit-shape
@@ -395,10 +397,10 @@
               (get layer))]
     ;; (assert m "no model")
     (cond
-      (fn? m) m
-      (= layer ::bg) (partial draw-background m)
-      (= layer ::conn) (partial draw-pattern (cm/pattern-size m) m port)
-      :else (fn [k _v] (println "invalid model for" k)))))
+      (fn? m) [m k v]
+      (= layer ::bg) [draw-background m k v]
+      (= layer ::conn) [draw-pattern (cm/pattern-size m) m port k v]
+      :else [(fn [k _v] (println "invalid model for" k))])))
 
 (defn lines [arcs]
   [:<>
@@ -420,6 +422,7 @@
             (into #{} (filter #(contains? sch %)) sel))))
 
 (defn drag-end [e]
+  (println "drag-end")
   (.stopPropagation e)
   (let [bg? (= (.-target e) (.-currentTarget e))
         selected (::selected @ui)
@@ -430,22 +433,24 @@
                      (assoc ::dragging nil)
                      deselect
                      (clean-selected @schematic)))]
-    (when-not (= (::dragging @ui) ::wire)
-      (go
-        (<! (swap! schematic update-keys selected
-                   (fn [{x :x y :y :as dev}]
-                     (assoc dev
-                            :x (js/Math.round (+ x dx))
-                            :y (js/Math.round (+ y dy))))))
-        (reset! delta {:x 0 :y 0 :rx 0 :ry 0})
-        (swap! ui end-ui)))))
+    (if (= (::tool @ui) ::device)
+      (commit-staged @staging)
+      (when-not (= (::dragging @ui) ::wire)
+        (go
+          (<! (swap! schematic update-keys selected
+                     (fn [{x :x y :y :as dev}]
+                       (assoc dev
+                              :x (js/Math.round (+ x dx))
+                              :y (js/Math.round (+ y dy))))))
+          (reset! delta {:x 0 :y 0 :rx 0 :ry 0})
+          (swap! ui end-ui))))))
 
 (defn wire-sym [key wire]
   (let [name (or (:name wire) key)
-        x (delta-pos :x key wire)
-        y (delta-pos :y key wire)
-        rx (delta-pos :rx key wire)
-        ry (delta-pos :ry key wire)]
+        x (:x wire)
+        y (:y wire)
+        rx (:rx wire)
+        ry (:ry wire)]
     [:g.wire {:on-mouse-down #(drag-start key ::device %)}
      ; TODO drag-start ::wire nodes (with reverse) 
      [:line.wirebb {:x1 (* (+ x 0.5) grid-size)
@@ -613,12 +618,8 @@
               :on-double-click #(.assign js/window.location (ckt-url cell model))}]]))
   
 (defn add-device [cell [x y]]
-  (let [name (make-name cell)]
-    (swap! schematic assoc name {:transform cm/IV, :cell cell :x x :y y})
-    (swap! ui assoc
-           ::tool ::cursor
-           ::dragging ::device
-           ::selected #{name})))
+  (reset! staging {:transform cm/IV, :cell cell :x x :y y})
+  (swap! ui assoc ::tool ::device))
 
 (defn save-url []
   (let [blob (js/Blob. #js[(prn-str @schematic)]
@@ -791,18 +792,37 @@
         :on-click #(add-device "ckt" (viewbox-coord %))}
     "X"]])
 
-(defn schematic-elements []
+(defn schematic-elements [schem]
   [:<>
-   (for [[k v] @schematic
+   (doall (for [[k v] schem
          :when (= "wire" (:cell v))]
-     ^{:key k} [(get-model ::bg v) k v])
-   (for [[k v] @schematic
+     ^{:key k} (get-model ::bg v k v)))
+   (doall (for [[k v] schem
          :when (not= "wire" (:cell v))]
-     ^{:key k} [(get-model ::bg v) k v])
-   (for [[k v] @schematic]
-     ^{:key k} [(get-model ::sym v) k v])
-   (for [[k v] @schematic]
-     ^{:key k} [(get-model ::conn v) k v])])
+     ^{:key k} (get-model ::bg v k v)))
+   (doall (for [[k v] schem]
+     ^{:key k} (get-model ::sym v k v)))
+   (doall (for [[k v] schem]
+     ^{:key k} (get-model ::conn v k v)))])
+
+(defn tool-elements []
+  (let [{sel ::selected
+         dr ::dragging
+         v ::staging
+         {x :x y :y} ::delta} @ui
+        vx (* grid-size (js/Math.round x))
+        vy (* grid-size (js/Math.round y))]
+    
+     (if v
+       [:<>
+        (get-model ::bg v ::staging v)
+        (get-model ::sym v ::staging v)
+        (get-model ::conn v ::staging v)]
+       (when (and sel dr)
+         [:svg.staging {:x vx, :y vy}
+          [schematic-elements
+           (let [schem @schematic]
+             (map #(vector % (get schem %)) sel))]]))))
 
 (defn schematic-ui []
   [:div#mosaic_app {:class @theme}
@@ -835,7 +855,8 @@
             :y (* -50 grid-size)
             :width (* 100 grid-size)
             :height (* 100 grid-size)}]
-    [schematic-elements]]])
+    [schematic-elements @schematic]
+    [tool-elements]]])
 
 (def shortcuts {#{:c} #(add-device "capacitor" (::mouse @ui))
                 #{:r} #(add-device "resistor" (::mouse @ui))
