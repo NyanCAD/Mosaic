@@ -348,13 +348,17 @@ input, textarea {
   stroke-linecap: round;
 }
 
-#mosaic_editor svg.staging {
+#mosaic_editor g.staging {
     opacity: 0.5;
 }
 
-svg.device g.transform {
-  transform-box: border-box;
+g.device {
+  transform-box: view-box;
   transform-origin: center;
+}
+
+g.staging, g.toolstaging g.device {
+    transition: all 100ms;
 }
 
 line.wirebb {
@@ -378,7 +382,7 @@ line.wirebb {
   rx: 10px;
 }
 
-.tetris svg.device.selected rect.tetris,
+.tetris g.device.selected rect.tetris,
 .tetris rect.tetris.selected {
   fill: rgb(229, 216, 243) !important;
   stroke: rgb(229, 216, 243) !important;
@@ -388,33 +392,33 @@ line.wirebb {
   fill: rgb(229, 216, 243) !important;
 }
 
-.tetris svg.device.nmos rect.tetris,
-.tetris svg.device.npn rect.tetris {
+.tetris g.device.nmos rect.tetris,
+.tetris g.device.npn rect.tetris {
   fill: rgb(216, 236, 243);
   stroke: rgb(216, 236, 243);
 }
 
-.tetris svg.device.pmos rect.tetris,
-.tetris svg.device.pnp rect.tetris {
+.tetris g.device.pmos rect.tetris,
+.tetris g.device.pnp rect.tetris {
   fill: rgb(243, 231, 216);
   stroke: rgb(243, 231, 216);
 }
 
-.tetris svg.device.capacitor rect.tetris,
-.tetris svg.device.inductor rect.tetris,
-.tetris svg.device.resistor rect.tetris,
-.tetris svg.device.diode rect.tetris {
+.tetris g.device.capacitor rect.tetris,
+.tetris g.device.inductor rect.tetris,
+.tetris g.device.resistor rect.tetris,
+.tetris g.device.diode rect.tetris {
   fill: rgb(216, 243, 226);
   stroke: rgb(216, 243, 226);
 }
 
-.tetris svg.device.vsource rect.tetris,
-.tetris svg.device.isource rect.tetris {
+.tetris g.device.vsource rect.tetris,
+.tetris g.device.isource rect.tetris {
   fill: rgb(243, 243, 216);
   stroke: rgb(243, 243, 216);
 }
 
-.tetris svg.device.port polyline {
+.tetris g.device.port polyline {
   fill: rgb(243, 243, 216);
 }
 
@@ -423,19 +427,19 @@ line.wirebb {
   stroke: rgb(53, 0, 0);
 }
 
-.tetris svg.device circle.port {
+.tetris g.device circle.port {
   display: none;
 }
 
-.tetris svg.device.selected circle.port {
+.tetris g.device.selected circle.port {
   display: inherit;
 }
 
 
-.tetris svg.device polyline,
-.tetris svg.device circle.outline,
-.tetris svg.device rect.outline,
-.tetris svg.device path {
+.tetris g.device polyline,
+.tetris g.device circle.outline,
+.tetris g.device rect.outline,
+.tetris g.device path {
   stroke: black;
   stroke-width: 2px;
   fill: none;
@@ -484,18 +488,18 @@ line.wirebb {
   fill: red;
 }
 
-.eyesore svg.device polyline,
-.eyesore svg.device path,
-.eyesore svg.device circle.outline,
-.eyesore svg.device rect.outline,
-.eyesore svg.device polygon {
+.eyesore g.device polyline,
+.eyesore g.device path,
+.eyesore g.device circle.outline,
+.eyesore g.device rect.outline,
+.eyesore g.device polygon {
   stroke: #00cc66;
   stroke-width: 1px;
   fill: none;
   vector-effect: non-scaling-stroke;
 }
 
-.eyesore svg.device text {
+.eyesore g.device text {
   stroke: #00cc66;
   /* stroke-width: 1px; */
   fill: #00cc66;
