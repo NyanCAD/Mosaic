@@ -383,18 +383,12 @@
 
 (defn device [size k v & elements]
   (assert (js/isFinite size))
-  [:svg.device {:x (* (:x v) grid-size)
-                :y (* (:y v) grid-size)
-                :width (* size grid-size)
-                :height (* size grid-size)
-                :class [(:cell v) (when (contains? @selected k) :selected)]}
-   [:g.position
-    {:on-mouse-down (fn [e] (drag-start k ::device e))}
-    (into [:g.transform
-           {:width (* size grid-size)
-            :height (* size grid-size)
-            :transform (.toString (transform (:transform v cm/IV)))}]
-          elements)]])
+  (into [:g.device {:on-mouse-down (fn [e] (drag-start k ::device e))
+              :style {:transform (.toString (.translate (transform (:transform v cm/IV)) (* (:x v) grid-size) (* (:y v) grid-size)))
+                      :transform-origin (str (* (+ (:x v) (/ size 2)) grid-size) "px "
+                                             (* (+ (:y v) (/ size 2)) grid-size) "px")}
+              :class [(:cell v) (when (contains? @selected k) :selected)]}]
+          elements))
 
 (defn draw-background [[width height] k v]
   [device (+ 2 (max width height)) k v
@@ -841,12 +835,12 @@
         vx (* grid-size (js/Math.round x))
         vy (* grid-size (js/Math.round y))]
      (if v
-       [:<>
+       [:g.toolstaging
         (get-model ::bg v ::stagingbg v)
         (get-model ::sym v ::stagingsym v)
         (get-model ::conn v ::stagingconn v)]
        (when (and sel dr)
-         [:svg.staging {:x vx, :y vy}
+         [:g.staging {:style {:transform (str "translate(" vx "px, " vy "px)")}}
           [schematic-elements
            (let [schem @schematic]
              (map #(vector % (get schem %)) sel))]]))))
