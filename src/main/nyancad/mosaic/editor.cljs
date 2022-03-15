@@ -296,7 +296,6 @@
     ::device (drag-staged-device e)))
 
 (defn add-wire-segment [[x y]]
-  (println "add-wire-segment")
   (swap! ui assoc
          ::staging {:cell "wire"
                     :x (js/Math.floor x)
@@ -305,7 +304,6 @@
          ::dragging ::wire))
 
 (defn add-wire [[x y] first?]
-  (println "add-wire")
   (if first?
     (add-wire-segment [x y]) ; just add a new wire, else finish old wire
     (let [dev (update-keys @staging #{:rx :ry} js/Math.round)
@@ -327,7 +325,6 @@
                 (add-wire-segment [x y]))))))
 
 (defn drag-start [k type e]
-  (println "drag-start")
   (let [uiv @ui
         update-selection
         (fn [sel]
@@ -362,7 +359,6 @@
         nil))))
 
 (defn drag-start-background [e]
-  (println "drag-start-background")
   (cond
     (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
     (and (= (.-button e) 0)
@@ -375,7 +371,6 @@
            ::staging nil))
 
 (defn context-menu [e]
-  (println "context-menu")
   (when (or (::dragging @ui)
             (not= (::tool @ui) ::cursor))
     (cancel)
@@ -447,7 +442,6 @@
             (into #{} (filter #(contains? sch %)) sel))))
 
 (defn drag-end [e]
-  (println "drag-end")
   (.stopPropagation e)
   (let [bg? (= (.-target e) (.-currentTarget e))
         selected (::selected @ui)
@@ -819,16 +813,28 @@
 
 (defn schematic-elements [schem]
   [:<>
-   (doall (for [[k v] schem
+   (for [[k v] schem
          :when (= "wire" (:cell v))]
-     (get-model ::bg v k v)))
-   (doall (for [[k v] schem
+     (get-model ::bg v k v))
+   (for [[k v] schem
          :when (not= "wire" (:cell v))]
-     (get-model ::bg v k v)))
-   (doall (for [[k v] schem]
-     (get-model ::sym v k v)))
-   (doall (for [[k v] schem]
-     (get-model ::conn v k v)))])
+     (get-model ::bg v k v))
+   (for [[k v] schem]
+     (get-model ::sym v k v))
+   (for [[k v] schem]
+     (get-model ::conn v k v))])
+
+(defn schematic-dots []
+  [:<>
+   (for [[[x y] ids] @wire-index
+         :let [n (count ids)]
+         :when (not= n 2)]
+     [:circle
+      {:key [x y]
+       :class (if (> n 2) "wire" "nc")
+       :cx (* grid-size (+ x 0.5))
+       :cy (* grid-size (+ y 0.5))
+       :r (/ grid-size 10)}])])
 
 (defn tool-elements []
   (let [{sel ::selected dr ::dragging v ::staging {x :x y :y} ::delta} @ui
@@ -877,6 +883,7 @@
             :width (* 100 grid-size)
             :height (* 100 grid-size)}]
     [schematic-elements @schematic]
+    [schematic-dots]
     [tool-elements]]])
 
 (def shortcuts {#{:c} #(add-device "capacitor" (::mouse @ui))
