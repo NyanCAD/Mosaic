@@ -134,20 +134,42 @@
                      ::sym #'wire-sym
                      ::props {}}
              "port" {::bg []
-                      ::conn []
+                      ::conn [[0 0 "P"]]
                       ::sym #'port-sym
                       ::props {}}})
 
+;; def rotate(shape, transform, devx, devy):
+;;     a, b, c, d, e, f = transform
+;;     width = max(max(x, y) for x, y, _ in shape)+1
+;;     mid = width/2-0.5
+;;     res = {}
+;;     for px, py, p in shape:
+;;         x = px-mid
+;;         y = py-mid
+;;         nx = a*x+c*y+e
+;;         ny = b*x+d*y+f
+;;         res[round(devx+nx+mid), round(devy+ny+mid)] = p
+;;     return res
+
+(defn rotate-shape [shape [a b c d e f] devx, devy]
+  (let [size (cm/pattern-size shape)
+        mid (- (/ size 2) 0.5)]
+    (map (fn [[px py p]]
+           (let [x (- px mid)
+                 y (- py mid)
+                 nx (+ (* a x) (* c y) e)
+                 ny (+ (* b x) (* d y) f)]
+             [(js/Math.round (+ devx nx mid))
+               (js/Math.round (+ devy ny mid))])) shape)))
+
 (defn build-wire-index [sch]
   (reduce
-   (fn [idx {:keys [:_id :x :y :rx :ry :cell]}]
+   (fn [idx {:keys [:_id :x :y :rx :ry :cell :transform]}]
      (cond
        (= cell "wire") (-> idx
                            (update [x y] conj _id)
                            (update [(+ x rx) (+ y ry)] conj _id))
-       (contains? models cell) (reduce
-                                (fn [idx [rx ry _]] (update idx [(+ x rx) (+ y ry)] conj _id))
-                                idx (get-in models [cell ::conn]))
+       (contains? models cell) (reduce #(update %1 %2 conj _id) idx (rotate-shape (get-in models [cell ::conn]) transform x y))
        :else idx)) ;TODO custom components
    {} (vals sch)))
 
@@ -400,10 +422,10 @@
               (get layer))]
     ;; (assert m "no model")
     (cond
-      (fn? m) [m k v]
-      (= layer ::bg) [draw-background m k v]
-      (= layer ::conn) [draw-pattern (cm/pattern-size m) m port k v]
-      :else [(fn [k _v] (println "invalid model for" k))])))
+      (fn? m) ^{:key k} [m k v]
+      (= layer ::bg) ^{:key k} [draw-background m k v]
+      (= layer ::conn) ^{:key k} [draw-pattern (cm/pattern-size m) m port k v]
+      :else ^{:key k} [(fn [k _v] (println "invalid model for" k))])))
 
 (defn lines [arcs]
   [:<>
@@ -799,28 +821,24 @@
   [:<>
    (doall (for [[k v] schem
          :when (= "wire" (:cell v))]
-     ^{:key k} (get-model ::bg v k v)))
+     (get-model ::bg v k v)))
    (doall (for [[k v] schem
          :when (not= "wire" (:cell v))]
-     ^{:key k} (get-model ::bg v k v)))
+     (get-model ::bg v k v)))
    (doall (for [[k v] schem]
-     ^{:key k} (get-model ::sym v k v)))
+     (get-model ::sym v k v)))
    (doall (for [[k v] schem]
-     ^{:key k} (get-model ::conn v k v)))])
+     (get-model ::conn v k v)))])
 
 (defn tool-elements []
-  (let [{sel ::selected
-         dr ::dragging
-         v ::staging
-         {x :x y :y} ::delta} @ui
+  (let [{sel ::selected dr ::dragging v ::staging {x :x y :y} ::delta} @ui
         vx (* grid-size (js/Math.round x))
         vy (* grid-size (js/Math.round y))]
-    
      (if v
        [:<>
-        (get-model ::bg v ::staging v)
-        (get-model ::sym v ::staging v)
-        (get-model ::conn v ::staging v)]
+        (get-model ::bg v ::stagingbg v)
+        (get-model ::sym v ::stagingsym v)
+        (get-model ::conn v ::stagingconn v)]
        (when (and sel dr)
          [:svg.staging {:x vx, :y vy}
           [schematic-elements
