@@ -32,7 +32,8 @@
                      ::theme "tetris"
                      ::tool ::cursor
                      ::selected #{}
-                     ::mouse [0 0]}))
+                     ::mouse [0 0]
+                     ::mouse-start [0 0]}))
 
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme #{"tetris" "eyesore"})
@@ -243,12 +244,11 @@
               w h]))))
 
 (defn drag-device [e]
-  (let [[dx dy] (map #(/ % grid-size) (viewbox-movement e))]
-    (swap! delta
-           (fn [d]
-             (-> d
-                 (update :x #(+ % dx))
-                 (update :y #(+ % dy)))))))
+  (let [[x y] (viewbox-coord e)
+        [xs ys] (::mouse-start @ui)
+        dx (- x xs)
+        dy (- y ys)]
+    (swap! delta assoc :x dx :y dy)))
 
 (defn drag-wire [e]
   (let [[x y] (viewbox-coord e)]
@@ -328,6 +328,7 @@
                 (add-wire-segment [x y]))))))
 
 (defn drag-start [k type e]
+  (swap! ui assoc ::mouse-start (viewbox-coord e))
   (let [uiv @ui
         update-selection
         (fn [sel]
@@ -442,7 +443,7 @@
   (.stopPropagation e)
   (let [bg? (= (.-target e) (.-currentTarget e))
         selected (::selected @ui)
-        {dx :x dy :y drx :rx dry :ry} @delta
+        {dx :x dy :y} @delta
         deselect (fn [ui] (if bg? (assoc ui ::selected #{}) ui))
         end-ui (fn [ui]
                  (-> ui
@@ -634,8 +635,12 @@
               :on-double-click #(.assign js/window.location (ckt-url cell model))}]]))
   
 (defn add-device [cell [x y]]
-  (reset! staging {:transform cm/IV, :cell cell :x x :y y})
-  (swap! ui assoc ::tool ::device))
+  (let [[width height] (get-in models [cell ::bg])
+        mx (- x (/ width 2) 1)
+        my (- y (/ height 2) 1)]
+    (swap! ui assoc
+           ::staging {:transform cm/IV, :cell cell :x mx :y my}
+           ::tool ::device)))
 
 (defn save-url []
   (let [blob (js/Blob. #js[(prn-str @schematic)]
