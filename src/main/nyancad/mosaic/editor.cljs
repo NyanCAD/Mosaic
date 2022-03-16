@@ -219,10 +219,13 @@
 (defn commit-staged [dev]
   (swap! schematic assoc (make-name (:cell dev)) dev))
 
-(defn transform-selected [sch selected tf]
+(defn transform-selected [tf]
   (let [f (comp transform-vec tf transform)]
-    (update-keys sch selected
-                 update :transform f)))
+    (if @staging
+      (swap! staging
+             update :transform f)
+      (swap! @schematic update-keys @selected
+             update :transform f))))
 
 (defn delete-selected []
   (let [selected (::selected @ui)]
@@ -731,16 +734,16 @@
      [[cm/move] [cm/move] ::pan "Pan"]]]
    [:span.sep]
    [:a {:title "Rotate selected clockwise [s]"
-        :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))}
+        :on-click (fn [_] (transform-selected #(.rotate % 90)))}
     [cm/rotatecw]]
    [:a {:title "Rotate selected counter-clockwise [shift+s]"
-        :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % -90)))}
+        :on-click (fn [_] (transform-selected #(.rotate % -90)))}
     [cm/rotateccw]]
    [:a {:title "Mirror selected horizontal [shift+f]"
-        :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipY %)))}
+        :on-click (fn [_] (transform-selected #(.flipY %)))}
     [cm/mirror-horizontal]]
    [:a {:title "Mirror selected vertical [f]"
-        :on-click (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipX %)))}
+        :on-click (fn [_] (transform-selected #(.flipX %)))}
     [cm/mirror-vertical]]
    [:a {:title "Delete selected [del]"
         :on-click (fn [_] (delete-selected))}
@@ -897,10 +900,10 @@
                 #{:w} #(swap! ui assoc ::tool ::wire)
                 #{:escape} cancel
                 #{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool (::prev-tool %))))
-                #{:s}        (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % 90)))
-                #{:shift :s} (fn [_] (swap! schematic transform-selected (::selected @ui) #(.rotate % -90)))
-                #{:shift :f} (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipY %)))
-                #{:f}        (fn [_] (swap! schematic transform-selected (::selected @ui) #(.flipX %)))
+                #{:s}        (fn [_] (transform-selected #(.rotate % 90)))
+                #{:shift :s} (fn [_] (transform-selected #(.rotate % -90)))
+                #{:shift :f} (fn [_] (transform-selected #(.flipY %)))
+                #{:f}        (fn [_] (transform-selected #(.flipX %)))
                 #{:control :c} copy
                 #{:control :x} cut
                 #{:control :v} paste
