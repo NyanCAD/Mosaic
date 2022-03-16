@@ -348,7 +348,8 @@ input, textarea {
   stroke-linecap: round;
 }
 
-#mosaic_editor g.staging {
+#mosaic_editor g.staging,
+#mosaic_editor g.toolstaging {
     opacity: 0.5;
 }
 
