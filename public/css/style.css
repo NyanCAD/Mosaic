@@ -455,6 +455,9 @@ line.wirebb {
 .tetris circle.wire {
   fill: black;
 }
+.tetris g.wire.selected line.wire {
+  stroke-dasharray: 10px 3px; /* this is not ideal */
+}
 
 .tetris circle.nc {
   fill: none;

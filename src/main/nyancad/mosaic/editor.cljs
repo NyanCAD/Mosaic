@@ -76,16 +76,17 @@
   (when-let [st (cm/redo undotree)]
     (restore st)))
 
-(declare drag-start)
+(declare drag-start eraser-drag)
 
 (defn device [size k v & elements]
   (assert (js/isFinite size))
   (into [:g.device {:on-mouse-down (fn [e] (drag-start k e))
-              :style {:transform (.toString (.translate (transform (:transform v cm/IV)) (* (:x v) grid-size) (* (:y v) grid-size)))
-                      :transform-origin (str (* (+ (:x v) (/ size 2)) grid-size) "px "
-                                             (* (+ (:y v) (/ size 2)) grid-size) "px")}
-              :class [(:cell v) (when (contains? @selected k) :selected)]}]
-          elements))
+                    :on-mouse-move (fn [e] (eraser-drag k e))
+                    :style {:transform (.toString (.translate (transform (:transform v cm/IV)) (* (:x v) grid-size) (* (:y v) grid-size)))
+                            :transform-origin (str (* (+ (:x v) (/ size 2)) grid-size) "px "
+                                                   (* (+ (:y v) (/ size 2)) grid-size) "px")}
+                    :class [(:cell v) (when (contains? @selected k) :selected)]}]
+        elements))
 
 (defn port [x y _ _]
   [:circle.port {:cx (+ x (/ grid-size 2))
@@ -100,8 +101,8 @@
 
 (defn draw-pattern [size pattern prim k v]
   [apply device size k v
-    (for [[x y c] pattern]
-      ^{:key [x y]} [prim (* x grid-size) (* y grid-size) k v])])
+   (for [[x y c] pattern]
+     ^{:key [x y]} [prim (* x grid-size) (* y grid-size) k v])])
 
 
 (defn lines [arcs]
@@ -123,7 +124,9 @@
         y (:y wire)
         rx (:rx wire)
         ry (:ry wire)]
-    [:g.wire {:on-mouse-down #(drag-start key %)}
+    [:g.wire {:on-mouse-down #(drag-start key %)
+              :on-mouse-move #(eraser-drag key %)
+              :class (when (contains? @selected key) :selected)}
      ; TODO drag-start ::wire nodes (with reverse) 
      [:line.wirebb {:x1 (* (+ x 0.5) grid-size)
                     :y1 (* (+ y 0.5) grid-size)
@@ -194,9 +197,9 @@
                 [1.5 2.5]]]]
     [device 3 k v
      [:rect.outline {:x (* 1.35 grid-size)
-             :y (* 1.1 grid-size)
-             :width (* 0.3 grid-size)
-             :height (* 0.8 grid-size)}]
+                     :y (* 1.1 grid-size)
+                     :width (* 0.3 grid-size)
+                     :height (* 0.8 grid-size)}]
      [lines shape]]))
 
 (defn capacitor-sym [k v]
@@ -282,7 +285,7 @@
 
 (defn circuit-sym [k v]
   (let [cell (:cell v)
-        model (get-in v [:props :model]) 
+        model (get-in v [:props :model])
         [width height] (get-in @modeldb [(str "models" sep cell) :bg] [1 1])]
     [device (+ 2 (max width height)) k v
      [:image {:href (get-in @modeldb [(str "models" sep cell) :sym])
@@ -303,19 +306,19 @@
                               :w {:tooltip "width" :unit "meter"}
                               :l {:tooltip "lenght" :unit "meter"}}}
              "npn" {::bg cm/active-bg
-                     ::conn bjt-conn
-                     ::sym bjt-sym
-                     ::props {:m {:tooltip "multiplier"}
-                              :nf {:tooltip "number of fingers"}
-                              :w {:tooltip "width" :unit "meter"}
-                              :l {:tooltip "lenght" :unit "meter"}}}
+                    ::conn bjt-conn
+                    ::sym bjt-sym
+                    ::props {:m {:tooltip "multiplier"}
+                             :nf {:tooltip "number of fingers"}
+                             :w {:tooltip "width" :unit "meter"}
+                             :l {:tooltip "lenght" :unit "meter"}}}
              "pnp" {::bg cm/active-bg
-                     ::conn bjt-conn
-                     ::sym bjt-sym
-                     ::props {:m {:tooltip "multiplier"}
-                              :nf {:tooltip "number of fingers"}
-                              :w {:tooltip "width" :unit "meter"}
-                              :l {:tooltip "lenght" :unit "meter"}}}
+                    ::conn bjt-conn
+                    ::sym bjt-sym
+                    ::props {:m {:tooltip "multiplier"}
+                             :nf {:tooltip "number of fingers"}
+                             :w {:tooltip "width" :unit "meter"}
+                             :l {:tooltip "lenght" :unit "meter"}}}
              "resistor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
                          ::sym resistor-sym
@@ -347,9 +350,9 @@
                      ::sym wire-sym
                      ::props {}}
              "port" {::bg []
-                      ::conn [[0 0 "P"]]
-                      ::sym port-sym
-                      ::props {}}})
+                     ::conn [[0 0 "P"]]
+                     ::sym port-sym
+                     ::props {}}})
 
 (defn rotate-shape [shape [a b c d e f] devx, devy]
   (let [size (cm/pattern-size shape)
@@ -360,7 +363,7 @@
                  nx (+ (* a x) (* c y) e)
                  ny (+ (* b x) (* d y) f)]
              [(js/Math.round (+ devx nx mid))
-               (js/Math.round (+ devy ny mid))])) shape)))
+              (js/Math.round (+ devy ny mid))])) shape)))
 
 (defn build-wire-index [sch]
   (reduce
@@ -480,25 +483,20 @@
     ::device (drag-device e)
     nil))
 
-(defn eraser-drag [e]
-  (let [dragging (::dragging @ui)]
-    (case dragging
-      ::view (drag-view e)
-      ::wire (swap! schematic remove-wire
-                    (first (::selected @ui))
-                    (viewbox-coord e))
-      nil))) ;todo remove devices?
+(defn eraser-drag [k e]
+  (when (and (= (.-buttons e) 1)
+             (= @tool ::eraser))
+    (swap! schematic dissoc k)))
 
 (defn drag [e]
   ;; store mouse position for use outside mouse events
   ;; keyboard shortcuts for example
   (swap! ui assoc ::mouse (viewbox-coord e))
   (case @tool
-    ::eraser (eraser-drag e)
     ::wire (wire-drag e)
-    ::cursor (cursor-drag e)
     ::pan (when (> (.-buttons e) 0) (drag-view e))
-    ::device (drag-staged-device e)))
+    ::device (drag-staged-device e)
+    (cursor-drag e)))
 
 (defn add-wire-segment [[x y]]
   (swap! ui assoc
@@ -529,6 +527,29 @@
                 (<! (commit-staged dev)) ; commit and start new segment
                 (add-wire-segment [x y]))))))
 
+(defn select-connected []
+  (let [schem @schematic
+        wire (some schem @selected)
+        wire? (fn [wirename] (let [wire (get schem wirename)]
+                               (and (= (:cell wire) "wire") wire)))
+        wire-ports (fn [init wire]
+                     (if (= (:cell wire) "wire")
+                       (conj init [(:x wire) (:y wire)]
+                             [(+ (:x wire) (:rx wire)) (+ (:y wire) (:ry wire))])
+                       init))]
+    (loop [ports (wire-ports #{} wire)
+           sel #{(:_id wire)}]
+      (if (seq ports)
+        (let [newsel (clojure.set/difference
+                      (set (filter wire? (mapcat @wire-index ports)))
+                      sel)
+              newports (reduce wire-ports #{} (map schem newsel))]
+          (println "new" newsel newports)
+          (recur
+           (clojure.set/difference newports ports)
+           (into sel newsel)))
+        (reset! selected sel)))))
+
 (defn drag-start [k e]
   (swap! ui assoc ::mouse-start (viewbox-coord e))
   (let [uiv @ui
@@ -544,19 +565,21 @@
                  (case (::tool ui)
                    ::cursor ::device
                    ::wire ::wire
-                   ::eraser ::device
                    ::pan ::view)))]
     ; skip the mouse down when initiated from a toolbar button
     ; only when primary mouse click
     (when (and (not= (::tool uiv) ::device)
                (= (.-button e) 0))
       (.stopPropagation e) ; prevent bg drag
-      (if (= (::tool uiv) ::wire)
-        (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
-        (swap! ui (fn [ui]
-                    (-> ui
-                        (update ::selected update-selection)
-                        (drag-type))))))))
+      (if (= (.-detail e) 1)
+        (case (::tool uiv)
+          ::wire (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
+          ::eraser (eraser-drag k e)
+          (swap! ui (fn [ui]
+                      (-> ui
+                          (update ::selected update-selection)
+                          (drag-type)))))
+        (select-connected)))))
 
 (defn drag-start-background [e]
   (cond
@@ -566,9 +589,9 @@
 
 (defn cancel []
   (swap! ui assoc
-           ::dragging nil
-           ::tool ::cursor
-           ::staging nil))
+         ::dragging nil
+         ::tool ::cursor
+         ::staging nil))
 
 (defn context-menu [e]
   (when (or (::dragging @ui)
@@ -620,7 +643,7 @@
           (reset! delta {:x 0 :y 0 :rx 0 :ry 0})
           (swap! ui end-ui))))))
 
-  
+
 (defn add-device [cell [x y]]
   (let [[width height] (get-in models [cell ::bg])
         mx (- x (/ width 2) 1)
@@ -643,13 +666,12 @@
       js/btoa))
 
 (defn snapshot []
-  (swap! snapshots assoc (str "snapshots" sep group "#" (.toISOString (js/Date. )))
+  (swap! snapshots assoc (str "snapshots" sep group "#" (.toISOString (js/Date.)))
          {:schematic @schematic
-          :_attachments {"preview.svg" {
-                          :content_type "image/svg+xml"
-                          :data (b64encode (str
-                                          "<?xml-stylesheet type=\"text/css\" href=\"https://nyancad.github.io/Mosaic/app/css/style.css\" ?>"
-                                          (.-outerHTML (js/document.getElementById "mosaic_canvas"))))}}}))
+          :_attachments {"preview.svg" {:content_type "image/svg+xml"
+                                        :data (b64encode (str
+                                                          "<?xml-stylesheet type=\"text/css\" href=\"https://nyancad.github.io/Mosaic/app/css/style.css\" ?>"
+                                                          (.-outerHTML (js/document.getElementById "mosaic_canvas"))))}}}))
 
 (defn deviceprops [key]
   (let [props (r/cursor schematic [key :props])
@@ -829,16 +851,16 @@
   (let [{sel ::selected dr ::dragging v ::staging {x :x y :y} ::delta} @ui
         vx (* grid-size (js/Math.round x))
         vy (* grid-size (js/Math.round y))]
-     (if v
-       [:g.toolstaging
-        (get-model ::bg v ::stagingbg v)
-        (get-model ::sym v ::stagingsym v)
-        (get-model ::conn v ::stagingconn v)]
-       (when (and sel dr)
-         [:g.staging {:style {:transform (str "translate(" vx "px, " vy "px)")}}
-          [schematic-elements
-           (let [schem @schematic]
-             (map #(vector % (get schem %)) sel))]]))))
+    (if v
+      [:g.toolstaging
+       (get-model ::bg v ::stagingbg v)
+       (get-model ::sym v ::stagingsym v)
+       (get-model ::conn v ::stagingconn v)]
+      (when (and sel dr)
+        [:g.staging {:style {:transform (str "translate(" vx "px, " vy "px)")}}
+         [schematic-elements
+          (let [schem @schematic]
+            (map #(vector % (get schem %)) sel))]]))))
 
 (defn schematic-ui []
   [:div#mosaic_app {:class @theme}
