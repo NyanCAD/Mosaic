@@ -355,10 +355,11 @@ input, textarea {
 g.device {
   transform-box: view-box;
   transform-origin: center;
+  user-select: none;
 }
 
 g.staging, g.toolstaging g.device {
-    transition: all 100ms;
+    transition: all 70ms ease-out;
 }
 
 line.wirebb {
