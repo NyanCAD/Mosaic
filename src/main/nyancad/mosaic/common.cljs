@@ -19,13 +19,8 @@
 (defn sign [n] (if (> n 0) 1 -1))
 
 ; like conj but coerces to set
-(defn sconj
-  ([s val] (conj (set s) val))
-  ([s val & vals] (apply conj (set s) val vals)))
-
-(defn sdisj
-  ([s val] (disj (set s) val))
-  ([s val & vals] (apply disj (set s) val vals)))
+(def sconj (fnil conj #{}))
+(def ssconj (fnil conj (sorted-set)))
 
 (defn bisect-left
   ([a x] (bisect-left a x identity))

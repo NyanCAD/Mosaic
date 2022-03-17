@@ -3,7 +3,7 @@
             [reagent.dom :as rd]
             [nyancad.hipflask :refer [pouch-atom pouchdb update-keys sep]]
             [clojure.spec.alpha :as s]
-            [cljs.core.async :refer [go <!]]
+            [cljs.core.async :refer [go go-loop <!]]
             clojure.edn
             clojure.set
             clojure.string
@@ -370,16 +370,77 @@
    (fn [idx {:keys [:_id :x :y :rx :ry :cell :transform]}]
      (cond
        (= cell "wire") (-> idx
-                           (update [x y] conj _id)
-                           (update [(+ x rx) (+ y ry)] conj _id))
-       (contains? models cell) (reduce #(update %1 %2 conj _id) idx (rotate-shape (get-in models [cell ::conn]) transform x y))
+                           (update [x y] sconj _id)
+                           (update [(+ x rx) (+ y ry)] sconj _id))
+       (contains? models cell) (reduce #(update %1 %2 sconj _id) idx (rotate-shape (get-in models [cell ::conn]) transform x y))
        :else idx)) ;TODO custom components
    {} (vals sch)))
 
-(defn build-current-wire-index []
-  (build-wire-index @schematic))
+(def wire-index (r/track #(build-wire-index @schematic)))
 
-(def wire-index (r/track build-current-wire-index))
+(defn exrange [start width]
+  (next (take-while #(not= % (+ start width))
+                    (iterate #(+ % (cm/sign width)) start))))
+
+(defn build-wire-split-index [sch widx]
+  (reduce
+   (fn [idx {:keys [:_id :x :y :rx :ry :cell]}]
+     (if (= cell "wire")
+       (->> (cond
+              (= rx 0) (map #(vector x %) (exrange y ry))
+              (= ry 0) (map #(vector % y) (exrange x rx))
+              :else [])
+            (filter (partial contains? widx))
+            (reduce conj (sorted-set))
+            (assoc idx _id))
+       idx))
+   {} (vals sch)))
+
+(def wire-split-index (r/track #(build-wire-split-index @schematic @wire-index)))
+
+(defn build-wire-midpoint-index [sch]
+  (reduce
+   (fn [idx {:keys [:_id :x :y :rx :ry :cell]}]
+     (if (= cell "wire")
+       (->> (cond
+              (= rx 0) (map #(vector x %) (exrange y ry))
+              (= ry 0) (map #(vector % y) (exrange x rx))
+              :else [])
+            (reduce conj idx))
+       idx))
+   #{} (vals sch)))
+
+(def wire-midpoint-index (r/track #(build-wire-midpoint-index @schematic)))
+
+(declare split-wire)
+
+(defn split-wires []
+  (remove-watch schematic ::split) ; don't recursively split
+  (remove-watch schematic ::undo) ; don't add splitting to undo tree
+  (go (doseq [[w coords] @wire-split-index]
+        (<! (split-wire w coords)))
+      (add-watch schematic ::undo #(cm/newdo undotree %4))
+      (add-watch schematic ::split split-wires)))
+
+(add-watch schematic ::split split-wires)
+
+(defn split-wire [wirename coords]
+  (let [{:keys [:x :y :rx :ry]} (get @schematic wirename)
+        x2 (+ x rx)
+        y2 (+ y ry)
+        allcoords (cm/ssconj coords [x y] [x2 y2])
+        widx @wire-index]
+    (println (vec allcoords))
+    (go-loop [w wirename
+           [[x1 y1] & [[x2 y2] & oother :as other]] allcoords]
+      (println w x1 x2 y1 y2)
+      (println (clojure.set/intersection (get widx [x1 y1]) (get widx [x2 y2])))
+      (when (empty? (clojure.set/intersection (get widx [x1 y1]) (get widx [x2 y2])))
+        (<! (swap! schematic update w assoc
+                   :cell "wire" :transform cm/IV
+                   :x x1 :y y1 :rx (- x2 x1) :ry (- y2 y1))))
+      (when oother
+        (recur (make-name "wire") other)))))
 
 (defn viewbox-coord [e]
   (let [^js el (js/document.getElementById "mosaic_canvas")
@@ -427,15 +488,13 @@
     (if @staging
       (swap! staging
              update :transform f)
-      (swap! @schematic update-keys @selected
+      (swap! schematic update-keys @selected
              update :transform f))))
 
 (defn delete-selected []
   (let [selected (::selected @ui)]
     (swap! ui assoc ::selected #{})
     (swap! schematic #(apply dissoc %1 %2) selected)))
-
-(defn remove-wire [sch selected coord])
 
 (defn drag-view [e]
   (swap! ui update ::zoom
@@ -513,7 +572,8 @@
           {rx :rx ry :ry} dev
           x (js/Math.round (+ (:x dev) rx)) ; use end pos of previous wire instead
           y (js/Math.round (+ (:y dev) ry))
-          on-port (contains? @wire-index [x y])
+          on-port (or (contains? @wire-index [x y])
+                      (contains? @wire-midpoint-index [x y]))
           same-tile (and (< (js/Math.abs rx) 0.5) (< (js/Math.abs ry) 0.5))]
       (cond
         same-tile (swap! ui assoc ; the dragged wire stayed at the same tile, exit
@@ -588,10 +648,15 @@
          (= ::wire @tool)) (add-wire (viewbox-coord e) (nil? (::dragging @ui)))))
 
 (defn cancel []
-  (swap! ui assoc
-         ::dragging nil
-         ::tool ::cursor
-         ::staging nil))
+  (let [uiv @ui]
+    (if (and (::staging uiv) (= (::tool uiv) ::wire))
+      (swap! ui assoc
+             ::dragging nil
+             ::staging nil)
+      (swap! ui assoc
+             ::dragging nil
+             ::tool ::cursor
+             ::staging nil))))
 
 (defn context-menu [e]
   (when (or (::dragging @ui)
