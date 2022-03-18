@@ -807,10 +807,10 @@
    [:span.sep]
    [cm/radiobuttons tool
    ; inactive, active, key, title
-    [[[cm/cursor] [cm/cursor] ::cursor "Cursor"]
-     [[cm/wire] [cm/wire] ::wire "Wire"]
-     [[cm/eraser] [cm/eraser] ::eraser "Eraser"]
-     [[cm/move] [cm/move] ::pan "Pan"]]]
+    [[[cm/cursor] [cm/cursor] ::cursor "Cursor [esc]"]
+     [[cm/wire] [cm/wire] ::wire "Wire [w]"]
+     [[cm/eraser] [cm/eraser] ::eraser "Eraser [e]"]
+     [[cm/move] [cm/move] ::pan "Pan [space]"]]]
    [:span.sep]
    [:a {:title "Rotate selected clockwise [s]"
         :on-click (fn [_] (transform-selected #(.rotate % 90)))}
@@ -979,6 +979,7 @@
                 #{:w} (fn [_] ; right away start a wire
                         (add-wire (::mouse @ui) (nil? (::dragging @ui)))
                         (swap! ui assoc ::tool ::wire))
+                #{:e} #(swap! ui assoc ::tool ::eraser)
                 #{:escape} cancel
                 #{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool (::prev-tool %))))
                 #{:s}        (fn [_] (transform-selected #(.rotate % 90)))
