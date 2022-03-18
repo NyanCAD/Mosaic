@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="37"
+   height="37"
+   viewBox="0 0 37 37"
+   version="1.1"
+   id="svg4"
+   sodipodi:docname="capacitor.svg"
+   inkscape:version="1.1.2 (0a00cf5339, 2022-02-04, custom)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs8" />
+  <sodipodi:namedview
+     id="namedview6"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     showgrid="false"
+     inkscape:zoom="23.594595"
+     inkscape:cx="18.478809"
+     inkscape:cy="18.478809"
+     inkscape:window-width="3440"
+     inkscape:window-height="1371"
+     inkscape:window-x="1920"
+     inkscape:window-y="32"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg4" />
+  <path
+     style="stroke-width:0.0722656"
+     d="M 11.779297,26.34082 V 19.728516 H 5.8896484 0 V 18.5 17.271484 H 5.8896484 11.779297 V 10.65918 4.046875 h 1.192383 1.192383 V 18.5 32.953125 H 12.97168 11.779297 Z M 22.835937,18.5 V 4.046875 h 1.192383 1.192383 v 6.612305 6.612304 H 31.110352 37 V 18.5 19.728516 h -5.889648 -5.889649 v 6.612304 6.612305 H 24.02832 22.835937 Z"
+     id="path843" />
+</svg>
