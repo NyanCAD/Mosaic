@@ -329,18 +329,6 @@ input, textarea {
   overflow: hidden;
 }
 
-#mosaic_canvas.pan {
-    cursor: url(icons/arrows-move.svg) 6 0, grab;
-}
-
-#mosaic_canvas.wire {
-    cursor: url(icons/pencil.svg) 0 16, crosshair;
-}
-
-#mosaic_canvas.eraser .wire:hover,
-#mosaic_canvas.eraser .device {
-    cursor: url(icons/eraser.svg) 6 14, crosshair;
-}
 
 
 #mosaic_editor svg {
@@ -371,6 +359,20 @@ line.wirebb {
 
 
 /* tetris theme */
+
+.tetris.pan {
+    cursor: url(icons/arrows-move.svg) 6 0, grab;
+}
+
+.tetris.wire {
+    cursor: url(icons/pencil.svg) 0 16, crosshair;
+}
+
+.tetris.eraser .wire:hover,
+.tetris.eraser .device {
+    cursor: url(icons/eraser.svg) 6 14, crosshair;
+}
+
 .tetris line.grid {
   stroke: lightgray;
   stroke-width: 0.5px;
@@ -488,6 +490,11 @@ line.wirebb {
 .eyesore circle.port {
   fill: red;
 }
+
+.eyesore circle.nc {
+  fill: red;
+}
+
 
 .eyesore text {
   fill: red;
