@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="39.5"
+   height="25"
+   viewBox="0 0 39.5 25"
+   version="1.1"
+   id="svg16"
+   sodipodi:docname="Diode.svg"
+   inkscape:version="1.1.2 (0a00cf5339, 2022-02-04, custom)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs20" />
+  <sodipodi:namedview
+     id="namedview18"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     showgrid="false"
+     inkscape:zoom="29.949367"
+     inkscape:cx="19.733305"
+     inkscape:cy="12.487743"
+     inkscape:window-width="3440"
+     inkscape:window-height="1371"
+     inkscape:window-x="1920"
+     inkscape:window-y="32"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg16" />
+  <g
+     transform="translate(1.25)"
+     id="g14">
+    <g
+       transform="translate(31) rotate(90)"
+       id="g6">
+      <path
+         d="M12.5,0,25,21H0Z"
+         fill="none"
+         id="path2" />
+      <path
+         d="M 12.5 5.865288734436035 L 5.276956558227539 18 L 19.72304153442383 18 L 12.5 5.865288734436035 M 12.5 0 L 25 21 L 0 21 L 12.5 0 Z"
+         id="path4" />
+    </g>
+    <path
+       d="M -1.25,-1.25 V 0 21 22.25 h 2.5 V 21 0 -1.25 Z"
+       id="line8"
+       transform="translate(29 2)" />
+    <path
+       d="M -1.25,-1.25 V 0 8 9.25 h 2.5 V 8 0 -1.25 Z"
+       id="line10"
+       transform="translate(37 12.5) rotate(90)" />
+    <path
+       d="M -1.25,-1.25 V 0 9 10.25 h 2.5 V 9 0 -1.25 Z"
+       id="line12"
+       transform="translate(9 13) rotate(90)" />
+  </g>
+</svg>

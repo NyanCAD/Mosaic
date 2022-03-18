@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="34"
+   height="34"
+   viewBox="0 0 34 34"
+   version="1.1"
+   id="svg8"
+   sodipodi:docname="Voltage Src.svg"
+   inkscape:version="1.1.2 (0a00cf5339, 2022-02-04, custom)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs12" />
+  <sodipodi:namedview
+     id="namedview10"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     showgrid="false"
+     inkscape:zoom="25.676471"
+     inkscape:cx="16.980527"
+     inkscape:cy="16.980527"
+     inkscape:window-width="3440"
+     inkscape:window-height="1371"
+     inkscape:window-x="1920"
+     inkscape:window-y="32"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg8" />
+  <g
+     transform="translate(1.5 1.5)"
+     id="g6">
+    <path
+       d="m 15.5,-1.5 c -9.3710644,0 -17,7.6289356 -17,17 0,9.371064 7.6289356,17 17,17 9.371064,0 17,-7.628936 17,-17 0,-9.3710644 -7.628936,-17 -17,-17 z m 0,3 c 7.749746,0 14,6.2502543 14,14 0,7.749746 -6.250254,14 -14,14 -7.7497457,0 -14,-6.250254 -14,-14 0,-7.7497457 6.2502543,-14 14,-14 z"
+       id="circle2" />
+    <path
+       d="M4.609-7.67a3.875,3.875,0,0,0-1.775.49A7.482,7.482,0,0,0,1.074-5.9V-9.278a5.186,5.186,0,0,1,3.867-1.594,8.876,8.876,0,0,1,2.077.234,14.34,14.34,0,0,1,2.107.7,9.186,9.186,0,0,0,3.429.8A4.013,4.013,0,0,0,14.307-9.6a6.466,6.466,0,0,0,1.767-1.3v3.377A5.124,5.124,0,0,1,12.207-5.93a9.255,9.255,0,0,1-1.9-.19,14.389,14.389,0,0,1-2.266-.731A9.22,9.22,0,0,0,4.609-7.67Z"
+       transform="translate(6.926 23.901)"
+       id="path4" />
+  </g>
+</svg>
