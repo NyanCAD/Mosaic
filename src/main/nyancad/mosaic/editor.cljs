@@ -430,11 +430,8 @@
         y2 (+ y ry)
         allcoords (cm/ssconj coords [x y] [x2 y2])
         widx @wire-index]
-    (println (vec allcoords))
     (go-loop [w wirename
            [[x1 y1] & [[x2 y2] & oother :as other]] allcoords]
-      (println w x1 x2 y1 y2)
-      (println (clojure.set/intersection (get widx [x1 y1]) (get widx [x2 y2])))
       (when (empty? (clojure.set/intersection (get widx [x1 y1]) (get widx [x2 y2])))
         (<! (swap! schematic update w assoc
                    :cell "wire" :transform cm/IV
@@ -597,18 +594,30 @@
                        (conj init [(:x wire) (:y wire)]
                              [(+ (:x wire) (:rx wire)) (+ (:y wire) (:ry wire))])
                        init))]
-    (loop [ports (wire-ports #{} wire)
-           sel #{(:_id wire)}]
-      (if (seq ports)
-        (let [newsel (clojure.set/difference
-                      (set (filter wire? (mapcat @wire-index ports)))
-                      sel)
-              newports (reduce wire-ports #{} (map schem newsel))]
-          (println "new" newsel newports)
-          (recur
-           (clojure.set/difference newports ports)
-           (into sel newsel)))
-        (reset! selected sel)))))
+    (when wire
+      (loop [ports (wire-ports #{} wire)
+             sel #{(:_id wire)}]
+        (if (seq ports)
+          (let [newsel (clojure.set/difference
+                        (set (filter wire? (mapcat @wire-index ports)))
+                        sel)
+                newports (reduce wire-ports #{} (map schem newsel))]
+            (println "new" newsel newports)
+            (recur
+             (clojure.set/difference newports ports)
+             (into sel newsel)))
+          (reset! selected sel))))))
+
+(defn cancel []
+  (let [uiv @ui]
+    (if (and (::staging uiv) (= (::tool uiv) ::wire))
+      (swap! ui assoc
+             ::dragging nil
+             ::staging nil)
+      (swap! ui assoc
+             ::dragging nil
+             ::tool ::cursor
+             ::staging nil))))
 
 (defn drag-start [k e]
   (swap! ui assoc ::mouse-start (viewbox-coord e))
@@ -639,24 +648,15 @@
                       (-> ui
                           (update ::selected update-selection)
                           (drag-type)))))
-        (select-connected)))))
+        (case (::tool uiv)
+          ::cursor (select-connected)
+          ::wire (cancel))))))
 
 (defn drag-start-background [e]
   (cond
     (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
     (and (= (.-button e) 0)
          (= ::wire @tool)) (add-wire (viewbox-coord e) (nil? (::dragging @ui)))))
-
-(defn cancel []
-  (let [uiv @ui]
-    (if (and (::staging uiv) (= (::tool uiv) ::wire))
-      (swap! ui assoc
-             ::dragging nil
-             ::staging nil)
-      (swap! ui assoc
-             ::dragging nil
-             ::tool ::cursor
-             ::staging nil))))
 
 (defn context-menu [e]
   (when (or (::dragging @ui)
