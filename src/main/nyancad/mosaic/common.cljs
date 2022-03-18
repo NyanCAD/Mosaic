@@ -176,6 +176,7 @@
 (def copyi (r/adapt-react-class icons/Files))
 (def cuti (r/adapt-react-class icons/Scissors))
 (def pastei (r/adapt-react-class icons/Clipboard))
+(def chip (r/adapt-react-class icons/Cpu))
 
 (defn radiobuttons
 ([cursor m] (radiobuttons cursor m nil))

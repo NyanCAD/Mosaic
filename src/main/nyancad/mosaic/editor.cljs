@@ -1,6 +1,7 @@
 (ns nyancad.mosaic.editor
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
+            [shadow.resource :as rc]
             [nyancad.hipflask :refer [pouch-atom pouchdb update-keys sep]]
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go go-loop <!]]
@@ -750,10 +751,13 @@
           [:<>
            [:a {:href (ckt-url @cell (:model @props))} "Edit"]
            [:label {:for "cell" :title "cell name"} "cell"]
-           [:input {:id "cell"
-                    :type "text"
-                    :default-value @cell
-                    :on-change (debounce #(reset! cell (.. % -target -value)))}]])
+           [:select {:id "cell"
+                     :type "text"
+                     :default-value @cell
+                     :on-change #(reset! cell (.. % -target -value))}
+            [:option]
+            (for [[k m] @modeldb]
+              [:option (:name m)])]])
         [:label {:for "name" :title "Instance name"} "name"]
         [:input {:id "name"
                  :type "text"
@@ -798,94 +802,130 @@
 
 (defn menu-items []
   [:<>
-   [:a {:title "Save Snapshot"
-        :on-click snapshot}
-    [cm/save]]
-   [:select {:on-change #(swap! ui assoc ::theme (.. % -target -value))}
-    [:option {:value "tetris"} "Tetris"]
-    [:option {:value "eyesore"} "Classic"]]
-   [:span.sep]
-   [cm/radiobuttons tool
+   [:div.primary
+    [cm/radiobuttons tool
    ; inactive, active, key, title
-    [[[cm/cursor] [cm/cursor] ::cursor "Cursor [esc]"]
-     [[cm/wire] [cm/wire] ::wire "Wire [w]"]
-     [[cm/eraser] [cm/eraser] ::eraser "Eraser [e]"]
-     [[cm/move] [cm/move] ::pan "Pan [space]"]]]
-   [:span.sep]
-   [:a {:title "Rotate selected clockwise [s]"
-        :on-click (fn [_] (transform-selected #(.rotate % 90)))}
-    [cm/rotatecw]]
-   [:a {:title "Rotate selected counter-clockwise [shift+s]"
-        :on-click (fn [_] (transform-selected #(.rotate % -90)))}
-    [cm/rotateccw]]
-   [:a {:title "Mirror selected horizontal [shift+f]"
-        :on-click (fn [_] (transform-selected #(.flipY %)))}
-    [cm/mirror-horizontal]]
-   [:a {:title "Mirror selected vertical [f]"
-        :on-click (fn [_] (transform-selected #(.flipX %)))}
-    [cm/mirror-vertical]]
-   [:a {:title "Delete selected [del]"
-        :on-click (fn [_] (delete-selected))}
-    [cm/delete]]
-   [:a {:title "Copy selected [ctrl+c]"
-        :on-click (fn [_] (copy))}
-    [cm/copyi]]
-   [:a {:title "Cut selected [ctrl+x]"
-        :on-click (fn [_] (cut))}
-    [cm/cuti]]
-   [:a {:title "Paste [ctrl+v]"
-        :on-click (fn [_] (paste))}
-    [cm/pastei]]
-   [:span.sep]
-   [:a {:title "zoom in [scroll wheel/pinch]"
-        :on-click #(button-zoom -1)}
-    [cm/zoom-in]]
-   [:a {:title "zoom out [scroll wheel/pinch]"
-        :on-click #(button-zoom 1)}
-    [cm/zoom-out]]
-   [:a {:title "undo [ctrl+z]"
-        :on-click undo-schematic}
-    [cm/undoi]]
-   [:a {:title "redo [ctrl+shift+z]"
-        :on-click redo-schematic}
-    [cm/redoi]]
-   [:span.sep]
+     [[[cm/cursor] [cm/cursor] ::cursor "Cursor [esc]"]
+      [[cm/wire] [cm/wire] ::wire "Wire [w]"]
+      [[cm/eraser] [cm/eraser] ::eraser "Eraser [e]"]
+      [[cm/move] [cm/move] ::pan "Pan [space]"]]]
+    [:span.sep]
+    [:a {:title "Rotate selected clockwise [s]"
+         :on-click (fn [_] (transform-selected #(.rotate % 90)))}
+     [cm/rotatecw]]
+    [:a {:title "Rotate selected counter-clockwise [shift+s]"
+         :on-click (fn [_] (transform-selected #(.rotate % -90)))}
+     [cm/rotateccw]]
+    [:a {:title "Mirror selected horizontal [shift+f]"
+         :on-click (fn [_] (transform-selected #(.flipY %)))}
+     [cm/mirror-horizontal]]
+    [:a {:title "Mirror selected vertical [f]"
+         :on-click (fn [_] (transform-selected #(.flipX %)))}
+     [cm/mirror-vertical]]
+    [:a {:title "Delete selected [del]"
+         :on-click (fn [_] (delete-selected))}
+     [cm/delete]]
+    [:a {:title "Copy selected [ctrl+c]"
+         :on-click (fn [_] (copy))}
+     [cm/copyi]]
+    [:a {:title "Cut selected [ctrl+x]"
+         :on-click (fn [_] (cut))}
+     [cm/cuti]]
+    [:a {:title "Paste [ctrl+v]"
+         :on-click (fn [_] (paste))}
+     [cm/pastei]]
+    [:span.sep]
+    [:a {:title "zoom in [scroll wheel/pinch]"
+         :on-click #(button-zoom -1)}
+     [cm/zoom-in]]
+    [:a {:title "zoom out [scroll wheel/pinch]"
+         :on-click #(button-zoom 1)}
+     [cm/zoom-out]]
+    [:a {:title "undo [ctrl+z]"
+         :on-click undo-schematic}
+     [cm/undoi]]
+    [:a {:title "redo [ctrl+shift+z]"
+         :on-click redo-schematic}
+     [cm/redoi]]]
+    [:div.secondary
+    [:a {:title "Save Snapshot"
+         :on-click snapshot}
+     [cm/save]]
+    [:select {:on-change #(swap! ui assoc ::theme (.. % -target -value))}
+     [:option {:value "tetris"} "Tetris"]
+     [:option {:value "eyesore"} "Classic"]]]])
+
+
+(defn device-active [cell]
+  (println cell @staging)
+  (when (= cell (:cell @staging))
+    "active"))
+
+(defn icon-image [name]
+  (let [icon (case name
+               "resistor" (rc/inline "css/icons/resistor.svg")
+               "capacitor" (rc/inline "css/icons/capacitor.svg")
+               "inductor" (rc/inline "css/icons/inductor.svg")
+               "diode" (rc/inline "css/icons/diode.svg")
+               "vsource" (rc/inline "css/icons/vsource.svg")
+               "isource" (rc/inline "css/icons/isource.svg")
+               "pmos" (rc/inline "css/icons/pmos.svg")
+               "nmos" (rc/inline "css/icons/nmos.svg")
+               "npn" (rc/inline "css/icons/npn.svg")
+               "pnp" (rc/inline "css/icons/pnp.svg")
+               "")]
+    [:span {:dangerouslySetInnerHTML {:__html icon}}]))
+
+(defn device-tray []
+  [:<>
    [:a {:title "Add port [p]"
+        :class (device-active "port")
         :on-click #(add-device "port" (viewbox-coord %))}
     [cm/label]]
    [:a {:title "Add resistor [r]"
+        :class (device-active "resistor")
         :on-click #(add-device "resistor" (viewbox-coord %))}
-    "R"]
+    [icon-image "resistor"]]
    [:a {:title "Add inductor [l]"
+        :class (device-active "inductor")
         :on-click #(add-device "inductor" (viewbox-coord %))}
-    "L"]
+    [icon-image "inductor"]]
    [:a {:title "Add capacitor [c]"
+        :class (device-active "capacitor")
         :on-click #(add-device "capacitor" (viewbox-coord %))}
-    "C"]
+    [icon-image "capacitor"]]
    [:a {:title "Add diode [d]"
+        :class (device-active "diode")
         :on-click #(add-device "diode" (viewbox-coord %))}
-    "D"]
+    [icon-image "diode"]]
    [:a {:title "Add voltage source [v]"
+        :class (device-active "vsource")
         :on-click #(add-device "vsource" (viewbox-coord %))}
-    "V"]
+    [icon-image "vsource"]]
    [:a {:title "Add current source [i]"
+        :class (device-active "isource")
         :on-click #(add-device "isource" (viewbox-coord %))}
-    "I"]
+    [icon-image "isource"]]
    [:a {:title "Add N-channel mosfet [m]"
+        :class (device-active "nmos")
         :on-click #(add-device "nmos" (viewbox-coord %))}
-    "N"]
+    [icon-image "nmos"]]
    [:a {:title "Add P-channel mosfet [shift+m]"
+        :class (device-active "pmos")
         :on-click #(add-device "pmos" (viewbox-coord %))}
-    "P"]
+    [icon-image "pmos"]]
    [:a {:title "Add NPN BJT [b]"
+        :class (device-active "npn")
         :on-click #(add-device "npn" (viewbox-coord %))}
-    "QN"]
+    [icon-image "npn"]]
    [:a {:title "Add PNP BJT [shift+b]"
+        :class (device-active "pnp")
         :on-click #(add-device "pnp" (viewbox-coord %))}
-    "QP"]
+    [icon-image "pnp"]]
    [:a {:title "Add subcircuit [x]"
+        :class (device-active "ckt")
         :on-click #(add-device "ckt" (viewbox-coord %))}
-    "X"]])
+    [cm/chip]]])
 
 (defn schematic-elements [schem]
   [:<>
@@ -929,38 +969,41 @@
 
 (defn schematic-ui []
   [:div#mosaic_app {:class @theme}
-   [:div#mosaic_menu
+   [:div.menu.chrome
     [menu-items]]
-   [:div#mosaic_sidebar
+   [:div.content
+    [:div.devicetray.chrome
+     [device-tray]]
     (when-let [sel (seq @selected)]
-      (doall (for [key sel]
-               ^{:key key} [deviceprops key])))]
-   [:svg#mosaic_canvas {:xmlns "http://www.w3.org/2000/svg"
-                        :height "100%"
-                        :width "100%"
-                        :class [@theme @tool] ; for export
-                        :view-box @zoom
-                        :on-wheel scroll-zoom
-                        :on-mouse-down drag-start-background
-                        :on-mouse-up drag-end
-                        :on-mouse-move drag
-                        :on-context-menu context-menu}
-    [:defs
-     [:pattern {:id "gridfill",
-                :pattern-units "userSpaceOnUse"
-                :width grid-size
-                :height grid-size}
-      [:line.grid {:x1 0 :y1 0 :x2 grid-size :y2 0}]
-      [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]]
-    [:rect {:fill "url(#gridfill)"
-            :on-mouse-up drag-end
-            :x (* -50 grid-size)
-            :y (* -50 grid-size)
-            :width (* 100 grid-size)
-            :height (* 100 grid-size)}]
-    [schematic-elements @schematic]
-    [schematic-dots]
-    [tool-elements]]])
+      [:div.sidebar
+       (doall (for [key sel]
+                ^{:key key} [deviceprops key]))])
+    [:svg#mosaic_canvas {:xmlns "http://www.w3.org/2000/svg"
+                  :height "100%"
+                  :width "100%"
+                  :class [@theme @tool] ; for export
+                  :view-box @zoom
+                  :on-wheel scroll-zoom
+                  :on-mouse-down drag-start-background
+                  :on-mouse-up drag-end
+                  :on-mouse-move drag
+                  :on-context-menu context-menu}
+     [:defs
+      [:pattern {:id "gridfill",
+                 :pattern-units "userSpaceOnUse"
+                 :width grid-size
+                 :height grid-size}
+       [:line.grid {:x1 0 :y1 0 :x2 grid-size :y2 0}]
+       [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]]
+     [:rect {:fill "url(#gridfill)"
+             :on-mouse-up drag-end
+             :x (* -50 grid-size)
+             :y (* -50 grid-size)
+             :width (* 100 grid-size)
+             :height (* 100 grid-size)}]
+     [schematic-elements @schematic]
+     [schematic-dots]
+     [tool-elements]]]])
 
 (def shortcuts {#{:c} #(add-device "capacitor" (::mouse @ui))
                 #{:r} #(add-device "resistor" (::mouse @ui))

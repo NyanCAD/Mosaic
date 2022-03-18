@@ -258,51 +258,116 @@ input, textarea {
 }
 
 #mosaic_app {
-  display: grid;
-  grid-template-columns: 200px 1fr;
-  grid-template-rows: 2em 1fr;
+  display: flex;
+  flex-direction: column;
 }
 
-#mosaic_menu {
+#mosaic_app .menu {
   grid-row: 1;
-  grid-column: 1 / 3;
-  background-color: rgb(226, 226, 226);
-  box-shadow: 0px 0px 5px 0px rgba(0,0,0,0.2);
+  background-color: white;
+  box-shadow: 0px 0px 8px #00000008;
+  border: 0.5px solid #7070701f;
   z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#mosaic_app .menu .primary {
+  display: flex;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+#mosaic_app .menu .secondary {
   display: flex;
   justify-content: flex-end;
 }
 
-#mosaic_menu a,
-#mosaic_menu label,
-#mosaic_menu span.sep {
-  box-sizing: border-box;
-  height: 100%;
+#mosaic_app .content {
+    grid-row: 2;
+    position: relative;
+    height:100%;
+}
+
+#mosaic_app .devicetray {
+    position: absolute;
+    top: 25px;
+    left: 25px;
+    background: #FFFFFF 0% 0% no-repeat padding-box;
+    box-shadow: 0px 0px 8px #00000008;
+    border: 0.5px solid #7070701f;
+    border-radius: 15px;
+    display: flex;
+    flex-direction: column;
+    padding: 0.5em;
+}
+
+#mosaic_app .sidebar {
+    position: absolute;
+    top: 25px;
+    right: 25px;
+    background: #FFFFFF 0% 0% no-repeat padding-box;
+    box-shadow: 0px 0px 8px #00000008;
+    border: 0.5px solid #70707040;
+    border-radius: 10px;
+    width: 300px;
+}
+#mosaic_app .sidebar h1 {
+    background-color: #0E1A32;
+    color: white;
+    margin: 0;
+    border-radius: 10px 10px 0 0;
+    padding: 15px 20px;
+    font: 500 18px/20px 'Roboto', sans-serif;
+    letter-spacing: 0.70px;
+}
+#mosaic_app .sidebar .properties {
+    padding: 20px;
+}
+
+#mosaic_app .chrome a,
+#mosaic_app .chrome label {
   padding: 0.5em;
+  margin: 0.75em 0.5em;
+  background-color: white;
+  box-shadow: 0px 0px 8px #0000001A;
+  border-radius: 5px;
+  width: 1em;
+  height: 1em;
 }
 
-#mosaic_menu span.sep {
-  border-right: 1px solid black;
+#mosaic_app .chrome span.sep {
+  border-right: 1px solid lightgray;
   padding: 0;
-  margin: 0 0.5em;
+  margin: 0.75em 0.5em;
 }
 
-#mosaic_menu a:hover,
-#mosaic_menu input[type=radio]:checked + label {
-  background-color: gray;
+#mosaic_app .chrome a:hover {
+    background-color: lightgray;
+}
+#mosaic_app .chrome a:active,
+#mosaic_app .chrome a.active,
+#mosaic_app .chrome input[type=radio]:checked + label {
+  background-color: #0E1A32;
+  color: white;
+}
+#mosaic_app .chrome a:active svg,
+#mosaic_app .chrome a.active svg,
+#mosaic_app .chrome input[type=radio]:checked + label svg {
+  fill: white;
 }
 
-#mosaic_menu input {
+#mosaic_app .chrome input {
   display: none;
 }
 
-#mosaic_sidebar {
-  grid-row: 2;
-  grid-column: 1;
-  background-color: rgb(247, 247, 247);
-  padding: 0.5em;
-  box-shadow: 0px 0px 5px 0px rgba(0,0,0,0.2);
-  overflow:auto;
+#mosaic_app .devicetray a {
+    padding: 0.7em;
+    width: 25px;
+    height: 25px;
+}
+#mosaic_app .devicetray svg {
+    width: 25px;
+    height: 25px;
 }
 
 #mosaic_editor .properties {
@@ -323,9 +388,7 @@ input, textarea {
     width: 100%;
 }
 
-#mosaic_editor #mosaic_canvas {
-  grid-row: 2;
-  grid-column: 2;
+#mosaic_canvas {
   overflow: hidden;
 }
 
@@ -359,6 +422,10 @@ line.wirebb {
 
 
 /* tetris theme */
+
+.tetris {
+    background-color: #f9f9f9;
+}
 
 .tetris.pan {
     cursor: url(icons/arrows-move.svg) 6 0, grab;
@@ -478,7 +545,7 @@ line.wirebb {
   vector-effect: non-scaling-stroke;
 }
 
-.eyesore svg#mosaic_canvas {
+.eyesore #mosaic_canvas {
   shape-rendering: crispEdges;
   background-color: black;
 }
