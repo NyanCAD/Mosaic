@@ -392,7 +392,7 @@ line.wirebb {
   stroke: rgb(229, 216, 243) !important;
 }
 
-.tetris svg.port.selected polyline {
+.tetris .port.selected polyline {
   fill: rgb(229, 216, 243) !important;
 }
 
