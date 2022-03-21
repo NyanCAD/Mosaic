@@ -805,7 +805,9 @@
 
 (defn paste []
   (let [devs (get-in @local [(str "local" sep "clipboard") :data])
-        devmap (into {} (map (fn [d] [(make-name (:cell d)) d])) devs)]
+        xf (map (fn [d] [(make-name (:cell d))
+                         (update d :name gensym)]))
+        devmap (into {} xf devs)]
     (swap! schematic into devmap)
     (reset! selected (set (keys devmap)))))
 
