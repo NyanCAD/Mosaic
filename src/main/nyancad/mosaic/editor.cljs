@@ -540,10 +540,17 @@
     ::device (drag-device e)
     nil))
 
+; updating the PouchDB atom is a fast but async operation
+; while it is in flight, drag events for the same device could stack up
+; this has been shown to peg the CPU
+(def inflight-deletions (atom #{}))
 (defn eraser-drag [k e]
   (when (and (= (.-buttons e) 1)
-             (= @tool ::eraser))
-    (swap! schematic dissoc k)))
+             (= @tool ::eraser)
+             (not (contains? @inflight-deletions k)))
+    (go (swap! inflight-deletions conj k)
+        (<! (swap! schematic dissoc k))
+        (swap! inflight-deletions dissoc k))))
 
 (defn drag [e]
   ;; store mouse position for use outside mouse events
