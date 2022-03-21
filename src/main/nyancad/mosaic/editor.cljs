@@ -875,16 +875,16 @@
 
 (defn icon-image [name]
   (let [icon (case name
-               "resistor" (rc/inline "css/icons/resistor.svg")
-               "capacitor" (rc/inline "css/icons/capacitor.svg")
-               "inductor" (rc/inline "css/icons/inductor.svg")
-               "diode" (rc/inline "css/icons/diode.svg")
-               "vsource" (rc/inline "css/icons/vsource.svg")
-               "isource" (rc/inline "css/icons/isource.svg")
-               "pmos" (rc/inline "css/icons/pmos.svg")
-               "nmos" (rc/inline "css/icons/nmos.svg")
-               "npn" (rc/inline "css/icons/npn.svg")
-               "pnp" (rc/inline "css/icons/pnp.svg")
+               "resistor" (rc/inline "icons/resistor.svg")
+               "capacitor" (rc/inline "icons/capacitor.svg")
+               "inductor" (rc/inline "icons/inductor.svg")
+               "diode" (rc/inline "icons/diode.svg")
+               "vsource" (rc/inline "icons/vsource.svg")
+               "isource" (rc/inline "icons/isource.svg")
+               "pmos" (rc/inline "icons/pmos.svg")
+               "nmos" (rc/inline "icons/nmos.svg")
+               "npn" (rc/inline "icons/npn.svg")
+               "pnp" (rc/inline "icons/pnp.svg")
                "")]
     [:span {:dangerouslySetInnerHTML {:__html icon}}]))
 
