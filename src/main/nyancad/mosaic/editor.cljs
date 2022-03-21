@@ -64,10 +64,13 @@
 (add-watch schematic ::undo #(cm/newdo undotree %4))
 
 (defn restore [state]
-  (go
-    (remove-watch schematic ::undo)
-    (<! (swap! schematic into state)) ; TODO delete documents
-    (add-watch schematic ::undo #(cm/newdo undotree %4))))
+  (let [del (reduce disj (set (keys @schematic)) (keys state))
+        norev (reduce #(update %1 %2 dissoc :_rev) state (keys state))]
+    (go
+      (remove-watch schematic ::undo)
+      (<! (swap! schematic into norev)) ; update
+      (<! (swap! schematic #(apply dissoc %1 %2) del)) ; delete
+      (add-watch schematic ::undo #(cm/newdo undotree %4)))))
 
 (defn undo-schematic []
   (when-let [st (cm/undo undotree)]
@@ -550,7 +553,7 @@
              (not (contains? @inflight-deletions k)))
     (go (swap! inflight-deletions conj k)
         (<! (swap! schematic dissoc k))
-        (swap! inflight-deletions dissoc k))))
+        (swap! inflight-deletions disj k))))
 
 (defn drag [e]
   ;; store mouse position for use outside mouse events
@@ -610,7 +613,6 @@
                         (set (filter wire? (mapcat @wire-index ports)))
                         sel)
                 newports (reduce wire-ports #{} (map schem newsel))]
-            (println "new" newsel newports)
             (recur
              (clojure.set/difference newports ports)
              (into sel newsel)))
@@ -864,7 +866,6 @@
 
 
 (defn device-active [cell]
-  (println cell @staging)
   (when (= cell (:cell @staging))
     "active"))
 
