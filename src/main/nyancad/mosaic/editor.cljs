@@ -18,8 +18,9 @@
 (def params (js/URLSearchParams. js/window.location.search))
 (def group (or (.get params "schem") "myschem"))
 (def dbname (or (.get params "db") "schematics"))
-(def sync (or (.get params "sync") cm/default-sync))
-(defonce db (pouchdb dbname))
+(def dburl (if js/window.dburl (.-href (js/URL. dbname js/window.dburl)) dbname))
+(def sync (or (.get params "sync") nil))
+(defonce db (pouchdb dburl))
 (defonce schematic (pouch-atom db group (r/atom {})))
 (set-validator! (.-cache schematic)
                 #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
@@ -703,20 +704,21 @@
         deselect (fn [ui] (if bg? (assoc ui ::selected #{}) ui))
         end-ui (fn [ui]
                  (-> ui
-                     (assoc ::dragging nil)
+                     (assoc ::dragging nil
+                            ::delta {:x 0 :y 0 :rx 0 :ry 0})
                      deselect
                      (clean-selected @schematic)))]
     (if (= (::tool @ui) ::device)
       (commit-staged @staging)
       (when-not (= (::dragging @ui) ::wire)
-        (go
-          (<! (swap! schematic update-keys selected
-                     (fn [{x :x y :y :as dev}]
-                       (assoc dev
-                              :x (js/Math.round (+ x dx))
-                              :y (js/Math.round (+ y dy))))))
-          (reset! delta {:x 0 :y 0 :rx 0 :ry 0})
-          (swap! ui end-ui))))))
+        (swap! ui end-ui)
+        (swap! schematic update-keys selected
+               (fn [{x :x y :y :as dev}]
+                 (assoc dev
+                        :x (js/Math.round (+ x dx))
+                        :y (js/Math.round (+ y dy))))))
+
+          )))
 
 
 (defn add-device [cell [x y]]
@@ -813,6 +815,11 @@
             ::dragging ::device
             ::selected (set (keys devmap)))))
 
+(defn simulator-url []
+    (doto (js/URL. js/window.simulatorurl js/window.location)
+      (.. -searchParams (append "schem" group))
+      (.. -searchParams (append "db" (or (and (seq sync) sync) dburl)))))
+
 (defn menu-items []
   [:<>
    [:div.primary
@@ -861,13 +868,16 @@
          :on-click redo-schematic}
      [cm/redoi]]]
    [:div.secondary
-    [:a {:href js/window.simulatorurl
+    [:a {:href (simulator-url)
+         :target "simulator"
          :title "Open simulator"}
      [cm/simulate]]
     [:a {:href js/window.notebookurl
+         :target "jupyter"
          :title "Open JupyterLab"}
      [cm/notebook]]
     [:a {:href "../libman"
+         :target "libman"
          :title "Open library manager"}
      [cm/library]]
     [:a {:title "Save Snapshot"

@@ -67,7 +67,7 @@
       (fn [key]
         (println cell key)
         (when (= (get-in cell [:models key :type]) "schematic")
-          #(js/window.open (edit-url (second (.split cellname ":")) key), '_blank')))]]))
+          #(js/window.open (edit-url (second (.split cellname ":")) key), cellname)))]]))
 
 
 (defn db-properties []
@@ -210,5 +210,6 @@
 
 (defn ^:dev/after-load ^:export init []
 ;;   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
+  (set! js/window.name "libman")
   (rd/render [library-manager]
              (.getElementById js/document "mosaic_libman")))
