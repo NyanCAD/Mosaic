@@ -809,7 +809,9 @@
                          (update d :name gensym)]))
         devmap (into {} xf devs)]
     (swap! schematic into devmap)
-    (reset! selected (set (keys devmap)))))
+    (swap!  ui assoc
+            ::dragging ::device
+            ::selected (set (keys devmap)))))
 
 (defn menu-items []
   [:<>
@@ -1032,7 +1034,7 @@
                 #{:w} (fn [_] ; right away start a wire
                         (add-wire (::mouse @ui) (nil? (::dragging @ui)))
                         (swap! ui assoc ::tool ::wire))
-                #{:e} #(swap! ui assoc ::tool ::eraser)
+                #{:e} #(swap! ui assoc ::tool ::eraser ::staging nil)
                 #{:escape} cancel
                 #{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool (::prev-tool %))))
                 #{:s}        (fn [_] (transform-selected #(.rotate % 90)))
