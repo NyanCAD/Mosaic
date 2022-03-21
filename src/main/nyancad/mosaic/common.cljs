@@ -177,6 +177,9 @@
 (def cuti (r/adapt-react-class icons/Scissors))
 (def pastei (r/adapt-react-class icons/Clipboard))
 (def chip (r/adapt-react-class icons/Cpu))
+(def notebook (r/adapt-react-class icons/Book))
+(def simulate (r/adapt-react-class icons/Play))
+(def library (r/adapt-react-class icons/Collection))
 
 (defn radiobuttons
 ([cursor m] (radiobuttons cursor m nil))

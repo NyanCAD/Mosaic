@@ -435,7 +435,7 @@
         allcoords (cm/ssconj coords [x y] [x2 y2])
         widx @wire-index]
     (go-loop [w wirename
-           [[x1 y1] & [[x2 y2] & oother :as other]] allcoords]
+              [[x1 y1] & [[x2 y2] & oother :as other]] allcoords]
       (when (empty? (clojure.set/intersection (get widx [x1 y1]) (get widx [x2 y2])))
         (<! (swap! schematic update w assoc
                    :cell "wire" :transform cm/IV
@@ -721,8 +721,8 @@
 
 (defn add-device [cell [x y]]
   (let [[width height] (get-in models [cell ::bg])
-        mx (- x (/ width 2) 1)
-        my (- y (/ height 2) 1)]
+        mx (js/Math.round (- x (/ width 2) 1))
+        my (js/Math.round (- y (/ height 2) 1))]
     (swap! ui assoc
            ::staging {:transform cm/IV, :cell cell :x mx :y my}
            ::tool ::device)))
@@ -860,7 +860,16 @@
     [:a {:title "redo [ctrl+shift+z]"
          :on-click redo-schematic}
      [cm/redoi]]]
-    [:div.secondary
+   [:div.secondary
+    [:a {:href js/window.simulatorurl
+         :title "Open simulator"}
+     [cm/simulate]]
+    [:a {:href js/window.notebookurl
+         :title "Open JupyterLab"}
+     [cm/notebook]]
+    [:a {:href "../libman"
+         :title "Open library manager"}
+     [cm/library]]
     [:a {:title "Save Snapshot"
          :on-click snapshot}
      [cm/save]]
@@ -991,15 +1000,15 @@
        (doall (for [key sel]
                 ^{:key key} [deviceprops key]))])
     [:svg#mosaic_canvas {:xmlns "http://www.w3.org/2000/svg"
-                  :height "100%"
-                  :width "100%"
-                  :class [@theme @tool] ; for export
-                  :view-box @zoom
-                  :on-wheel scroll-zoom
-                  :on-mouse-down drag-start-background
-                  :on-mouse-up drag-end
-                  :on-mouse-move drag
-                  :on-context-menu context-menu}
+                         :height "500px"
+                         :width "500px"
+                         :class [@theme @tool] ; for export
+                         :view-box @zoom
+                         :on-wheel scroll-zoom
+                         :on-mouse-down drag-start-background
+                         :on-mouse-up drag-end
+                         :on-mouse-move drag
+                         :on-context-menu context-menu}
      [:defs
       [:pattern {:id "gridfill",
                  :pattern-units "userSpaceOnUse"

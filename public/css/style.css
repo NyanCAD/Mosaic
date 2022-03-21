@@ -271,6 +271,10 @@ input, textarea {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  background-image: url(icons/Logo.svg);
+  background-repeat: no-repeat;
+  background-position: 15px 50%;
+  padding-left: 65px;
 }
 #mosaic_app .menu .primary {
   display: flex;
@@ -283,9 +287,9 @@ input, textarea {
 }
 
 #mosaic_app .content {
-    grid-row: 2;
     position: relative;
-    height:100%;
+    flex-grow: 1;
+    flex-shrink: 5;
 }
 
 #mosaic_app .devicetray {
@@ -299,6 +303,10 @@ input, textarea {
     display: flex;
     flex-direction: column;
     padding: 0.5em;
+    max-height: calc(100% - 50px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
 }
 
 #mosaic_app .sidebar {
@@ -310,6 +318,10 @@ input, textarea {
     border: 0.5px solid #70707040;
     border-radius: 10px;
     width: 300px;
+    max-height: calc(100% - 50px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
 }
 #mosaic_app .sidebar h1 {
     background-color: #0E1A32;
@@ -333,6 +345,11 @@ input, textarea {
   border-radius: 5px;
   width: 1em;
   height: 1em;
+  color: #222222A5;
+}
+
+#mosaic_app .chrome svg {
+  fill: #222222A5;
 }
 
 #mosaic_app .chrome span.sep {
