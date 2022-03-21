@@ -67,7 +67,7 @@
       (fn [key]
         (println cell key)
         (when (= (get-in cell [:models key :type]) "schematic")
-          #(js/window.open (edit-url (second (.split cellname ":")) key), cellname)))]]))
+          #(js/window.open (edit-url (second (.split cellname ":")) (name key)), cellname)))]]))
 
 
 (defn db-properties []
