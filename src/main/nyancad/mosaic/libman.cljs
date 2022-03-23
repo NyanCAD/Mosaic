@@ -23,12 +23,14 @@
   (if-let [pa (get @dbcache dbid)]
     pa
     (let [dbmeta (get @databases dbid schdbmeta)
-          db (pouchdb (:name dbmeta))
+          dbname (:name dbmeta)
+          dburl (if js/window.dburl (.-href (js/URL. dbname js/window.dburl)) dbname)
+          db (pouchdb dburl)
           cache (r/cursor modelcache [dbid])
           pa (pouch-atom db "models" cache)]
       (when (:url dbmeta)
       ; TODO filtered replication
-        (.replicate PouchDB (.-href (js/URL. (:name dbmeta) (:url dbmeta))) db))
+        (.sync PouchDB (:url dbmeta) db))
       (swap! dbcache assoc dbid pa)
       pa)))
 
