@@ -876,7 +876,7 @@
          :target "jupyter"
          :title "Open JupyterLab"}
      [cm/notebook]]
-    [:a {:href "../libman"
+    [:a {:href ".."
          :target "libman"
          :title "Open library manager"}
      [cm/library]]
