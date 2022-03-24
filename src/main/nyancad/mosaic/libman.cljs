@@ -2,7 +2,7 @@
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
             ["pouchdb" :as PouchDB]
-            [nyancad.hipflask :refer [pouch-atom pouchdb put update-keys sep]]
+            [nyancad.hipflask :refer [pouch-atom pouchdb sep watch-changes]]
             [nyancad.mosaic.common :as cm]))
 
 ; used for ephermeal UI state
@@ -28,6 +28,7 @@
           db (pouchdb dburl)
           cache (r/cursor modelcache [dbid])
           pa (pouch-atom db "models" cache)]
+      (watch-changes db pa)
       (when (:url dbmeta)
       ; TODO filtered replication
         (.sync PouchDB (:url dbmeta) db))
@@ -167,7 +168,7 @@
       "TODO: preview")))
 
 (defn cell-view []
-  (let [db (get-dbatom @seldb)
+  (let [db (get-dbatom (or @seldb :schematics))
         add-cell #(when-let [name (and @seldb (js/prompt "Enter the name of the new cell"))]
                     (swap! db assoc (str "models" sep name) {:name name}))
         add-schem #(when-let [name (and @seldb @selcell (js/prompt "Enter the name of the new schematic"))]

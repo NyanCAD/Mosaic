@@ -2,7 +2,7 @@
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
             [shadow.resource :as rc]
-            [nyancad.hipflask :refer [pouch-atom pouchdb update-keys sep]]
+            [nyancad.hipflask :refer [pouch-atom pouchdb update-keys sep watch-changes]]
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go go-loop <!]]
             clojure.edn
@@ -27,6 +27,7 @@
 
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
 (defonce snapshots (pouch-atom db "snapshots" (r/atom {})))
+(defonce watcher (watch-changes db schematic modeldb snapshots))
 (defonce local (pouch-atom (pouchdb "local") "local"))
 
 (defn make-name
