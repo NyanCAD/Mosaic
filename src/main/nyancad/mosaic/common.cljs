@@ -104,6 +104,9 @@
 (s/def ::device (s/multi-spec cell-type ::cell))
 (s/def ::schematic (s/map-of string? ::device))
 
+; https://clojure.atlassian.net/browse/CLJS-3207
+(s/assert ::x 0)
+
 (defn newundotree [] (atom (zip/seq-zip (list nil))))
 
 (defn undo-state [ut]
