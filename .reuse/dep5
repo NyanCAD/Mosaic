@@ -1,0 +1,8 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: NyanCAD Mosaic
+Upstream-Contact: Pepijn De Vos <pepijndevos@gmail.com> 
+Source: https://github.com/NyanCAD/Mosaic.git
+
+Files: *src/main/icons/* *public/css/icons/*
+Copyright: 2022 NyanCAD Mosaic
+License: GPL-3.0-only
