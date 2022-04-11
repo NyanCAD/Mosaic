@@ -290,6 +290,7 @@ input, textarea {
     position: relative;
     flex-grow: 1;
     flex-shrink: 5;
+    overflow:hidden;
 }
 
 #mosaic_app .devicetray {
@@ -593,6 +594,11 @@ line.wirebb {
   stroke-width: 1px;
   fill: none;
   vector-effect: non-scaling-stroke;
+}
+
+.eyesore g.device.port polyline {
+  fill: rgb(255, 0, 0);
+  stroke: none;
 }
 
 .eyesore g.device text {

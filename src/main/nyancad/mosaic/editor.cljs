@@ -1011,8 +1011,8 @@
        (doall (for [key sel]
                 ^{:key key} [deviceprops key]))])
     [:svg#mosaic_canvas {:xmlns "http://www.w3.org/2000/svg"
-                         :height "500px"
-                         :width "500px"
+                         :height "100%"
+                         :width "100%"
                          :class [@theme @tool] ; for export
                          :view-box @zoom
                          :on-wheel scroll-zoom
@@ -1029,10 +1029,10 @@
        [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]]
      [:rect {:fill "url(#gridfill)"
              :on-mouse-up drag-end
-             :x (* -50 grid-size)
-             :y (* -50 grid-size)
-             :width (* 100 grid-size)
-             :height (* 100 grid-size)}]
+             :x (* -500 grid-size)
+             :y (* -500 grid-size)
+             :width (* 1000 grid-size)
+             :height (* 1000 grid-size)}]
      [schematic-elements @schematic]
      [schematic-dots]
      [tool-elements]]]])
