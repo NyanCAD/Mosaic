@@ -564,7 +564,7 @@
   (case @tool
     ::wire (wire-drag e)
     ::pan (when (> (.-buttons e) 0) (drag-view e))
-    ::device (drag-staged-device e)
+    ::device (if (= (::dragging @ui) ::view) (drag-view e) (drag-staged-device e))
     (cursor-drag e)))
 
 (defn add-wire-segment [[x y]]
@@ -709,7 +709,8 @@
                             ::delta {:x 0 :y 0 :rx 0 :ry 0})
                      deselect
                      (clean-selected @schematic)))]
-    (if (= (::tool @ui) ::device)
+    (if (and (= (::tool @ui) ::device)
+             (not= (.-button e) 1))
       (commit-staged @staging)
       (when-not (= (::dragging @ui) ::wire)
         (swap! ui end-ui)
