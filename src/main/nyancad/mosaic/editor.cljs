@@ -1051,8 +1051,8 @@
                 #{:p} #(add-device "port" (::mouse @ui))
                 #{:backspace} delete-selected
                 #{:delete} delete-selected
-                #{:w} (fn [_] ; right away start a wire
-                        (add-wire (::mouse @ui) (nil? (::dragging @ui)))
+                #{:w} (fn [_] ; right away start a wire or not?
+                        ;; (add-wire (::mouse @ui) (nil? (::dragging @ui)))
                         (swap! ui assoc ::tool ::wire))
                 #{:e} #(swap! ui assoc ::tool ::eraser ::staging nil)
                 #{:escape} cancel
