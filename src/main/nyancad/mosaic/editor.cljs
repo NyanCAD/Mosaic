@@ -780,7 +780,7 @@
                   :type "text"
                   :default-value (:model @props)
                   :on-change #(swap! props assoc :model (.. % -target -value))}
-         [:option]
+         [:option {:value nil} "Ideal"]
          (for [m (keys (get-in  @modeldb [(str "models" sep @cell) :models]))]
            [:option m])]
         (doall (for [[prop meta] (::props (get models @cell))]
