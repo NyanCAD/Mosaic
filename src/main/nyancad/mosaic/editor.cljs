@@ -30,11 +30,25 @@
 (defonce watcher (watch-changes db schematic modeldb snapshots))
 (defonce local (pouch-atom (pouchdb "local") "local"))
 
-(defn make-name
-  ([base] (make-name group base))
-  ([group base]
-   (letfn [(hex [] (.toString (rand-int 16) 16))]
-     (str group sep base "-" (hex) (hex) (hex) (hex) (hex) (hex) (hex) (hex)))))
+(defn initial [cell]
+  (case cell
+    "resistor" "R"
+    "inductor" "L"
+    "capacitor" "C"
+    "diode" "D"
+    "vsource" "V"
+    "isource" "I"
+    "npn" "Q"
+    "pnp" "Q"
+    "pmos" "M"
+    "nmos" "M"
+    "wire" "W"
+    "port" "P"
+    "X"))
+
+(defn make-name [base]
+  (let [ids (map #(str group sep (initial base) %) (next (range)))]
+    (first (remove @schematic ids))))
 
 (defonce ui (r/atom {::zoom [0 0 500 500]
                      ::theme "tetris"
@@ -484,7 +498,10 @@
                     (+ y (/ h 2)))))
 
 (defn commit-staged [dev]
-  (swap! schematic assoc (make-name (:cell dev)) dev))
+  (let [id (make-name (:cell dev))
+        name (last (clojure.string/split id sep))]
+    (swap! schematic assoc id
+           (assoc dev :name name))))
 
 (defn transform-selected [tf]
   (let [f (comp transform-vec tf transform)]
