@@ -438,6 +438,9 @@ line.wirebb {
   fill: none;
 }
 
+text.identifier {
+    font-size: 0.7em;
+}
 
 /* tetris theme */
 
