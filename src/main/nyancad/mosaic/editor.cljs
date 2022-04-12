@@ -158,14 +158,15 @@
                   :y2 (* (+ y ry 0.5) grid-size)}]]))
 
 (defn device-label [dev width]
-  [:text {:text-anchor "left"
-        ;;    :dominant-baseline "bottom"
-           :transform (-> (:transform dev)
-                          transform
-                          (.translate (* grid-size (/ width -2)) (* grid-size (/ width -2)))
-                          .inverse
-                          (.translate (* grid-size 0.05) (* grid-size -0.6))
-                          .toString)}
+  [:text.identifier
+   {:text-anchor "left"
+    :dominant-baseline "bottom"
+    :transform (-> (:transform dev)
+                   transform
+                   (.translate (* grid-size (/ width -2)) (* grid-size (/ width -2)))
+                   .inverse
+                   (.translate (* grid-size 0.05) (* grid-size -0.65))
+                   .toString)}
     (:name dev)])
 
 (defn port-sym [key label]
