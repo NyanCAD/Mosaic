@@ -157,6 +157,17 @@
                   :x2 (* (+ x rx 0.5) grid-size)
                   :y2 (* (+ y ry 0.5) grid-size)}]]))
 
+(defn device-label [dev width]
+  [:text {:text-anchor "left"
+        ;;    :dominant-baseline "bottom"
+           :transform (-> (:transform dev)
+                          transform
+                          (.translate (* grid-size (/ width -2)) (* grid-size (/ width -2)))
+                          .inverse
+                          (.translate (* grid-size 0.05) (* grid-size -0.6))
+                          .toString)}
+    (:name dev)])
+
 (defn port-sym [key label]
   [device 1 key label
    [lines [[[0.5 0.5]
@@ -189,6 +200,7 @@
                 [1.2 1.5]]]]
     [device 3 k v
      [lines shape]
+     [device-label v 3]
      (if (= (:cell v) "nmos")
        [arrow 1.3 1.5 0.12 0]
        [arrow 1.4 1.5 0.12 180])]))
@@ -205,6 +217,7 @@
                 [1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [lines shape]
      (if (= (:cell v) "npn")
        [arrow 1.4 1.81 0.12 -140]
@@ -216,6 +229,7 @@
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [:rect.outline {:x (* 1.35 grid-size)
                      :y (* 1.1 grid-size)
                      :width (* 0.3 grid-size)
@@ -232,6 +246,7 @@
                [[1.5 1.6]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [lines shape]]))
 
 (defn inductor-sym [k v]
@@ -240,6 +255,7 @@
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [lines shape]
      [:path {:d "M75,55
                  a5,5 90 0,0 0,10
@@ -256,6 +272,7 @@
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [lines shape]
      [:circle.outline
       {:cx (* grid-size 1.5)
@@ -269,6 +286,7 @@
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [lines shape]
      [:circle.outline
       {:cx (* grid-size 1.5)
@@ -285,6 +303,7 @@
                [[1.5 1.6]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [lines shape]
      [arrow 1.5 1.6 0.2 270]]))
 
