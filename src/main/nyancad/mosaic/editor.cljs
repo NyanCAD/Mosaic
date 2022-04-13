@@ -598,6 +598,7 @@
   ;; store mouse position for use outside mouse events
   ;; keyboard shortcuts for example
   (swap! ui assoc ::mouse (viewbox-coord e))
+  (.stopPropagation e) ; try to prevent double events
   (case @tool
     ::wire (wire-drag e)
     ::pan (when (> (.-buttons e) 0) (drag-view e))
