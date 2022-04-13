@@ -486,13 +486,21 @@
         tp (.matrixTransform p m)]
     [(/ (.-x tp) grid-size) (/ (.-y tp) grid-size)]))
 
+(def last-coord (atom [0 0]))
 (defn viewbox-movement [e]
   (let [^js el (js/document.getElementById "mosaic_canvas")
         m (.inverse (.getScreenCTM el))
         _ (do (set! (.-e m) 0)
               (set! (.-f m) 0)) ; cancel translation
-        ^js p (point (.-movementX e) (.-movementY e))
+        [lx ly] @last-coord
+        nx (.-clientX e)
+        ny (.-clientY e)
+        mx (- nx lx)
+        my (- ny ly)
+        ^js p (point mx my)
         tp (.matrixTransform p m)] ; local movement
+    (println lx ly nx ny)
+    (reset! last-coord [nx ny])
     [(.-x tp) (.-y tp)]))
 
 (defn zoom-schematic [direction ex ey]
@@ -598,7 +606,6 @@
   ;; store mouse position for use outside mouse events
   ;; keyboard shortcuts for example
   (swap! ui assoc ::mouse (viewbox-coord e))
-  (.stopPropagation e) ; try to prevent double events
   (case @tool
     ::wire (wire-drag e)
     ::pan (when (> (.-buttons e) 0) (drag-view e))
@@ -671,6 +678,7 @@
 
 (defn drag-start [k e]
   (swap! ui assoc ::mouse-start (viewbox-coord e))
+  (reset! last-coord [(.-clientX e) (.-clientY e)])
   (let [uiv @ui
         update-selection
         (fn [sel]
@@ -703,6 +711,7 @@
           ::wire (cancel))))))
 
 (defn drag-start-background [e]
+  (reset! last-coord [(.-clientX e) (.-clientY e)])
   (cond
     (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
     (and (= (.-button e) 0)
