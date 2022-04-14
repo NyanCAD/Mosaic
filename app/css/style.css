@@ -657,6 +657,14 @@ text.identifier {
   fill: rgb(255, 0, 0);
   stroke: none;
 }
+.eyesore g.device.port circle.port {
+    fill: none;
+}
+.eyesore g.device.port.supply polyline,
+.eyesore g.device.port.ground polyline {
+  stroke: #00cc66;
+  fill: transparent;
+}
 
 .eyesore g.device text {
   stroke: #00cc66;
