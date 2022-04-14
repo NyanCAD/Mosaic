@@ -770,13 +770,15 @@
           )))
 
 
-(defn add-device [cell [x y]]
-  (let [[width height] (get-in models [cell ::bg])
-        mx (js/Math.round (- x (/ width 2) 1))
-        my (js/Math.round (- y (/ height 2) 1))]
-    (swap! ui assoc
-           ::staging {:transform cm/IV, :cell cell :x mx :y my}
-           ::tool ::device)))
+(defn add-device
+  ([cell coord] (add-device cell nil coord))
+  ([cell variant [x y]]
+   (let [[width height] (get-in models [cell ::bg])
+         mx (js/Math.round (- x (/ width 2) 1))
+         my (js/Math.round (- y (/ height 2) 1))]
+     (swap! ui assoc
+            ::staging {:transform cm/IV, :cell cell :variant variant :x mx :y my}
+            ::tool ::device))))
 
 (defn save-url []
   (let [blob (js/Blob. #js[(prn-str @schematic)]
@@ -956,55 +958,84 @@
                "")]
     [:span {:dangerouslySetInnerHTML {:__html icon}}]))
 
+(defn variant-tray [& variants]
+  (let [active (r/atom 0)
+        timeout (r/atom nil)]
+    (fn [& variants]
+      (let [varwraps (map-indexed
+                      (fn [i var]
+                        [:span {:key i
+                                :on-mouse-up #(reset! active i)}
+                         var]) variants)]
+        [:details
+         {;:on-toggle js/console.log
+          :on-mouse-down
+          (fn [e]
+            (let [ct (.-currentTarget e)]
+              (reset! timeout (js/setTimeout
+                               #(set! (.-open ct) true)
+                               300))))
+          :on-mouse-up
+          (fn [e]
+            (js/clearTimeout @timeout)
+            (set! (.. e -currentTarget -open) false))} 
+         [:summary {:on-click #(.preventDefault %)}
+          (nth variants @active)]
+          [:span.tray
+           (take @active varwraps)
+           (drop (inc @active) varwraps)]]))))
+
 (defn device-tray []
   [:<>
-   [:a {:title "Add port [p]"
+   [:button {:title "Add port [p]"
         :class (device-active "port")
-        :on-click #(add-device "port" (viewbox-coord %))}
+        :on-mouse-up #(add-device "port" (viewbox-coord %))}
     [cm/label]]
-   [:a {:title "Add resistor [r]"
+   [:button {:title "Add resistor [r]"
         :class (device-active "resistor")
-        :on-click #(add-device "resistor" (viewbox-coord %))}
+        :on-mouse-up #(add-device "resistor" (viewbox-coord %))}
     [icon-image "resistor"]]
-   [:a {:title "Add inductor [l]"
+   [:button {:title "Add inductor [l]"
         :class (device-active "inductor")
-        :on-click #(add-device "inductor" (viewbox-coord %))}
+        :on-mouse-up #(add-device "inductor" (viewbox-coord %))}
     [icon-image "inductor"]]
-   [:a {:title "Add capacitor [c]"
+   [:button {:title "Add capacitor [c]"
         :class (device-active "capacitor")
-        :on-click #(add-device "capacitor" (viewbox-coord %))}
+        :on-mouse-up #(add-device "capacitor" (viewbox-coord %))}
     [icon-image "capacitor"]]
-   [:a {:title "Add diode [d]"
+   [:button {:title "Add diode [d]"
         :class (device-active "diode")
-        :on-click #(add-device "diode" (viewbox-coord %))}
+        :on-mouse-up #(add-device "diode" (viewbox-coord %))}
     [icon-image "diode"]]
-   [:a {:title "Add voltage source [v]"
-        :class (device-active "vsource")
-        :on-click #(add-device "vsource" (viewbox-coord %))}
-    [icon-image "vsource"]]
-   [:a {:title "Add current source [i]"
-        :class (device-active "isource")
-        :on-click #(add-device "isource" (viewbox-coord %))}
-    [icon-image "isource"]]
-   [:a {:title "Add N-channel mosfet [m]"
-        :class (device-active "nmos")
-        :on-click #(add-device "nmos" (viewbox-coord %))}
-    [icon-image "nmos"]]
-   [:a {:title "Add P-channel mosfet [shift+m]"
-        :class (device-active "pmos")
-        :on-click #(add-device "pmos" (viewbox-coord %))}
-    [icon-image "pmos"]]
-   [:a {:title "Add NPN BJT [b]"
-        :class (device-active "npn")
-        :on-click #(add-device "npn" (viewbox-coord %))}
-    [icon-image "npn"]]
-   [:a {:title "Add PNP BJT [shift+b]"
-        :class (device-active "pnp")
-        :on-click #(add-device "pnp" (viewbox-coord %))}
-    [icon-image "pnp"]]
-   [:a {:title "Add subcircuit [x]"
+   [variant-tray
+    [:button {:title "Add voltage source [v]"
+         :class (device-active "vsource")
+         :on-mouse-up #(add-device "vsource" (viewbox-coord %))}
+     [icon-image "vsource"]]
+    [:button {:title "Add current source [i]"
+         :class (device-active "isource")
+         :on-mouse-up #(add-device "isource" (viewbox-coord %))}
+     [icon-image "isource"]]]
+   [variant-tray
+    [:button {:title "Add N-channel mosfet [m]"
+         :class (device-active "nmos")
+         :on-mouse-up #(add-device "nmos" (viewbox-coord %))}
+     [icon-image "nmos"]]
+    [:button {:title "Add P-channel mosfet [shift+m]"
+         :class (device-active "pmos")
+         :on-mouse-up #(add-device "pmos" (viewbox-coord %))}
+     [icon-image "pmos"]]
+    [:button {:title "Add NPN BJT [b]"
+         :class (device-active "npn")
+         :on-mouse-up #(add-device "npn" (viewbox-coord %))}
+     [icon-image "npn"]]
+    [:button {:title "Add PNP BJT [shift+b]"
+         :class (device-active "pnp")
+         :on-mouse-up #(add-device "pnp" (viewbox-coord %))}
+     [icon-image "pnp"]]]
+   [:button {:title "Add subcircuit [x]"
         :class (device-active "ckt")
-        :on-click #(add-device "ckt" (viewbox-coord %))}
+        :on-mouse-up #(add-device "ckt" (viewbox-coord %))}
     [cm/chip]]])
 
 (defn schematic-elements [schem]
