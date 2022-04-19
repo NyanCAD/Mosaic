@@ -209,7 +209,8 @@
      [:h1 "Library"]
      [:button.plus {:on-click
                     #(let [name (js/prompt "Enter the name of the new database")]
-                       (swap! databases assoc (str "databases" sep name) {:name name}))}
+                       (when (seq name)
+                         (swap! databases assoc (str "databases" sep name) {:name name})))}
       "+"]]
     [database-selector]
     [db-properties]]

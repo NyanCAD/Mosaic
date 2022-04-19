@@ -35,11 +35,25 @@
 (defonce watcher (watch-changes db schematic modeldb snapshots))
 (defonce local (pouch-atom (pouchdb "local") "local"))
 
-(defn make-name
-  ([base] (make-name group base))
-  ([group base]
-   (letfn [(hex [] (.toString (rand-int 16) 16))]
-     (str group sep base "-" (hex) (hex) (hex) (hex) (hex) (hex) (hex) (hex)))))
+(defn initial [cell]
+  (case cell
+    "resistor" "R"
+    "inductor" "L"
+    "capacitor" "C"
+    "diode" "D"
+    "vsource" "V"
+    "isource" "I"
+    "npn" "Q"
+    "pnp" "Q"
+    "pmos" "M"
+    "nmos" "M"
+    "wire" "W"
+    "port" "P"
+    "X"))
+
+(defn make-name [base]
+  (let [ids (map #(str group sep (initial base) %) (next (range)))]
+    (first (remove @schematic ids))))
 
 (defonce ui (r/atom {::zoom [0 0 500 500]
                      ::theme "tetris"
@@ -96,7 +110,7 @@
                     :style {:transform (.toString (.translate (transform (:transform v cm/IV)) (* (:x v) grid-size) (* (:y v) grid-size)))
                             :transform-origin (str (* (+ (:x v) (/ size 2)) grid-size) "px "
                                                    (* (+ (:y v) (/ size 2)) grid-size) "px")}
-                    :class [(:cell v) (when (contains? @selected k) :selected)]}]
+                    :class [(:cell v) (:variant v) (when (contains? @selected k) :selected)]}]
         elements))
 
 (defn port [x y _ _]
@@ -148,19 +162,45 @@
                   :x2 (* (+ x rx 0.5) grid-size)
                   :y2 (* (+ y ry 0.5) grid-size)}]]))
 
+(defn device-label [dev width]
+  [:text.identifier
+   {:text-anchor "left"
+    :dominant-baseline "bottom"
+    :transform (-> (:transform dev)
+                   transform
+                   (.translate (* grid-size (/ width -2)) (* grid-size (/ width -2)))
+                   .inverse
+                   (.translate (* grid-size 0.05) (* grid-size -0.65))
+                   .toString)}
+    (:name dev)])
+
 (defn port-sym [key label]
   [device 1 key label
-   [lines [[[0.5 0.5]
-            [0.3 0.3]
-            [0 0.3]
-            [0 0.7]
-            [0.3 0.7]
-            [0.5 0.5]]]]
-   [:text {:text-anchor "middle"
+   (case (:variant label)
+     "ground" [lines [[[0.5 0.5]
+                       [0.3 0.5]]
+                      [[0.0 0.5]
+                       [0.3 0.2]
+                       [0.3 0.8]
+                       [0.0 0.5]]]]
+     "supply" [lines [[[0.5 0.5]
+                       [0.0 0.5]]
+                      [[0.0 0.2]
+                       [0.0 0.8]]]]
+     [lines [[[0.5 0.5]
+              [0.3 0.3]
+              [0 0.3]
+              [0 0.7]
+              [0.3 0.7]
+              [0.5 0.5]]]])
+   [:text {:text-anchor (case (js/Math.round (first (:transform label)))
+                               1 "end"
+                               -1 "start"
+                               "middle")
            :dominant-baseline "middle"
            :transform (-> (:transform label)
                           transform
-                          (.translate (/ grid-size 2) (/ grid-size -2))
+                          (.translate (/ grid-size 3) (/ grid-size -2))
                           .inverse
                           .toString)}
     (:name label)]])
@@ -180,6 +220,7 @@
                 [1.2 1.5]]]]
     [device 3 k v
      [lines shape]
+     [device-label v 3]
      (if (= (:cell v) "nmos")
        [arrow 1.3 1.5 0.12 0]
        [arrow 1.4 1.5 0.12 180])]))
@@ -196,6 +237,7 @@
                 [1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [lines shape]
      (if (= (:cell v) "npn")
        [arrow 1.4 1.81 0.12 -140]
@@ -207,6 +249,7 @@
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [:rect.outline {:x (* 1.35 grid-size)
                      :y (* 1.1 grid-size)
                      :width (* 0.3 grid-size)
@@ -223,6 +266,7 @@
                [[1.5 1.6]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [lines shape]]))
 
 (defn inductor-sym [k v]
@@ -231,6 +275,7 @@
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [lines shape]
      [:path {:d "M75,55
                  a5,5 90 0,0 0,10
@@ -247,6 +292,7 @@
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [lines shape]
      [:circle.outline
       {:cx (* grid-size 1.5)
@@ -260,6 +306,7 @@
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [lines shape]
      [:circle.outline
       {:cx (* grid-size 1.5)
@@ -276,6 +323,7 @@
                [[1.5 1.6]
                 [1.5 2.5]]]]
     [device 3 k v
+     [device-label v 3]
      [lines shape]
      [arrow 1.5 1.6 0.2 270]]))
 
@@ -457,13 +505,21 @@
         tp (.matrixTransform p m)]
     [(/ (.-x tp) grid-size) (/ (.-y tp) grid-size)]))
 
+(def last-coord (atom [0 0]))
 (defn viewbox-movement [e]
   (let [^js el (js/document.getElementById "mosaic_canvas")
         m (.inverse (.getScreenCTM el))
         _ (do (set! (.-e m) 0)
               (set! (.-f m) 0)) ; cancel translation
-        ^js p (point (.-movementX e) (.-movementY e))
+        [lx ly] @last-coord
+        nx (.-clientX e)
+        ny (.-clientY e)
+        mx (- nx lx)
+        my (- ny ly)
+        ^js p (point mx my)
         tp (.matrixTransform p m)] ; local movement
+    (println lx ly nx ny)
+    (reset! last-coord [nx ny])
     [(.-x tp) (.-y tp)]))
 
 (defn zoom-schematic [direction ex ey]
@@ -489,7 +545,12 @@
                     (+ y (/ h 2)))))
 
 (defn commit-staged [dev]
-  (swap! schematic assoc (make-name (:cell dev)) dev))
+  (let [id (make-name (:cell dev))
+        name (last (clojure.string/split id sep))]
+    (swap! schematic assoc id
+           (if (:name dev)
+             dev
+             (assoc dev :name name)))))
 
 (defn transform-selected [tf]
   (let [f (comp transform-vec tf transform)]
@@ -569,7 +630,7 @@
   (case @tool
     ::wire (wire-drag e)
     ::pan (when (> (.-buttons e) 0) (drag-view e))
-    ::device (drag-staged-device e)
+    ::device (if (= (::dragging @ui) ::view) (drag-view e) (drag-staged-device e))
     (cursor-drag e)))
 
 (defn add-wire-segment [[x y]]
@@ -638,6 +699,7 @@
 
 (defn drag-start [k e]
   (swap! ui assoc ::mouse-start (viewbox-coord e))
+  (reset! last-coord [(.-clientX e) (.-clientY e)])
   (let [uiv @ui
         update-selection
         (fn [sel]
@@ -670,6 +732,7 @@
           ::wire (cancel))))))
 
 (defn drag-start-background [e]
+  (reset! last-coord [(.-clientX e) (.-clientY e)])
   (cond
     (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
     (and (= (.-button e) 0)
@@ -714,7 +777,8 @@
                             ::delta {:x 0 :y 0 :rx 0 :ry 0})
                      deselect
                      (clean-selected @schematic)))]
-    (if (= (::tool @ui) ::device)
+    (if (and (= (::tool @ui) ::device)
+             (not= (.-button e) 1))
       (commit-staged @staging)
       (when-not (= (::dragging @ui) ::wire)
         (swap! ui end-ui)
@@ -727,12 +791,13 @@
           )))
 
 
-(defn add-device [cell [x y]]
-  (let [[width height] (get-in models [cell ::bg])
+(defn add-device [cell [x y] & args]
+  (let [kwargs (apply array-map args)
+        [width height] (get-in models [cell ::bg])
         mx (js/Math.round (- x (/ width 2) 1))
         my (js/Math.round (- y (/ height 2) 1))]
     (swap! ui assoc
-           ::staging {:transform cm/IV, :cell cell :x mx :y my}
+           ::staging (into {:transform cm/IV, :cell cell :x mx :y my} kwargs)
            ::tool ::device)))
 
 (defn save-url []
@@ -785,7 +850,7 @@
                   :type "text"
                   :default-value (:model @props)
                   :on-change #(swap! props assoc :model (.. % -target -value))}
-         [:option]
+         [:option {:value nil} "Ideal"]
          (for [m (keys (get-in  @modeldb [(str "models" sep @cell) :models]))]
            [:option m])]
         (doall (for [[prop meta] (::props (get models @cell))]
@@ -913,55 +978,99 @@
                "")]
     [:span {:dangerouslySetInnerHTML {:__html icon}}]))
 
+(defn variant-tray [& variants]
+  (let [active (r/atom 0)
+        timeout (r/atom nil)]
+    (fn [& variants]
+      (let [varwraps (map-indexed
+                      (fn [i var]
+                        [:span {:key i
+                                :on-mouse-up #(reset! active i)}
+                         var]) variants)]
+        [:details
+         {;:on-toggle js/console.log
+          :on-mouse-down
+          (fn [e]
+            (let [ct (.-currentTarget e)]
+              (reset! timeout (js/setTimeout
+                               #(set! (.-open ct) true)
+                               300))))
+          :on-mouse-up
+          (fn [e]
+            (js/clearTimeout @timeout)
+            (set! (.. e -currentTarget -open) false))} 
+         [:summary {:on-click #(.preventDefault %)}
+          (nth variants @active)]
+          [:span.tray
+           (take @active varwraps)
+           (drop (inc @active) varwraps)]]))))
+
 (defn device-tray []
   [:<>
-   [:a {:title "Add port [p]"
-        :class (device-active "port")
-        :on-click #(add-device "port" (viewbox-coord %))}
-    [cm/label]]
-   [:a {:title "Add resistor [r]"
-        :class (device-active "resistor")
-        :on-click #(add-device "resistor" (viewbox-coord %))}
+   [variant-tray
+    [:button {:title "Add port [p]"
+              :class (device-active "port")
+              :on-mouse-up #(add-device "port" (viewbox-coord %))}
+     [cm/label]]
+    [:button {:title "Add ground [g]"
+              :class (device-active "port")
+              :on-mouse-up #(add-device "port" (viewbox-coord %)
+                                        :variant "ground"
+                                        :transform (cm/transform-vec (.rotate cm/I -90))
+                                        :name "GND")}
+     "GND"]
+    [:button {:title "Add power supply [shift+p]"
+              :class (device-active "port")
+              :on-mouse-up #(add-device "port" (viewbox-coord %)
+                                        :variant "supply"
+                                        :transform (cm/transform-vec (.rotate cm/I 90))
+                                        :name "VDD")}
+     "VDD"]]
+   [:button {:title "Add resistor [r]"
+             :class (device-active "resistor")
+             :on-mouse-up #(add-device "resistor" (viewbox-coord %))}
     [icon-image "resistor"]]
-   [:a {:title "Add inductor [l]"
-        :class (device-active "inductor")
-        :on-click #(add-device "inductor" (viewbox-coord %))}
+   [:button {:title "Add inductor [l]"
+             :class (device-active "inductor")
+             :on-mouse-up #(add-device "inductor" (viewbox-coord %))}
     [icon-image "inductor"]]
-   [:a {:title "Add capacitor [c]"
-        :class (device-active "capacitor")
-        :on-click #(add-device "capacitor" (viewbox-coord %))}
+   [:button {:title "Add capacitor [c]"
+             :class (device-active "capacitor")
+             :on-mouse-up #(add-device "capacitor" (viewbox-coord %))}
     [icon-image "capacitor"]]
-   [:a {:title "Add diode [d]"
-        :class (device-active "diode")
-        :on-click #(add-device "diode" (viewbox-coord %))}
+   [:button {:title "Add diode [d]"
+             :class (device-active "diode")
+             :on-mouse-up #(add-device "diode" (viewbox-coord %))}
     [icon-image "diode"]]
-   [:a {:title "Add voltage source [v]"
-        :class (device-active "vsource")
-        :on-click #(add-device "vsource" (viewbox-coord %))}
-    [icon-image "vsource"]]
-   [:a {:title "Add current source [i]"
-        :class (device-active "isource")
-        :on-click #(add-device "isource" (viewbox-coord %))}
-    [icon-image "isource"]]
-   [:a {:title "Add N-channel mosfet [m]"
-        :class (device-active "nmos")
-        :on-click #(add-device "nmos" (viewbox-coord %))}
-    [icon-image "nmos"]]
-   [:a {:title "Add P-channel mosfet [shift+m]"
-        :class (device-active "pmos")
-        :on-click #(add-device "pmos" (viewbox-coord %))}
-    [icon-image "pmos"]]
-   [:a {:title "Add NPN BJT [b]"
-        :class (device-active "npn")
-        :on-click #(add-device "npn" (viewbox-coord %))}
-    [icon-image "npn"]]
-   [:a {:title "Add PNP BJT [shift+b]"
-        :class (device-active "pnp")
-        :on-click #(add-device "pnp" (viewbox-coord %))}
-    [icon-image "pnp"]]
-   [:a {:title "Add subcircuit [x]"
-        :class (device-active "ckt")
-        :on-click #(add-device "ckt" (viewbox-coord %))}
+   [variant-tray
+    [:button {:title "Add voltage source [v]"
+              :class (device-active "vsource")
+              :on-mouse-up #(add-device "vsource" (viewbox-coord %))}
+     [icon-image "vsource"]]
+    [:button {:title "Add current source [i]"
+              :class (device-active "isource")
+              :on-mouse-up #(add-device "isource" (viewbox-coord %))}
+     [icon-image "isource"]]]
+   [variant-tray
+    [:button {:title "Add N-channel mosfet [m]"
+              :class (device-active "nmos")
+              :on-mouse-up #(add-device "nmos" (viewbox-coord %))}
+     [icon-image "nmos"]]
+    [:button {:title "Add P-channel mosfet [shift+m]"
+              :class (device-active "pmos")
+              :on-mouse-up #(add-device "pmos" (viewbox-coord %))}
+     [icon-image "pmos"]]
+    [:button {:title "Add NPN BJT [b]"
+              :class (device-active "npn")
+              :on-mouse-up #(add-device "npn" (viewbox-coord %))}
+     [icon-image "npn"]]
+    [:button {:title "Add PNP BJT [shift+b]"
+              :class (device-active "pnp")
+              :on-mouse-up #(add-device "pnp" (viewbox-coord %))}
+     [icon-image "pnp"]]]
+   [:button {:title "Add subcircuit [x]"
+             :class (device-active "ckt")
+             :on-mouse-up #(add-device "ckt" (viewbox-coord %))}
     [cm/chip]]])
 
 (defn schematic-elements [schem]
@@ -1016,8 +1125,8 @@
        (doall (for [key sel]
                 ^{:key key} [deviceprops key]))])
     [:svg#mosaic_canvas {:xmlns "http://www.w3.org/2000/svg"
-                         :height "500px"
-                         :width "500px"
+                         :height "100%"
+                         :width "100%"
                          :class [@theme @tool] ; for export
                          :view-box @zoom
                          :on-wheel scroll-zoom
@@ -1034,10 +1143,10 @@
        [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]]
      [:rect {:fill "url(#gridfill)"
              :on-mouse-up drag-end
-             :x (* -50 grid-size)
-             :y (* -50 grid-size)
-             :width (* 100 grid-size)
-             :height (* 100 grid-size)}]
+             :x (* -500 grid-size)
+             :y (* -500 grid-size)
+             :width (* 1000 grid-size)
+             :height (* 1000 grid-size)}]
      [schematic-elements @schematic]
      [schematic-dots]
      [tool-elements]]]])
@@ -1054,10 +1163,12 @@
                 #{:shift :b} #(add-device "pnp" (::mouse @ui))
                 #{:x} #(add-device "ckt" (::mouse @ui))
                 #{:p} #(add-device "port" (::mouse @ui))
+                #{:g} #(add-device "port" "ground" (::mouse @ui))
+                #{:shift :p} #(add-device "port" "supply" (::mouse @ui))
                 #{:backspace} delete-selected
                 #{:delete} delete-selected
-                #{:w} (fn [_] ; right away start a wire
-                        (add-wire (::mouse @ui) (nil? (::dragging @ui)))
+                #{:w} (fn [_] ; right away start a wire or not?
+                        ;; (add-wire (::mouse @ui) (nil? (::dragging @ui)))
                         (swap! ui assoc ::tool ::wire))
                 #{:e} #(swap! ui assoc ::tool ::eraser ::staging nil)
                 #{:escape} cancel

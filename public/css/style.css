@@ -296,6 +296,7 @@ input, textarea {
     position: relative;
     flex-grow: 1;
     flex-shrink: 5;
+    overflow:hidden;
 }
 
 #mosaic_app .devicetray {
@@ -310,9 +311,11 @@ input, textarea {
     flex-direction: column;
     padding: 0.5em;
     max-height: calc(100% - 50px);
-    overflow-y: auto;
-    overflow-x: hidden;
+    /* overflow-y: auto; */
+    /* overflow-x: visible; */
+    max-width: 5em;
     box-sizing: border-box;
+    user-select: none;
 }
 
 #mosaic_app .sidebar {
@@ -343,6 +346,7 @@ input, textarea {
 }
 
 #mosaic_app .chrome a,
+#mosaic_app .chrome button,
 #mosaic_app .chrome label {
   padding: 0.5em;
   margin: 0.75em 0.5em;
@@ -352,6 +356,8 @@ input, textarea {
   width: 1em;
   height: 1em;
   color: #222222A5;
+  border: none;
+  box-sizing: content-box;
 }
 
 #mosaic_app .chrome svg {
@@ -364,17 +370,20 @@ input, textarea {
   margin: 0.75em 0.5em;
 }
 
-#mosaic_app .chrome a:hover {
+#mosaic_app .chrome a:hover,
+#mosaic_app .chrome button:hover {
     background-color: lightgray;
 }
 #mosaic_app .chrome a:active,
 #mosaic_app .chrome a.active,
+#mosaic_app .chrome button.active,
 #mosaic_app .chrome input[type=radio]:checked + label {
   background-color: #0E1A32;
   color: white;
 }
 #mosaic_app .chrome a:active svg,
 #mosaic_app .chrome a.active svg,
+#mosaic_app .chrome button.active svg,
 #mosaic_app .chrome input[type=radio]:checked + label svg {
   fill: white;
 }
@@ -383,14 +392,56 @@ input, textarea {
   display: none;
 }
 
-#mosaic_app .devicetray a {
+#mosaic_app .devicetray button {
     padding: 0.7em;
     width: 25px;
     height: 25px;
+    display: inline-block;
 }
 #mosaic_app .devicetray svg {
     width: 25px;
     height: 25px;
+}
+#mosaic_app .devicetray details {
+    position: relative;
+}
+#mosaic_app .devicetray summary {
+    list-style-type: none;
+}
+#mosaic_app .devicetray summary::after {
+    content: "";
+    position: absolute;
+    bottom:0.7em;
+    right:0.7em;
+    border-color: transparent;
+    border-top-color: black;
+    border-style: solid;
+    border-width: 3px;
+}
+#mosaic_app .devicetray details .tray {
+    position: absolute;
+    top:0;
+    left:120%;
+    display: flex;
+    flex-direction: row;
+    background: #FFFFFF 0% 0% no-repeat padding-box;
+    /* box-shadow: 0px 0px 8px #00000008; */
+    border: 0.5px solid #7070701f;
+    border-radius: 5px;
+    z-index: 0;
+}
+#mosaic_app .devicetray details .tray::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: calc(50% - 10px);
+    left: -10px;
+    transform: rotate(45deg);
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-left: 0.5px solid #7070701f;
+    border-bottom: 0.5px solid #7070701f;
 }
 
 #mosaic_editor .properties {
@@ -439,10 +490,17 @@ g.staging, g.toolstaging g.device {
 
 line.wirebb {
   stroke: transparent;
+  transition: stroke 200ms;
   stroke-width: 25px;
   fill: none;
 }
+line.wirebb:hover {
+  stroke: #00000008;
+}
 
+text.identifier {
+    font-size: 0.7em;
+}
 
 /* tetris theme */
 
@@ -599,6 +657,19 @@ line.wirebb {
   stroke-width: 1px;
   fill: none;
   vector-effect: non-scaling-stroke;
+}
+
+.eyesore g.device.port polyline {
+  fill: rgb(255, 0, 0);
+  stroke: none;
+}
+.eyesore g.device.port circle.port {
+    fill: none;
+}
+.eyesore g.device.port.supply polyline,
+.eyesore g.device.port.ground polyline {
+  stroke: #00cc66;
+  fill: transparent;
 }
 
 .eyesore g.device text {
