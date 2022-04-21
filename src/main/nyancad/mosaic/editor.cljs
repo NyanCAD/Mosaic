@@ -330,7 +330,7 @@
 (defn circuit-conn [k v]
   (let [model (:cell v)
         [width height] (get-in @modeldb [(str "models" sep model) :bg] [1 1])
-        pattern (get-in @modeldb [(str "models" sep model) :conn] [[1 1 "%"]])]
+        pattern (get-in @modeldb [(str "models" sep model) :conn] [])]
     (draw-pattern (+ 2 (max width height)) pattern
                   port k v)))
 
@@ -340,11 +340,23 @@
 (defn circuit-sym [k v]
   (let [cell (:cell v)
         model (get-in v [:props :model])
-        [width height] (get-in @modeldb [(str "models" sep cell) :bg] [1 1])]
+        [width height] (get-in @modeldb [(str "models" sep cell) :bg] [1 1])
+        sym (get-in @modeldb [(str "models" sep cell) :sym])]
     [device (+ 2 (max width height)) k v
-     [:image {:href (get-in @modeldb [(str "models" sep cell) :sym])
-              :on-mouse-down #(.preventDefault %) ; prevent dragging the image
-              :on-double-click #(.assign js/window.location (ckt-url cell model))}]]))
+     (if sym
+       [:image {:href sym
+                :on-mouse-down #(.preventDefault %) ; prevent dragging the image
+                :on-double-click #(.assign js/window.location (ckt-url cell model))}]
+       [:<>
+        [lines (for [x (range 1.5 (+ 1.5 width))] [[x 0.5] [x 1.0]])]
+        [lines (for [y (range 1.5 (+ 1.5 height))] [[0.5 y] [1.0 y]])]
+        [lines (for [x (range 1.5 (+ 1.5 width))] [[x (+ height 1.5)] [x (+ height 1)]])]
+        [lines (for [y (range 1.5 (+ 1.5 height))] [[(+ width 1.5) y] [(+ width 1) y]])]
+        [:rect.outline
+         {:x grid-size :y grid-size
+          :width (* grid-size width)
+          :height (* grid-size height)}]])]))
+
 (def models {"pmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
@@ -419,79 +431,93 @@
              [(js/Math.round (+ devx nx mid))
               (js/Math.round (+ devy ny mid))])) shape)))
 
-(defn build-wire-index [sch]
-  (reduce
-   (fn [idx {:keys [:_id :x :y :rx :ry :cell :transform]}]
-     (cond
-       (= cell "wire") (-> idx
-                           (update [x y] sconj _id)
-                           (update [(+ x rx) (+ y ry)] sconj _id))
-       (contains? models cell) (reduce #(update %1 %2 sconj _id) idx (rotate-shape (get-in models [cell ::conn]) transform x y))
-       :else idx)) ;TODO custom components
-   {} (vals sch)))
-
-(def wire-index (r/track #(build-wire-index @schematic)))
-
 (defn exrange [start width]
   (next (take-while #(not= % (+ start width))
                     (iterate #(+ % (cm/sign width)) start))))
 
-(defn build-wire-split-index [sch widx]
-  (reduce
-   (fn [idx {:keys [:_id :x :y :rx :ry :cell]}]
-     (if (= cell "wire")
-       (->> (cond
-              (= rx 0) (map #(vector x %) (exrange y ry))
-              (= ry 0) (map #(vector % y) (exrange x rx))
-              :else [])
-            (filter (partial contains? widx))
-            (reduce conj (sorted-set))
-            (assoc idx _id))
-       idx))
-   {} (vals sch)))
+(defn wire-locations [{:keys [:_id :x :y :rx :ry]}]
+  [[[x y] [(+ x rx) (+ y ry)]]
+   (cond
+     (= rx 0) (map #(vector x %) (exrange y ry))
+     (= ry 0) (map #(vector % y) (exrange x rx))
+     :else [])])
 
-(def wire-split-index (r/track #(build-wire-split-index @schematic @wire-index)))
+(defn builtin-locations [{:keys [:_id :x :y :cell :transform]}]
+  (let [mod (get models cell)
+        conn (::conn mod)
+        [w h] (::bg mod)]
+    [(rotate-shape conn transform x y)
+     (rotate-shape (for [x (range w) y (range h)]
+                     [(inc x) (inc y) "%"])
+                   transform x y)]))
 
-(defn build-wire-midpoint-index [sch]
-  (reduce
-   (fn [idx {:keys [:_id :x :y :rx :ry :cell]}]
-     (if (= cell "wire")
-       (->> (cond
-              (= rx 0) (map #(vector x %) (exrange y ry))
-              (= ry 0) (map #(vector % y) (exrange x rx))
-              :else [])
-            (reduce conj idx))
-       idx))
-   #{} (vals sch)))
+(defn circuit-locations [{:keys [:_id :x :y :cell :transform]}]
+  (let [mod (get @modeldb (str "models" sep cell))
+        conn (:conn mod)
+        [w h] (:bg mod)]
+    [(rotate-shape conn transform x y)
+     (rotate-shape (for [x (range w) y (range h)]
+                     [(inc x) (inc y) "%"])
+                   transform x y)]))
 
-(def wire-midpoint-index (r/track #(build-wire-midpoint-index @schematic)))
+(defn device-locations [dev]
+  (let [cell (:cell dev)]
+    (cond
+      (= cell "wire") (wire-locations dev)
+      (contains? models cell) (builtin-locations dev) 
+      :else (circuit-locations dev))))
 
-(declare split-wire)
+(defn build-location-index [sch]
+  (loop [connidx {} bodyidx {} [dev & other] (vals sch)]
+    (let [[connloc bodyloc] (device-locations dev)
+          nconnidx (reduce #(update %1 %2 sconj (:_id dev)) connidx connloc)
+          nbodyidx (reduce #(update %1 %2 sconj (:_id dev)) bodyidx bodyloc)]
+      (if other
+        (recur nconnidx nbodyidx other)
+        [nconnidx nbodyidx]))))
 
-(defn split-wires []
-  (remove-watch schematic ::split) ; don't recursively split
-  (remove-watch schematic ::undo) ; don't add splitting to undo tree
-  (go (doseq [[w coords] @wire-split-index]
-        (<! (split-wire w coords)))
-      (add-watch schematic ::undo #(cm/newdo undotree %4))
-      (add-watch schematic ::split split-wires)))
+; [conn body]
+(def location-index (r/track #(build-location-index @schematic)))
 
-(add-watch schematic ::split split-wires)
+(defn build-wire-split-index [[connidx bodyidx]]
+  (reduce (fn [result [key val]]
+            (if (contains? connidx key)
+              (->> val
+                   (filter #(= "wire" (get-in @schematic [% :cell])))
+                   (reduce #(update %1 %2 cm/ssconj key) result))
+              result))
+          {} bodyidx))
 
 (defn split-wire [wirename coords]
   (let [{:keys [:x :y :rx :ry]} (get @schematic wirename)
         x2 (+ x rx)
         y2 (+ y ry)
         allcoords (cm/ssconj coords [x y] [x2 y2])
-        widx @wire-index]
-    (go-loop [w wirename
-              [[x1 y1] & [[x2 y2] & oother :as other]] allcoords]
-      (when (empty? (clojure.set/intersection (get widx [x1 y1]) (get widx [x2 y2])))
-        (<! (swap! schematic update w assoc
-                   :cell "wire" :transform cm/IV
-                   :x x1 :y y1 :rx (- x2 x1) :ry (- y2 y1))))
-      (when oother
-        (recur (make-name "wire") other)))))
+        widx (first @location-index)
+        wires (loop [w wirename
+                     [[x1 y1] & [[x2 y2] & _ :as other]] allcoords
+                     schem {}]
+                (if other
+                  (recur (name (gensym wirename)) other
+                        ;; if the start and end point cover the same device, skip
+                         (if (empty? (clojure.set/intersection (get widx [x1 y1]) (get widx [x2 y2])))
+                           (assoc schem w
+                                  {:cell "wire" :transform cm/IV
+                                   :x x1 :y y1 :rx (- x2 x1) :ry (- y2 y1)})
+                           schem))
+                  schem))]
+    (swap! schematic (partial merge-with merge) wires)))
+
+(defn split-wires []
+  (remove-watch schematic ::split) ; don't recursively split
+  (remove-watch schematic ::undo) ; don't add splitting to undo tree
+  (go (doseq [[w coords] (build-wire-split-index @location-index)]
+        (<! (split-wire w coords)))
+      (add-watch schematic ::undo #(cm/newdo undotree %4))
+      (add-watch schematic ::split split-wires)))
+
+(add-watch schematic ::split split-wires)
+
 
 (defn viewbox-coord [e]
   (let [^js el (js/document.getElementById "mosaic_canvas")
@@ -513,7 +539,6 @@
         my (- ny ly)
         ^js p (point mx my)
         tp (.matrixTransform p m)] ; local movement
-    (println lx ly nx ny)
     (reset! last-coord [nx ny])
     [(.-x tp) (.-y tp)]))
 
@@ -643,8 +668,9 @@
           {rx :rx ry :ry} dev
           x (js/Math.round (+ (:x dev) rx)) ; use end pos of previous wire instead
           y (js/Math.round (+ (:y dev) ry))
-          on-port (or (contains? @wire-index [x y])
-                      (contains? @wire-midpoint-index [x y]))
+          [conn body] @location-index
+          on-port (or (contains? conn [x y])
+                      (contains? body [x y]))
           same-tile (and (< (js/Math.abs rx) 0.5) (< (js/Math.abs ry) 0.5))]
       (cond
         same-tile (swap! ui assoc ; the dragged wire stayed at the same tile, exit
@@ -672,8 +698,9 @@
       (loop [ports (wire-ports #{} wire)
              sel #{(:_id wire)}]
         (if (seq ports)
-          (let [newsel (clojure.set/difference
-                        (set (filter wire? (mapcat @wire-index ports)))
+          (let [[connidx _] @location-index
+                newsel (clojure.set/difference
+                        (set (filter wire? (mapcat connidx ports)))
                         sel)
                 newports (reduce wire-ports #{} (map schem newsel))]
             (recur
@@ -834,7 +861,7 @@
                      :on-change #(reset! cell (.. % -target -value))}
             [:option]
             (for [[k m] @modeldb]
-              [:option (:name m)])]])
+              [:option {:key k} (:name m)])]])
         [:label {:for "name" :title "Instance name"} "name"]
         [:input {:id "name"
                  :type "text"
@@ -847,7 +874,7 @@
                   :on-change #(swap! props assoc :model (.. % -target -value))}
          [:option {:value nil} "Ideal"]
          (for [m (keys (get-in  @modeldb [(str "models" sep @cell) :models]))]
-           [:option m])]
+           [:option {:key m} m])]
         (doall (for [[prop meta] (::props (get models @cell))]
                  [:<> {:key prop}
                   [:label {:for prop :title (:tooltip meta)} prop]
@@ -1089,7 +1116,7 @@
 
 (defn schematic-dots []
   [:<>
-   (for [[[x y] ids] @wire-index
+   (for [[[x y] ids] (first @location-index)
          :let [n (count ids)]
          :when (not= n 2)]
      [:circle
