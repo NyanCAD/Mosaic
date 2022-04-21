@@ -282,8 +282,8 @@
 (defn isource-sym [k v]
   (let [shape [[[1.5 0.5]
                 [1.5 1.1]]
-               [[1.5 1.35]
-                [1.5 1.75]]
+               [[1.5 1.25]
+                [1.5 1.65]]
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
@@ -293,7 +293,7 @@
       {:cx (* grid-size 1.5)
        :cy (* grid-size 1.5)
        :r (* grid-size 0.4)}]
-     [arrow 1.5 1.2 0.15 90]]))
+     [arrow 1.5 1.8 0.15 -90]]))
 
 (defn vsource-sym [k v]
   (let [shape [[[1.5 0.5]
