@@ -61,7 +61,7 @@
 (s/def ::theme #{"tetris" "eyesore"})
 (s/def ::tool #{::cursor ::eraser ::wire ::pan ::device})
 (s/def ::selected (s/and set? (s/coll-of string?)))
-(s/def ::dragging (s/nilable #{::wire ::device ::view}))
+(s/def ::dragging (s/nilable #{::wire ::device ::view ::box}))
 (s/def ::staging (s/nilable :nyancad.mosaic.common/device))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected]
                     :opt [::dragging ::staging]))
@@ -600,14 +600,14 @@
         dy (- y ys)]
     (swap! delta assoc :x dx :y dy)))
 
-(defn drag-wire [e]
+(defn drag-wire [^js e]
   (let [[x y] (viewbox-coord e)]
     (swap! staging
            (fn [d]
              (let [rx (- x (:x d) 0.5)
                    ry (- y (:y d) 0.5)]
                (cond
-                 (.-ctrlKey e) (assoc d :rx rx :ry ry)
+                 (.-ctrlkey e) (assoc d :rx rx :ry ry)
                  (> (js/Math.abs rx) (js/Math.abs ry)) (assoc d :rx rx :ry 0)
                  :else (assoc d :rx 0 :ry ry)))))))
 
@@ -629,6 +629,7 @@
     ::view (drag-view e)
     ::wire (drag-wire e)
     ::device (drag-device e)
+    ::box (drag-device e)
     nil))
 
 ; updating the PouchDB atom is a fast but async operation
@@ -753,10 +754,18 @@
           ::cursor (select-connected)
           ::wire (cancel))))))
 
+(defn drag-start-box [e]
+  (swap! ui assoc
+         ::selected #{}
+         ::dragging ::box
+         ::mouse-start (viewbox-coord e)))
+
 (defn drag-start-background [e]
   (reset! last-coord [(.-clientX e) (.-clientY e)])
   (cond
     (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
+    (and (= (.-button e) 0)
+         (= ::cursor @tool)) (drag-start-box e) 
     (and (= (.-button e) 0)
          (= ::wire @tool)) (add-wire (viewbox-coord e) (nil? (::dragging @ui)))))
 
@@ -782,35 +791,58 @@
       :else ^{:key k} [(fn [k _v] (println "invalid model for" k))])))
 
 
-(defn clean-selected [ui sch]
-  (update ui ::selected
-          (fn [sel]
-            (into #{} (filter #(contains? sch %)) sel))))
+(defn end-ui [bg? selected dx dy]
+  (letfn [(clean-selected [ui sch]
+            (update ui ::selected
+                    (fn [sel]
+                    (into #{} (filter #(contains? sch %)) sel)))) (deselect [ui] (if bg? (assoc ui ::selected #{}) ui))
+          (endfn [ui]
+            (-> ui
+                (assoc ::dragging nil
+                    ::delta {:x 0 :y 0 :rx 0 :ry 0})
+                deselect
+                (clean-selected @schematic)))
+          (round-coords [{x :x y :y :as dev}]
+            (assoc dev
+                    :x (js/Math.round (+ x dx))
+                    :y (js/Math.round (+ y dy))))]
+    (swap! ui endfn)
+    (swap! schematic update-keys selected round-coords)))
+
+(defn drag-end-box []
+  (let [[x y] (::mouse-start @ui)
+        {dx :x dy :y} (::delta @ui)
+        x1 (js/Math.floor (js/Math.min x (+ x dx)))
+        y1 (js/Math.floor (js/Math.min y (+ y dy)))
+        x2 (js/Math.floor (js/Math.max x (+ x dx)))
+        y2 (js/Math.floor (js/Math.max y (+ y dy)))
+        [connidx bodyidx] @location-index
+        sel (apply clojure.set/union
+                   (for [x (range x1 (inc x2))
+                         y (range y1 (inc y2))]
+                     (get connidx [x y])))
+        sel (apply clojure.set/union sel
+                   (for [x (range x1 (inc x2))
+                         y (range y1 (inc y2))]
+                     (get bodyidx [x y])))]
+    (println x1 y1 x2 y2 sel)
+    (swap! ui assoc
+           ::dragging nil
+           ::delta {:x 0 :y 0 :rx 0 :ry 0}
+           ::selected (set sel))))
 
 (defn drag-end [e]
   (.stopPropagation e)
   (let [bg? (= (.-target e) (.-currentTarget e))
         selected (::selected @ui)
-        {dx :x dy :y} @delta
-        deselect (fn [ui] (if bg? (assoc ui ::selected #{}) ui))
-        end-ui (fn [ui]
-                 (-> ui
-                     (assoc ::dragging nil
-                            ::delta {:x 0 :y 0 :rx 0 :ry 0})
-                     deselect
-                     (clean-selected @schematic)))]
-    (if (and (= (::tool @ui) ::device)
-             (not= (.-button e) 1))
-      (commit-staged @staging)
-      (when-not (= (::dragging @ui) ::wire)
-        (swap! ui end-ui)
-        (swap! schematic update-keys selected
-               (fn [{x :x y :y :as dev}]
-                 (assoc dev
-                        :x (js/Math.round (+ x dx))
-                        :y (js/Math.round (+ y dy))))))
-
-          )))
+        {dx :x dy :y} @delta]
+    (println (::tool @ui) (::dragging @ui))
+    (cond
+      (and (= (::tool @ui) ::device)
+           (not= (.-button e) 1)) (commit-staged @staging)
+      (= (::dragging @ui) ::box) (drag-end-box)
+      (= (::dragging @ui) ::wire) nil
+      :else (end-ui bg? selected dx dy))))
 
 
 (defn add-device [cell [x y] & args]
@@ -1127,19 +1159,27 @@
        :r (/ grid-size 10)}])])
 
 (defn tool-elements []
-  (let [{sel ::selected dr ::dragging v ::staging {x :x y :y} ::delta} @ui
+  (let [{sel ::selected
+         dr ::dragging
+         v ::staging
+         {x :x y :y} ::delta
+         [sx sy] ::mouse-start} @ui
         vx (* grid-size (js/Math.round x))
         vy (* grid-size (js/Math.round y))]
-    (if v
-      [:g.toolstaging
-       (get-model ::bg v ::stagingbg v)
-       (get-model ::sym v ::stagingsym v)
-       (get-model ::conn v ::stagingconn v)]
-      (when (and sel dr)
-        [:g.staging {:style {:transform (str "translate(" vx "px, " vy "px)")}}
-         [schematic-elements
-          (let [schem @schematic]
-            (map #(vector % (get schem %)) sel))]]))))
+    (cond
+      v [:g.toolstaging
+         (get-model ::bg v ::stagingbg v)
+         (get-model ::sym v ::stagingsym v)
+         (get-model ::conn v ::stagingconn v)]
+      (= dr ::box) [:rect.select
+                    {:x (* (min sx (+ sx x)) grid-size)
+                     :y (* (min sy (+ sy y)) grid-size)
+                     :width (js/Math.abs (* x grid-size))
+                     :height (js/Math.abs (* y grid-size))}]
+      (and sel dr) [:g.staging {:style {:transform (str "translate(" vx "px, " vy "px)")}}
+                    [schematic-elements
+                     (let [schem @schematic]
+                       (map #(vector % (get schem %)) sel))]])))
 
 (defn schematic-ui []
   [:div#mosaic_app {:class @theme}
