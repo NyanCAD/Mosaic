@@ -496,6 +496,10 @@ text.identifier {
     font-size: 0.7em;
 }
 
+rect.select {
+    fill: #0000001A
+}
+
 /* tetris theme */
 
 .tetris {
