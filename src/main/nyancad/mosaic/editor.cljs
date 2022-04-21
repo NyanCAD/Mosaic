@@ -1000,6 +1000,18 @@
            (take @active varwraps)
            (drop (inc @active) varwraps)]]))))
 
+(defn add-gnd [coord]
+  (add-device "port" coord
+              :variant "ground"
+              :transform (cm/transform-vec (.rotate cm/I -90))
+              :name "GND"))
+
+(defn add-supply [coord]
+  (add-device "port" coord
+              :variant "supply"
+              :transform (cm/transform-vec (.rotate cm/I 90))
+              :name "VDD"))
+
 (defn device-tray []
   [:<>
    [variant-tray
@@ -1009,17 +1021,11 @@
      [cm/label]]
     [:button {:title "Add ground [g]"
               :class (device-active "port")
-              :on-mouse-up #(add-device "port" (viewbox-coord %)
-                                        :variant "ground"
-                                        :transform (cm/transform-vec (.rotate cm/I -90))
-                                        :name "GND")}
+              :on-mouse-up #(add-gnd (viewbox-coord %))}
      "GND"]
     [:button {:title "Add power supply [shift+p]"
               :class (device-active "port")
-              :on-mouse-up #(add-device "port" (viewbox-coord %)
-                                        :variant "supply"
-                                        :transform (cm/transform-vec (.rotate cm/I 90))
-                                        :name "VDD")}
+              :on-mouse-up #(add-supply (viewbox-coord %))}
      "VDD"]]
    [:button {:title "Add resistor [r]"
              :class (device-active "resistor")
@@ -1158,8 +1164,8 @@
                 #{:shift :b} #(add-device "pnp" (::mouse @ui))
                 #{:x} #(add-device "ckt" (::mouse @ui))
                 #{:p} #(add-device "port" (::mouse @ui))
-                #{:g} #(add-device "port" "ground" (::mouse @ui))
-                #{:shift :p} #(add-device "port" "supply" (::mouse @ui))
+                #{:g} #(add-gnd (::mouse @ui))
+                #{:shift :p} #(add-supply (::mouse @ui))
                 #{:backspace} delete-selected
                 #{:delete} delete-selected
                 #{:w} (fn [_] ; right away start a wire or not?
