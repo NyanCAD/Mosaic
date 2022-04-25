@@ -606,7 +606,6 @@
            (fn [d]
              (let [rx (- x (:x d) 0.5)
                    ry (- y (:y d) 0.5)]
-               (js/console.log (.-ctrlKey e))
                (cond
                  (.-ctrlKey e) (assoc d :rx rx :ry ry)
                  (> (js/Math.abs rx) (js/Math.abs ry)) (assoc d :rx rx :ry 0)
