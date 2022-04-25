@@ -606,8 +606,9 @@
            (fn [d]
              (let [rx (- x (:x d) 0.5)
                    ry (- y (:y d) 0.5)]
+               (js/console.log (.-ctrlKey e))
                (cond
-                 (.-ctrlkey e) (assoc d :rx rx :ry ry)
+                 (.-ctrlKey e) (assoc d :rx rx :ry ry)
                  (> (js/Math.abs rx) (js/Math.abs ry)) (assoc d :rx rx :ry 0)
                  :else (assoc d :rx 0 :ry ry)))))))
 
@@ -836,10 +837,9 @@
   (let [bg? (= (.-target e) (.-currentTarget e))
         selected (::selected @ui)
         {dx :x dy :y} @delta]
-    (println (::tool @ui) (::dragging @ui))
     (cond
       (and (= (::tool @ui) ::device)
-           (not= (.-button e) 1)) (commit-staged @staging)
+           (= (.-button e) 0)) (commit-staged @staging)
       (= (::dragging @ui) ::box) (drag-end-box)
       (= (::dragging @ui) ::wire) nil
       :else (end-ui bg? selected dx dy))))
