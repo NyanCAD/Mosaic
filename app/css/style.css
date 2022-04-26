@@ -514,6 +514,10 @@ rect.select {
     cursor: url(icons/pencil.svg) 0 16, crosshair;
 }
 
+.tetris.probe {
+    cursor: url(icons/search.svg) 5 5, crosshair;
+}
+
 .tetris.eraser .wire:hover,
 .tetris.eraser .device {
     cursor: url(icons/eraser.svg) 6 14, crosshair;
