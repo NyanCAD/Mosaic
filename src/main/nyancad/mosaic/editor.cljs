@@ -64,9 +64,9 @@
 
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme #{"tetris" "eyesore"})
-(s/def ::tool #{::cursor ::eraser ::wire ::pan ::device})
+(s/def ::tool #{::cursor ::eraser ::wire ::pan ::device ::probe})
 (s/def ::selected (s/and set? (s/coll-of string?)))
-(s/def ::dragging (s/nilable #{::wire ::device ::view}))
+(s/def ::dragging (s/nilable #{::wire ::device ::view ::box}))
 (s/def ::staging (s/nilable :nyancad.mosaic.common/device))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected]
                     :opt [::dragging ::staging]))
@@ -287,8 +287,8 @@
 (defn isource-sym [k v]
   (let [shape [[[1.5 0.5]
                 [1.5 1.1]]
-               [[1.5 1.35]
-                [1.5 1.75]]
+               [[1.5 1.25]
+                [1.5 1.65]]
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
@@ -298,7 +298,7 @@
       {:cx (* grid-size 1.5)
        :cy (* grid-size 1.5)
        :r (* grid-size 0.4)}]
-     [arrow 1.5 1.2 0.15 90]]))
+     [arrow 1.5 1.8 0.15 -90]]))
 
 (defn vsource-sym [k v]
   (let [shape [[[1.5 0.5]
@@ -335,7 +335,7 @@
 (defn circuit-conn [k v]
   (let [model (:cell v)
         [width height] (get-in @modeldb [(str "models" sep model) :bg] [1 1])
-        pattern (get-in @modeldb [(str "models" sep model) :conn] [[1 1 "%"]])]
+        pattern (get-in @modeldb [(str "models" sep model) :conn] [])]
     (draw-pattern (+ 2 (max width height)) pattern
                   port k v)))
 
@@ -345,11 +345,23 @@
 (defn circuit-sym [k v]
   (let [cell (:cell v)
         model (get-in v [:props :model])
-        [width height] (get-in @modeldb [(str "models" sep cell) :bg] [1 1])]
+        [width height] (get-in @modeldb [(str "models" sep cell) :bg] [1 1])
+        sym (get-in @modeldb [(str "models" sep cell) :sym])]
     [device (+ 2 (max width height)) k v
-     [:image {:href (get-in @modeldb [(str "models" sep cell) :sym])
-              :on-mouse-down #(.preventDefault %) ; prevent dragging the image
-              :on-double-click #(.assign js/window.location (ckt-url cell model))}]]))
+     (if sym
+       [:image {:href sym
+                :on-mouse-down #(.preventDefault %) ; prevent dragging the image
+                :on-double-click #(.assign js/window.location (ckt-url cell model))}]
+       [:<>
+        [lines (for [x (range 1.5 (+ 1.5 width))] [[x 0.5] [x 1.0]])]
+        [lines (for [y (range 1.5 (+ 1.5 height))] [[0.5 y] [1.0 y]])]
+        [lines (for [x (range 1.5 (+ 1.5 width))] [[x (+ height 1.5)] [x (+ height 1)]])]
+        [lines (for [y (range 1.5 (+ 1.5 height))] [[(+ width 1.5) y] [(+ width 1) y]])]
+        [:rect.outline
+         {:x grid-size :y grid-size
+          :width (* grid-size width)
+          :height (* grid-size height)}]])]))
+
 (def models {"pmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
@@ -424,79 +436,93 @@
              [(js/Math.round (+ devx nx mid))
               (js/Math.round (+ devy ny mid))])) shape)))
 
-(defn build-wire-index [sch]
-  (reduce
-   (fn [idx {:keys [:_id :x :y :rx :ry :cell :transform]}]
-     (cond
-       (= cell "wire") (-> idx
-                           (update [x y] sconj _id)
-                           (update [(+ x rx) (+ y ry)] sconj _id))
-       (contains? models cell) (reduce #(update %1 %2 sconj _id) idx (rotate-shape (get-in models [cell ::conn]) transform x y))
-       :else idx)) ;TODO custom components
-   {} (vals sch)))
-
-(def wire-index (r/track #(build-wire-index @schematic)))
-
 (defn exrange [start width]
   (next (take-while #(not= % (+ start width))
                     (iterate #(+ % (cm/sign width)) start))))
 
-(defn build-wire-split-index [sch widx]
-  (reduce
-   (fn [idx {:keys [:_id :x :y :rx :ry :cell]}]
-     (if (= cell "wire")
-       (->> (cond
-              (= rx 0) (map #(vector x %) (exrange y ry))
-              (= ry 0) (map #(vector % y) (exrange x rx))
-              :else [])
-            (filter (partial contains? widx))
-            (reduce conj (sorted-set))
-            (assoc idx _id))
-       idx))
-   {} (vals sch)))
+(defn wire-locations [{:keys [:_id :x :y :rx :ry]}]
+  [[[x y] [(+ x rx) (+ y ry)]]
+   (cond
+     (= rx 0) (map #(vector x %) (exrange y ry))
+     (= ry 0) (map #(vector % y) (exrange x rx))
+     :else [])])
 
-(def wire-split-index (r/track #(build-wire-split-index @schematic @wire-index)))
+(defn builtin-locations [{:keys [:_id :x :y :cell :transform]}]
+  (let [mod (get models cell)
+        conn (::conn mod)
+        [w h] (::bg mod)]
+    [(rotate-shape conn transform x y)
+     (rotate-shape (for [x (range w) y (range h)]
+                     [(inc x) (inc y) "%"])
+                   transform x y)]))
 
-(defn build-wire-midpoint-index [sch]
-  (reduce
-   (fn [idx {:keys [:_id :x :y :rx :ry :cell]}]
-     (if (= cell "wire")
-       (->> (cond
-              (= rx 0) (map #(vector x %) (exrange y ry))
-              (= ry 0) (map #(vector % y) (exrange x rx))
-              :else [])
-            (reduce conj idx))
-       idx))
-   #{} (vals sch)))
+(defn circuit-locations [{:keys [:_id :x :y :cell :transform]}]
+  (let [mod (get @modeldb (str "models" sep cell))
+        conn (:conn mod)
+        [w h] (:bg mod)]
+    [(rotate-shape conn transform x y)
+     (rotate-shape (for [x (range w) y (range h)]
+                     [(inc x) (inc y) "%"])
+                   transform x y)]))
 
-(def wire-midpoint-index (r/track #(build-wire-midpoint-index @schematic)))
+(defn device-locations [dev]
+  (let [cell (:cell dev)]
+    (cond
+      (= cell "wire") (wire-locations dev)
+      (contains? models cell) (builtin-locations dev) 
+      :else (circuit-locations dev))))
 
-(declare split-wire)
+(defn build-location-index [sch]
+  (loop [connidx {} bodyidx {} [dev & other] (vals sch)]
+    (let [[connloc bodyloc] (device-locations dev)
+          nconnidx (reduce #(update %1 %2 sconj (:_id dev)) connidx connloc)
+          nbodyidx (reduce #(update %1 %2 sconj (:_id dev)) bodyidx bodyloc)]
+      (if other
+        (recur nconnidx nbodyidx other)
+        [nconnidx nbodyidx]))))
 
-(defn split-wires []
-  (remove-watch schematic ::split) ; don't recursively split
-  (remove-watch schematic ::undo) ; don't add splitting to undo tree
-  (go (doseq [[w coords] @wire-split-index]
-        (<! (split-wire w coords)))
-      (add-watch schematic ::undo #(cm/newdo undotree %4))
-      (add-watch schematic ::split split-wires)))
+; [conn body]
+(def location-index (r/track #(build-location-index @schematic)))
 
-(add-watch schematic ::split split-wires)
+(defn build-wire-split-index [[connidx bodyidx]]
+  (reduce (fn [result [key val]]
+            (if (contains? connidx key)
+              (->> val
+                   (filter #(= "wire" (get-in @schematic [% :cell])))
+                   (reduce #(update %1 %2 cm/ssconj key) result))
+              result))
+          {} bodyidx))
 
 (defn split-wire [wirename coords]
   (let [{:keys [:x :y :rx :ry]} (get @schematic wirename)
         x2 (+ x rx)
         y2 (+ y ry)
         allcoords (cm/ssconj coords [x y] [x2 y2])
-        widx @wire-index]
-    (go-loop [w wirename
-              [[x1 y1] & [[x2 y2] & oother :as other]] allcoords]
-      (when (empty? (clojure.set/intersection (get widx [x1 y1]) (get widx [x2 y2])))
-        (<! (swap! schematic update w assoc
-                   :cell "wire" :transform cm/IV
-                   :x x1 :y y1 :rx (- x2 x1) :ry (- y2 y1))))
-      (when oother
-        (recur (make-name "wire") other)))))
+        widx (first @location-index)
+        wires (loop [w wirename
+                     [[x1 y1] & [[x2 y2] & _ :as other]] allcoords
+                     schem {}]
+                (if other
+                  (recur (name (gensym wirename)) other
+                        ;; if the start and end point cover the same device, skip
+                         (if (empty? (clojure.set/intersection (get widx [x1 y1]) (get widx [x2 y2])))
+                           (assoc schem w
+                                  {:cell "wire" :transform cm/IV
+                                   :x x1 :y y1 :rx (- x2 x1) :ry (- y2 y1)})
+                           schem))
+                  schem))]
+    (swap! schematic (partial merge-with merge) wires)))
+
+(defn split-wires []
+  (remove-watch schematic ::split) ; don't recursively split
+  (remove-watch schematic ::undo) ; don't add splitting to undo tree
+  (go (doseq [[w coords] (build-wire-split-index @location-index)]
+        (<! (split-wire w coords)))
+      (add-watch schematic ::undo #(cm/newdo undotree %4))
+      (add-watch schematic ::split split-wires)))
+
+(add-watch schematic ::split split-wires)
+
 
 (defn viewbox-coord [e]
   (let [^js el (js/document.getElementById "mosaic_canvas")
@@ -518,7 +544,6 @@
         my (- ny ly)
         ^js p (point mx my)
         tp (.matrixTransform p m)] ; local movement
-    (println lx ly nx ny)
     (reset! last-coord [nx ny])
     [(.-x tp) (.-y tp)]))
 
@@ -580,7 +605,7 @@
         dy (- y ys)]
     (swap! delta assoc :x dx :y dy)))
 
-(defn drag-wire [e]
+(defn drag-wire [^js e]
   (let [[x y] (viewbox-coord e)]
     (swap! staging
            (fn [d]
@@ -609,6 +634,7 @@
     ::view (drag-view e)
     ::wire (drag-wire e)
     ::device (drag-device e)
+    ::box (drag-device e)
     nil))
 
 ; updating the PouchDB atom is a fast but async operation
@@ -648,8 +674,9 @@
           {rx :rx ry :ry} dev
           x (js/Math.round (+ (:x dev) rx)) ; use end pos of previous wire instead
           y (js/Math.round (+ (:y dev) ry))
-          on-port (or (contains? @wire-index [x y])
-                      (contains? @wire-midpoint-index [x y]))
+          [conn body] @location-index
+          on-port (or (contains? conn [x y])
+                      (contains? body [x y]))
           same-tile (and (< (js/Math.abs rx) 0.5) (< (js/Math.abs ry) 0.5))]
       (cond
         same-tile (swap! ui assoc ; the dragged wire stayed at the same tile, exit
@@ -677,8 +704,9 @@
       (loop [ports (wire-ports #{} wire)
              sel #{(:_id wire)}]
         (if (seq ports)
-          (let [newsel (clojure.set/difference
-                        (set (filter wire? (mapcat @wire-index ports)))
+          (let [[connidx _] @location-index
+                newsel (clojure.set/difference
+                        (set (filter wire? (mapcat connidx ports)))
                         sel)
                 newports (reduce wire-ports #{} (map schem newsel))]
             (recur
@@ -697,6 +725,11 @@
              ::tool ::cursor
              ::staging nil))))
 
+(defonce probechan (js/BroadcastChannel. "probe"))
+(defn probe-element [k]
+  (println k)
+  (.postMessage probechan k))
+
 (defn drag-start [k e]
   (swap! ui assoc ::mouse-start (viewbox-coord e))
   (reset! last-coord [(.-clientX e) (.-clientY e)])
@@ -713,7 +746,8 @@
                  (case (::tool ui)
                    ::cursor ::device
                    ::wire ::wire
-                   ::pan ::view)))]
+                   ::pan ::view
+                   ::probe nil)))]
     ; skip the mouse down when initiated from a toolbar button
     ; only when primary mouse click
     (when (and (not= (::tool uiv) ::device)
@@ -723,6 +757,7 @@
         (case (::tool uiv)
           ::wire (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
           ::eraser (eraser-drag k e)
+          ::probe (probe-element k)
           (swap! ui (fn [ui]
                       (-> ui
                           (update ::selected update-selection)
@@ -731,10 +766,18 @@
           ::cursor (select-connected)
           ::wire (cancel))))))
 
+(defn drag-start-box [e]
+  (swap! ui assoc
+         ::selected #{}
+         ::dragging ::box
+         ::mouse-start (viewbox-coord e)))
+
 (defn drag-start-background [e]
   (reset! last-coord [(.-clientX e) (.-clientY e)])
   (cond
     (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
+    (and (= (.-button e) 0)
+         (= ::cursor @tool)) (drag-start-box e) 
     (and (= (.-button e) 0)
          (= ::wire @tool)) (add-wire (viewbox-coord e) (nil? (::dragging @ui)))))
 
@@ -760,35 +803,57 @@
       :else ^{:key k} [(fn [k _v] (println "invalid model for" k))])))
 
 
-(defn clean-selected [ui sch]
-  (update ui ::selected
-          (fn [sel]
-            (into #{} (filter #(contains? sch %)) sel))))
+(defn end-ui [bg? selected dx dy]
+  (letfn [(clean-selected [ui sch]
+            (update ui ::selected
+                    (fn [sel]
+                    (into #{} (filter #(contains? sch %)) sel)))) (deselect [ui] (if bg? (assoc ui ::selected #{}) ui))
+          (endfn [ui]
+            (-> ui
+                (assoc ::dragging nil
+                    ::delta {:x 0 :y 0 :rx 0 :ry 0})
+                deselect
+                (clean-selected @schematic)))
+          (round-coords [{x :x y :y :as dev}]
+            (assoc dev
+                    :x (js/Math.round (+ x dx))
+                    :y (js/Math.round (+ y dy))))]
+    (swap! ui endfn)
+    (swap! schematic update-keys selected round-coords)))
+
+(defn drag-end-box []
+  (let [[x y] (::mouse-start @ui)
+        {dx :x dy :y} (::delta @ui)
+        x1 (js/Math.floor (js/Math.min x (+ x dx)))
+        y1 (js/Math.floor (js/Math.min y (+ y dy)))
+        x2 (js/Math.floor (js/Math.max x (+ x dx)))
+        y2 (js/Math.floor (js/Math.max y (+ y dy)))
+        [connidx bodyidx] @location-index
+        sel (apply clojure.set/union
+                   (for [x (range x1 (inc x2))
+                         y (range y1 (inc y2))]
+                     (get connidx [x y])))
+        sel (apply clojure.set/union sel
+                   (for [x (range x1 (inc x2))
+                         y (range y1 (inc y2))]
+                     (get bodyidx [x y])))]
+    (println x1 y1 x2 y2 sel)
+    (swap! ui assoc
+           ::dragging nil
+           ::delta {:x 0 :y 0 :rx 0 :ry 0}
+           ::selected (set sel))))
 
 (defn drag-end [e]
   (.stopPropagation e)
   (let [bg? (= (.-target e) (.-currentTarget e))
         selected (::selected @ui)
-        {dx :x dy :y} @delta
-        deselect (fn [ui] (if bg? (assoc ui ::selected #{}) ui))
-        end-ui (fn [ui]
-                 (-> ui
-                     (assoc ::dragging nil
-                            ::delta {:x 0 :y 0 :rx 0 :ry 0})
-                     deselect
-                     (clean-selected @schematic)))]
-    (if (and (= (::tool @ui) ::device)
-             (not= (.-button e) 1))
-      (commit-staged @staging)
-      (when-not (= (::dragging @ui) ::wire)
-        (swap! ui end-ui)
-        (swap! schematic update-keys selected
-               (fn [{x :x y :y :as dev}]
-                 (assoc dev
-                        :x (js/Math.round (+ x dx))
-                        :y (js/Math.round (+ y dy))))))
-
-          )))
+        {dx :x dy :y} @delta]
+    (cond
+      (and (= (::tool @ui) ::device)
+           (= (.-button e) 0)) (commit-staged @staging)
+      (= (::dragging @ui) ::box) (drag-end-box)
+      (= (::dragging @ui) ::wire) nil
+      :else (end-ui bg? selected dx dy))))
 
 
 (defn add-device [cell [x y] & args]
@@ -839,7 +904,7 @@
                      :on-change #(reset! cell (.. % -target -value))}
             [:option]
             (for [[k m] @modeldb]
-              [:option (:name m)])]])
+              [:option {:key k} (:name m)])]])
         [:label {:for "name" :title "Instance name"} "name"]
         [:input {:id "name"
                  :type "text"
@@ -852,7 +917,7 @@
                   :on-change #(swap! props assoc :model (.. % -target -value))}
          [:option {:value nil} "Ideal"]
          (for [m (keys (get-in  @modeldb [(str "models" sep @cell) :models]))]
-           [:option m])]
+           [:option {:key m} m])]
         (doall (for [[prop meta] (::props (get models @cell))]
                  [:<> {:key prop}
                   [:label {:for prop :title (:tooltip meta)} prop]
@@ -899,7 +964,8 @@
      [[[cm/cursor] [cm/cursor] ::cursor "Cursor [esc]"]
       [[cm/wire] [cm/wire] ::wire "Wire [w]"]
       [[cm/eraser] [cm/eraser] ::eraser "Eraser [e]"]
-      [[cm/move] [cm/move] ::pan "Pan [space]"]]]
+      [[cm/move] [cm/move] ::pan "Pan [space]"]
+      [[cm/probe] [cm/probe] ::probe "Probe nodes in a connected simulator"]]]
     [:span.sep]
     [:a {:title "Rotate selected clockwise [s]"
          :on-click (fn [_] (transform-selected #(.rotate % 90)))}
@@ -1005,6 +1071,18 @@
            (take @active varwraps)
            (drop (inc @active) varwraps)]]))))
 
+(defn add-gnd [coord]
+  (add-device "port" coord
+              :variant "ground"
+              :transform (cm/transform-vec (.rotate cm/I -90))
+              :name "GND"))
+
+(defn add-supply [coord]
+  (add-device "port" coord
+              :variant "supply"
+              :transform (cm/transform-vec (.rotate cm/I 90))
+              :name "VDD"))
+
 (defn device-tray []
   [:<>
    [variant-tray
@@ -1014,17 +1092,11 @@
      [cm/label]]
     [:button {:title "Add ground [g]"
               :class (device-active "port")
-              :on-mouse-up #(add-device "port" (viewbox-coord %)
-                                        :variant "ground"
-                                        :transform (cm/transform-vec (.rotate cm/I -90))
-                                        :name "GND")}
+              :on-mouse-up #(add-gnd (viewbox-coord %))}
      "GND"]
     [:button {:title "Add power supply [shift+p]"
               :class (device-active "port")
-              :on-mouse-up #(add-device "port" (viewbox-coord %)
-                                        :variant "supply"
-                                        :transform (cm/transform-vec (.rotate cm/I 90))
-                                        :name "VDD")}
+              :on-mouse-up #(add-supply (viewbox-coord %))}
      "VDD"]]
    [:button {:title "Add resistor [r]"
              :class (device-active "resistor")
@@ -1088,7 +1160,7 @@
 
 (defn schematic-dots []
   [:<>
-   (for [[[x y] ids] @wire-index
+   (for [[[x y] ids] (first @location-index)
          :let [n (count ids)]
          :when (not= n 2)]
      [:circle
@@ -1099,19 +1171,27 @@
        :r (/ grid-size 10)}])])
 
 (defn tool-elements []
-  (let [{sel ::selected dr ::dragging v ::staging {x :x y :y} ::delta} @ui
+  (let [{sel ::selected
+         dr ::dragging
+         v ::staging
+         {x :x y :y} ::delta
+         [sx sy] ::mouse-start} @ui
         vx (* grid-size (js/Math.round x))
         vy (* grid-size (js/Math.round y))]
-    (if v
-      [:g.toolstaging
-       (get-model ::bg v ::stagingbg v)
-       (get-model ::sym v ::stagingsym v)
-       (get-model ::conn v ::stagingconn v)]
-      (when (and sel dr)
-        [:g.staging {:style {:transform (str "translate(" vx "px, " vy "px)")}}
-         [schematic-elements
-          (let [schem @schematic]
-            (map #(vector % (get schem %)) sel))]]))))
+    (cond
+      v [:g.toolstaging
+         (get-model ::bg v ::stagingbg v)
+         (get-model ::sym v ::stagingsym v)
+         (get-model ::conn v ::stagingconn v)]
+      (= dr ::box) [:rect.select
+                    {:x (* (min sx (+ sx x)) grid-size)
+                     :y (* (min sy (+ sy y)) grid-size)
+                     :width (js/Math.abs (* x grid-size))
+                     :height (js/Math.abs (* y grid-size))}]
+      (and sel dr) [:g.staging {:style {:transform (str "translate(" vx "px, " vy "px)")}}
+                    [schematic-elements
+                     (let [schem @schematic]
+                       (map #(vector % (get schem %)) sel))]])))
 
 (defn schematic-ui []
   [:div#mosaic_app {:class @theme}
@@ -1163,8 +1243,8 @@
                 #{:shift :b} #(add-device "pnp" (::mouse @ui))
                 #{:x} #(add-device "ckt" (::mouse @ui))
                 #{:p} #(add-device "port" (::mouse @ui))
-                #{:g} #(add-device "port" "ground" (::mouse @ui))
-                #{:shift :p} #(add-device "port" "supply" (::mouse @ui))
+                #{:g} #(add-gnd (::mouse @ui))
+                #{:shift :p} #(add-supply (::mouse @ui))
                 #{:backspace} delete-selected
                 #{:delete} delete-selected
                 #{:w} (fn [_] ; right away start a wire or not?

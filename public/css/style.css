@@ -502,6 +502,10 @@ text.identifier {
     font-size: 0.7em;
 }
 
+rect.select {
+    fill: #0000001A
+}
+
 /* tetris theme */
 
 .tetris {
@@ -514,6 +518,10 @@ text.identifier {
 
 .tetris.wire {
     cursor: url(icons/pencil.svg) 0 16, crosshair;
+}
+
+.tetris.probe {
+    cursor: url(icons/search.svg) 5 5, crosshair;
 }
 
 .tetris.eraser .wire:hover,
