@@ -183,6 +183,7 @@
 (def notebook (r/adapt-react-class icons/Book))
 (def simulate (r/adapt-react-class icons/Play))
 (def library (r/adapt-react-class icons/Collection))
+(def probe (r/adapt-react-class icons/Search))
 
 (defn radiobuttons
 ([cursor m] (radiobuttons cursor m nil))

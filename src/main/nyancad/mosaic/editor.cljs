@@ -59,7 +59,7 @@
 
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme #{"tetris" "eyesore"})
-(s/def ::tool #{::cursor ::eraser ::wire ::pan ::device})
+(s/def ::tool #{::cursor ::eraser ::wire ::pan ::device ::probe})
 (s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view ::box}))
 (s/def ::staging (s/nilable :nyancad.mosaic.common/device))
@@ -720,6 +720,11 @@
              ::tool ::cursor
              ::staging nil))))
 
+(defonce probechan (js/BroadcastChannel. "probe"))
+(defn probe-element [k]
+  (println k)
+  (.postMessage probechan k))
+
 (defn drag-start [k e]
   (swap! ui assoc ::mouse-start (viewbox-coord e))
   (reset! last-coord [(.-clientX e) (.-clientY e)])
@@ -736,7 +741,8 @@
                  (case (::tool ui)
                    ::cursor ::device
                    ::wire ::wire
-                   ::pan ::view)))]
+                   ::pan ::view
+                   ::probe nil)))]
     ; skip the mouse down when initiated from a toolbar button
     ; only when primary mouse click
     (when (and (not= (::tool uiv) ::device)
@@ -746,6 +752,7 @@
         (case (::tool uiv)
           ::wire (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
           ::eraser (eraser-drag k e)
+          ::probe (probe-element k)
           (swap! ui (fn [ui]
                       (-> ui
                           (update ::selected update-selection)
@@ -952,7 +959,8 @@
      [[[cm/cursor] [cm/cursor] ::cursor "Cursor [esc]"]
       [[cm/wire] [cm/wire] ::wire "Wire [w]"]
       [[cm/eraser] [cm/eraser] ::eraser "Eraser [e]"]
-      [[cm/move] [cm/move] ::pan "Pan [space]"]]]
+      [[cm/move] [cm/move] ::pan "Pan [space]"]
+      [[cm/probe] [cm/probe] ::probe "Probe nodes in a connected simulator"]]]
     [:span.sep]
     [:a {:title "Rotate selected clockwise [s]"
          :on-click (fn [_] (transform-selected #(.rotate % 90)))}
