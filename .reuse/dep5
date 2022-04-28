@@ -1,0 +1,10 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Mosaic
+Upstream-Contact: Pepijn de Vos <pepijndevos@gmail.com>
+Source: https://github.com/NyanCAD/Mosaic
+
+# Sample paragraph, commented out:
+#
+# Files: src/*
+# Copyright: $YEAR $NAME <$CONTACT>
+# License: ...

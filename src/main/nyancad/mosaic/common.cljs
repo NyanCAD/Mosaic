@@ -1,3 +1,7 @@
+; SPDX-FileCopyrightText: 2022 Pepijn de Vos
+;
+; SPDX-License-Identifier: MPL-2.0
+
 (ns nyancad.mosaic.common
   (:require [reagent.core :as r]
             [react-bootstrap-icons :as icons]

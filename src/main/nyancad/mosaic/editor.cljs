@@ -1,3 +1,7 @@
+; SPDX-FileCopyrightText: 2022 Pepijn de Vos
+;
+; SPDX-License-Identifier: MPL-2.0
+
 (ns nyancad.mosaic.editor
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
