@@ -74,7 +74,9 @@ input, textarea {
 }
 
 
-#mosaic_libman button, #mosaic_libman .buttongroup {
+#mosaic_libman button,
+#mosaic_libman input[type=submit],
+#mosaic_libman .buttongroup {
     background: #f8f8f8 0% 0% no-repeat padding-box;
     box-shadow: 0px 1px 4px #00000033;
     border-radius: 7px;
@@ -86,6 +88,7 @@ input, textarea {
     box-shadow: 0px 0px 4px hsla(0, 0%, 0%, 0.2);
 }
 #mosaic_libman button.primary,
+#mosaic_libman input[type=submit],
 #mosaic_libman .buttongroup.primary {
     background-color: #0E1A32;
     color: white;
@@ -244,6 +247,29 @@ input, textarea {
     'libraries schematics properties';
     grid-template-rows: 1fr;
     grid-template-columns: 1fr 2fr 2fr;
+}
+
+#mosaic_libman .modal {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    box-shadow: 0px 0px 10px #00000033;
+    border-radius: 7px;
+    border: 1px solid lightgray;
+    padding: 20px 20px;
+
+}
+#mosaic_libman .modal.hidden {
+    display: none;
+}
+#mosaic_libman .modal input[type=text] {
+    display: block;
+    margin: 1em 0;
+}
+#mosaic_libman .modal input[type=submit] {
+    margin-left:1em;
 }
 
 /* editor */
