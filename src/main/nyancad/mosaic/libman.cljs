@@ -23,6 +23,27 @@
 
 (def schdbmeta {:name "schematics" :url cm/default-sync})
 
+(defonce modal-content (r/atom nil))
+
+(defn modal []
+  [:div.modal
+   {:class (if @modal-content "visible" "hidden")}
+   @modal-content])
+
+(defn prompt [text cb]
+  (reset! modal-content
+          [:form {:on-submit (fn [^js e]
+                               (js/console.log e)
+                               (.preventDefault e)
+                               (let [name (.. e -target -elements -valuefield -value)]
+                                 (when (seq name)
+                                   (cb name)))
+                               (reset! modal-content nil))}
+           [:div text]
+           [:input {:name "valuefield" :type "text"}]
+           [:button {:on-click #(reset! modal-content nil)} "Cancel"]
+           [:input {:type "submit" :value "Ok"}]]))
+
 (defn get-dbatom [dbid]
   (if-let [pa (get @dbcache dbid)]
     pa
@@ -173,12 +194,12 @@
 
 (defn cell-view []
   (let [db (get-dbatom (or @seldb :schematics))
-        add-cell #(when-let [name (and @seldb (js/prompt "Enter the name of the new cell"))]
-                    (swap! db assoc (str "models" sep name) {:name name}))
-        add-schem #(when-let [name (and @seldb @selcell (js/prompt "Enter the name of the new schematic"))]
-                     (swap! db assoc-in [@selcell :models (keyword name)] {:name name, :type "schematic"}))
-        add-spice #(when-let [name (and @seldb @selcell (js/prompt "Enter the name of the new SPICE model"))]
-                     (swap! db assoc-in [@selcell :models (keyword name)] {:name name :type "spice"}))]
+        add-cell #(prompt "Enter the name of the new cell"
+                          (fn [name] (swap! db assoc (str "models" sep name) {:name name})))
+        add-schem #(prompt "Enter the name of the new schematic"
+                          (fn [name] (swap! db assoc-in [@selcell :models (keyword name)] {:name name, :type "schematic"})))
+        add-spice #(prompt "Enter the name of the new SPICE model"
+                           (fn [name] (swap! db assoc-in [@selcell :models (keyword name)] {:name name :type "spice"})))]
     [:<>
      [:div.schsel
       [:div.addbuttons
@@ -206,13 +227,13 @@
     [:div.libhead
      [:h1 "Library"]
      [:button.plus {:on-click
-                    #(let [name (js/prompt "Enter the name of the new database")]
-                       (when (seq name)
-                         (swap! databases assoc (str "databases" sep name) {:name name})))}
+                    #(prompt "Enter the name of the new database"
+                             (fn [name] (swap! databases assoc (str "databases" sep name) {:name name})))}
       "+"]]
     [database-selector]
     [db-properties]]
-   [cell-view]])
+   [cell-view]
+   [modal]])
 
 (def shortcuts {})
 
