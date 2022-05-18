@@ -32,7 +32,9 @@
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
 (defonce snapshots (pouch-atom db "snapshots" (r/atom {})))
 (defonce watcher (watch-changes db schematic modeldb snapshots))
-(defonce local (pouch-atom (pouchdb "local") "local"))
+(def ldb (pouchdb "local"))
+(defonce local (pouch-atom ldb "local"))
+(defonce lwatcher (watch-changes ldb local))
 
 (defn initial [cell]
   (case cell
@@ -776,6 +778,7 @@
   (cond
     (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
     (and (= (.-button e) 0)
+         (= nil (::dragging @ui))
          (= ::cursor @tool)) (drag-start-box e) 
     (and (= (.-button e) 0)
          (= ::wire @tool)) (add-wire (viewbox-coord e) (nil? (::dragging @ui)))))
@@ -942,11 +945,11 @@
 
 (defn paste []
   (let [devs (get-in @local [(str "local" sep "clipboard") :data])
-        xf (map (fn [d] [(make-name (:cell d))
+        xf (map (fn [d] [(name (gensym (make-name (:cell d))))
                          (update d :name gensym)]))
         devmap (into {} xf devs)]
     (swap! schematic into devmap)
-    (swap!  ui assoc
+    (swap! ui assoc
             ::dragging ::device
             ::selected (set (keys devmap)))))
 
