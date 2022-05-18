@@ -170,6 +170,12 @@ input, textarea {
   padding: 20px;
 }
 
+#mosaic_libman .proppane .preview {
+    padding: 1em;
+    margin-bottom: 1em;
+    background-color: #f3f3f3;
+}
+
 #mosaic_libman .properties {
     display: grid;
     grid-template-columns: [labels] auto [controls] auto;
@@ -201,6 +207,12 @@ input, textarea {
 #mosaic_libman input[type=radio]:checked + label {
     background-color: rgba(0, 0, 0, 0.041);
     border-radius: 7px;
+}
+
+#mosaic_libman .schematics label svg {
+    font-size: 1.5em;
+    vertical-align: middle;
+    margin-right: 0.2em;
 }
 
 #mosaic_libman details .detailbody {
