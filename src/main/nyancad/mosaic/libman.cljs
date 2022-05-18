@@ -26,9 +26,18 @@
 (defonce modal-content (r/atom nil))
 
 (defn modal []
-  [:div.modal
+  [:div.modal.window
    {:class (if @modal-content "visible" "hidden")}
    @modal-content])
+
+(defonce context-content (r/atom {:x 0 :y 0 :body nil}))
+
+(defn contextmenu []
+  (let [{:keys [:x :y :body]} @context-content]
+    [:div.contextmenu.window
+     {:style {:top y, :left, x}
+      :class (if body "visible" "hidden")}
+     body]))
 
 (defn prompt [text cb]
   (reset! modal-content
@@ -40,7 +49,7 @@
                                    (cb name)))
                                (reset! modal-content nil))}
            [:div text]
-           [:input {:name "valuefield" :type "text"}]
+           [:input {:name "valuefield" :type "text" :auto-focus true}]
            [:button {:on-click #(reset! modal-content nil)} "Cancel"]
            [:input {:type "submit" :value "Ok"}]]))
 
@@ -60,6 +69,13 @@
       (swap! dbcache assoc dbid pa)
       pa)))
 
+(defn cell-context-menu [e db cellname]
+  (.preventDefault e)
+  (reset! context-content
+          {:x (.-clientX e), :y (.-clientY e)
+           :body [:ul
+                  [:li {:on-click #(swap! db dissoc cellname)} "delete"]]}))
+
 (defn database-selector []
   [:div.cellsel
    (doall (for [[id db] (concat [[:schematics schdbmeta]] @databases)
@@ -72,7 +88,11 @@
               [cm/radiobuttons selcell (for [[key cell] @pa
                                              :let [cname (second (.split key ":"))]]
                                          ; inactive, active, key, title
-                                         [(get cell :name cname) [cm/renamable (r/cursor pa [key :name])] key cname])]]]))])
+                                         [(get cell :name cname) [cm/renamable (r/cursor pa [key :name])] key cname])
+               nil
+               (fn [key]
+                 (println "add ctxclk")
+                 #(cell-context-menu % pa key))]]]))])
 
 (defn edit-url [cell mod]
   (let [mname (str cell "$" mod)
@@ -81,6 +101,14 @@
       (.. -searchParams (append "schem" mname))
       (.. -searchParams (append "db" (:name dbmeta "")))
       (.. -searchParams (append "sync" (:url dbmeta ""))))))
+
+(defn schem-context-menu [e db cellname key]
+  (.preventDefault e)
+  (reset! context-content
+          {:x (.-clientX e), :y (.-clientY e)
+           :body [:ul
+                  [:li {:on-click #(js/window.open (edit-url (second (.split cellname ":")) (name key)), cellname)} "edit"]
+                  [:li {:on-click #(swap! db update-in [cellname :models] dissoc key)} "delete"]]}))
 
 (defn schematic-selector [db]
   (let [cellname @selcell
@@ -95,7 +123,10 @@
       (fn [key]
         (println cell key)
         (when (= (get-in cell [:models key :type]) "schematic")
-          #(js/window.open (edit-url (second (.split cellname ":")) (name key)), cellname)))]]))
+          #(js/window.open (edit-url (second (.split cellname ":")) (name key)), cellname)))
+      (fn [key]
+        (println "add ctxclk")
+        #(schem-context-menu % db cellname key))]]))
 
 
 (defn db-properties []
@@ -233,6 +264,7 @@
     [database-selector]
     [db-properties]]
    [cell-view]
+   [contextmenu]
    [modal]])
 
 (def shortcuts {})
@@ -240,5 +272,6 @@
 (defn ^:dev/after-load ^:export init []
 ;;   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (set! js/window.name "libman")
+  (set! js/document.onclick #(swap! context-content assoc :body nil))
   (rd/render [library-manager]
              (.getElementById js/document "mosaic_libman")))

@@ -190,8 +190,8 @@
 (def probe (r/adapt-react-class icons/Search))
 
 (defn radiobuttons
-([cursor m] (radiobuttons cursor m nil))
-([cursor m dblclk]
+([cursor m] (radiobuttons cursor m nil nil))
+([cursor m dblclk ctxclk]
  [:<>
   (doall (for [[label active-label name disp] m]
            [:<> {:key name}
@@ -202,7 +202,8 @@
                      :on-change #(reset! cursor name)}]
             [:label {:for name
                      :title disp
-                     :on-double-click (when dblclk (dblclk name))}
+                     :on-double-click (when dblclk (dblclk name))
+                     :on-context-menu (when ctxclk (ctxclk name))}
              (if (= name @cursor) active-label label)]]))]))
 
 (defn renamable [cursor]

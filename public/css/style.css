@@ -249,20 +249,22 @@ input, textarea {
     grid-template-columns: 1fr 2fr 2fr;
 }
 
-#mosaic_libman .modal {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+#mosaic_libman .window {
     background: white;
     box-shadow: 0px 0px 10px #00000033;
     border-radius: 7px;
     border: 1px solid lightgray;
     padding: 20px 20px;
-
 }
-#mosaic_libman .modal.hidden {
+#mosaic_libman .window.hidden {
     display: none;
+}
+
+#mosaic_libman .modal {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
 }
 #mosaic_libman .modal input[type=text] {
     display: block;
@@ -270,6 +272,15 @@ input, textarea {
 }
 #mosaic_libman .modal input[type=submit] {
     margin-left:1em;
+}
+
+#mosaic_libman .contextmenu {
+    position: absolute;
+}
+#mosaic_libman .contextmenu ul {
+    padding: 0;
+    margin: 0;
+    list-style-type: none;
 }
 
 /* editor */
