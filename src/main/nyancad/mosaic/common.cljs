@@ -188,6 +188,8 @@
 (def simulate (r/adapt-react-class icons/Play))
 (def library (r/adapt-react-class icons/Collection))
 (def probe (r/adapt-react-class icons/Search))
+(def codemodel (r/adapt-react-class icons/FileCode))
+(def schemmodel (r/adapt-react-class icons/FileDiff))
 
 (defn radiobuttons
 ([cursor m] (radiobuttons cursor m nil nil))

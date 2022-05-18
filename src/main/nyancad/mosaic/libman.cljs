@@ -115,10 +115,12 @@
         cell (get @db cellname)]
     [:div.schematics
      [cm/radiobuttons selmod
-      (for [[key mod] (:models cell)]
+      (for [[key mod] (:models cell)
+            :let [schem? (= (get-in cell [:models key :type]) "schematic")
+                  icon (if schem? cm/schemmodel cm/codemodel)]]
         ; inactive, active, key, title
-        [(get mod :name key)
-         [cm/renamable (r/cursor db [cellname :models key :name])]
+        [[:span [icon] " " (get mod :name key)]
+         [:span [icon] " " [cm/renamable (r/cursor db [cellname :models key :name])]]
          key key])
       (fn [key]
         (println cell key)
@@ -221,7 +223,9 @@
        [:textarea {:id "decltempl"
                    :value (:decltempl @mod)
                    :on-change #(swap! mod assoc :decltempl (.. % -target -value))}]]
-      "TODO: preview")))
+      (when (and @selcell @selmod)
+        [:a {:href (edit-url (second (.split @selcell ":")) (name @selmod))
+             :target @selcell} "Edit"]))))
 
 (defn cell-view []
   (let [db (get-dbatom (or @seldb :schematics))
