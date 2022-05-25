@@ -41,12 +41,10 @@ input, textarea {
     color: #222222;
 }
 
-#mosaic_libman button.plus {
-    font: 500 25px/25px 'Roboto', sans-serif;
-    letter-spacing: 0.85px;
-    color: #222222;
-    text-transform: uppercase;
-    padding: 5px 12px;
+#mosaic_libman button svg {
+    margin-right: 0.5em;
+    font-size: 20px;
+    vertical-align: middle;
 }
 
 #mosaic_libman .libhead {
@@ -156,11 +154,11 @@ input, textarea {
     overflow: auto;
 }
 #mosaic_libman .cellsel details {
-    margin-bottom: 1em;
+    margin: 0.5em 0;
 }
 
 #mosaic_libman .dbprops {
-    padding-top: 0;
+    padding: 0;
     background-color: #00000007;
 }
 
@@ -202,7 +200,7 @@ input, textarea {
 #mosaic_libman input[type=radio] + label {
     display: block;
     padding: 10px 15px;
-    margin: 5px 0 0 5px;
+    margin-top: 5px;
 }
 #mosaic_libman input[type=radio]:checked + label {
     background-color: rgba(0, 0, 0, 0.041);
@@ -219,6 +217,7 @@ input, textarea {
     max-height: 0px;
     transition: max-height 1s;
     overflow: hidden;
+    margin-left:7px;
 }
 #mosaic_libman details[open] .detailbody {
     max-height: 10000px;
@@ -226,11 +225,18 @@ input, textarea {
 #mosaic_libman details summary {
     list-style-type: none;
 }
-#mosaic_libman .libraries details summary {
+#mosaic_libman .cellsel details summary {
     padding: 10px 15px;
     border-radius: 7px;
 }
-#mosaic_libman details[open] summary {
+#mosaic_libman .dbprops details summary {
+    padding:1em;
+}
+#mosaic_libman .dbprops details form {
+    margin: 0 1em 1em 1em;
+}
+
+#mosaic_libman .cellsel details[open] summary {
     background: #0E1A32 0% 0% no-repeat padding-box;
     color:white;
 }
@@ -250,6 +256,10 @@ input, textarea {
 #mosaic_libman details[open] summary::after {
     transform: rotate(45deg);
     border: solid white;
+    border-width: 0 1px 1px 0;
+}
+#mosaic_libman .dbprops details[open] summary::after {
+    border: solid black;
     border-width: 0 1px 1px 0;
 }
 

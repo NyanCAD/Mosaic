@@ -190,6 +190,9 @@
 (def probe (r/adapt-react-class icons/Search))
 (def codemodel (r/adapt-react-class icons/FileCode))
 (def schemmodel (r/adapt-react-class icons/FileDiff))
+(def connect (r/adapt-react-class icons/ArrowLeftRight))
+(def add-model (r/adapt-react-class icons/FilePlus))
+(def add-cell (r/adapt-react-class icons/FolderPlus))
 
 (defn radiobuttons
 ([cursor m] (radiobuttons cursor m nil nil))
