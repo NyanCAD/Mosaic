@@ -24,6 +24,7 @@
 (defonce selcat (r/atom []))
 (defonce selcell (r/atom nil))
 (defonce selmod (r/atom nil))
+(defonce syncactive (r/atom false))
 
 (defonce modal-content (r/atom nil))
 
@@ -54,6 +55,11 @@
            [:input {:name "valuefield" :type "text" :auto-focus true}]
            [:button {:on-click #(reset! modal-content nil)} "Cancel"]
            [:input {:type "submit" :value "Ok"}]]))
+
+(defn alert [text]
+  (reset! modal-content
+          [:div [:p text]
+           [:button {:on-click #(reset! modal-content nil)} "Ok"]]))
 
 
 (defn cell-context-menu [e db cellname]
@@ -276,7 +282,10 @@
   [:<>
    [:div.libraries
     [:div.libhead
-     [:h1 "Libraries"]]
+     [:h1 "Libraries"]
+     (if @syncactive
+       [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
+       [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
     [database-selector]
     [db-properties]]
    [cell-view]
@@ -289,12 +298,19 @@
   (rd/render [library-manager]
              (.getElementById js/document "mosaic_libman")))
 
+(defn synchronise []
+  (when (seq sync) ; pass nil to disable synchronization
+    (let [es (.sync db sync #js{:live true})]
+      (.on es "paused" #(reset! syncactive false))
+      (.on es "active" #(reset! syncactive true))
+      (.on es "denied" #(alert (str "Permission denied synchronising to " sync ", changes are saved locally")))
+      (.on es "error" #(alert (str "Error synchronising to " sync ", changes are saved locally"))))))
+
 (defn ^:export init []
 ;;   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (set! js/window.name "libman")
   (set! js/document.onclick #(swap! context-content assoc :body nil))
   (js/localStorage.setItem "db" dbname)
   (js/localStorage.setItem "sync" sync)
-  (when (seq sync) ; pass nil to disable synchronization
-    (.sync db sync #js{:live true, :retry true}))
+  (synchronise)
   (render))

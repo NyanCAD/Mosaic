@@ -193,6 +193,8 @@
 (def connect (r/adapt-react-class icons/ArrowLeftRight))
 (def add-model (r/adapt-react-class icons/FilePlus))
 (def add-cell (r/adapt-react-class icons/FolderPlus))
+(def sync-active (r/adapt-react-class icons/ArrowRepeat))
+(def sync-done (r/adapt-react-class icons/Check))
 
 (defn radiobuttons
 ([cursor m] (radiobuttons cursor m nil nil))

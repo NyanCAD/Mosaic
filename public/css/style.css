@@ -54,6 +54,30 @@ input, textarea {
     align-items: baseline;
 }
 
+.syncstatus.active svg {
+    animation: 1.5s linear infinite spinner;
+}
+.syncstatus.done {
+    animation: 1.5s linear fadeout;
+    opacity: 0;
+}
+@keyframes spinner {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+@keyframes fadeout {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
 #mosaic_libman .addbuttons {
     display: flex;
     flex-direction: row;

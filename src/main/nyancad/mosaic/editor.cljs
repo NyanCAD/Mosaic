@@ -102,6 +102,8 @@
   (when-let [st (cm/redo undotree)]
     (restore st)))
 
+(defonce syncactive (r/atom false))
+
 (declare drag-start eraser-drag)
 
 (defn device [size k v & elements]
@@ -1006,6 +1008,9 @@
     [:a {:title "redo [ctrl+shift+z]"
          :on-click redo-schematic}
      [cm/redoi]]]
+   (if @syncactive
+       [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
+       [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])
    [:div.secondary
     [:a {:href (simulator-url)
          :target "simulator"
@@ -1276,7 +1281,9 @@
 
 (defn ^:export init []
   (when (seq sync) ; pass nil to disable synchronization
-    (.sync db sync #js{:live true, :retry true}))
+    (let [es (.sync db sync #js{:live true :retry true})]
+      (.on es "paused" #(reset! syncactive false))
+      (.on es "active" #(reset! syncactive true))))
   (render))
 
 (defn ^:export clear []
