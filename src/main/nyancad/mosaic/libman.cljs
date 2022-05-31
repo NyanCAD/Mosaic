@@ -97,12 +97,13 @@
              [:summary cat]
              [:div.detailbody
               [categories path subtrie]]]))
-   [cm/radiobuttons selcell (for [[cat subtrie] trie
-                                  :when (empty? subtrie) ; leaf
-                                  :let [cell (get @modeldb cat)
-                                        cname (second (.split cat ":"))]]
+   [cm/radiobuttons selcell
+    (doall (for [[cat subtrie] trie
+                 :when (empty? subtrie) ; leaf
+                 :let [cell (get @modeldb cat)
+                       cname (second (.split cat ":"))]]
                                          ; inactive, active, key, title
-                              [(get cell :name cname) [cm/renamable (r/cursor modeldb [cat :name])] cat cname])
+             [(get cell :name cname) [cm/renamable (r/cursor modeldb [cat :name])] cat cname]))
     nil
     (fn [key] #(cell-context-menu % modeldb key))]])
 

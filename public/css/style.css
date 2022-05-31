@@ -87,12 +87,18 @@ input, textarea {
     border-bottom: 1px solid #e7e7e7;
 }
 
+#mosaic_libman .schsel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
 #mosaic_libman .schsel h2 {
     padding: 0 20px;
 }
 
 #mosaic_libman .schsel .schematics {
     padding: 0 20px;
+    overflow: auto;
 }
 
 
@@ -235,6 +241,10 @@ input, textarea {
     font-size: 1.5em;
     vertical-align: middle;
     margin-right: 0.2em;
+}
+
+#mosaic_libman .schematics label form {
+    display: inline;
 }
 
 #mosaic_libman details .detailbody {
