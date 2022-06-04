@@ -131,15 +131,15 @@
         cell (get @db cellname)]
     [:div.schematics
      [cm/radiobuttons selmod
-      (for [[key mod] (:models cell)
-            :when (or (= @selcat ["Everything"])
-                      (some (partial = (apply str (interpose "/" @selcat))) (:categories mod)))
-            :let [schem? (= (get-in cell [:models key :type]) "schematic")
-                  icon (if schem? cm/schemmodel cm/codemodel)]]
-        ; inactive, active, key, title
-        [[:span [icon] " " (get mod :name key)]
-         [:span [icon] " " [cm/renamable (r/cursor db [cellname :models key :name])]]
-         key key])
+      (doall (for [[key mod] (:models cell)
+                   :when (or (= @selcat ["Everything"])
+                             (some (partial = (apply str (interpose "/" @selcat))) (:categories mod)))
+                   :let [schem? (= (get-in cell [:models key :type]) "schematic")
+                         icon (if schem? cm/schemmodel cm/codemodel)]]
+                ; inactive, active, key, title
+               [[:span [icon] " " (get mod :name key)]
+                [:span [icon] " " [cm/renamable (r/cursor db [cellname :models key :name])]]
+                key key]))
       (fn [key]
         (println cell key)
         (when (= (get-in cell [:models key :type]) "schematic")
