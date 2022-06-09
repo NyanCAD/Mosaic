@@ -22,7 +22,7 @@ jobs:
           npx shadow-cljs release frontend
 
       - name: Deploy 🚀
-        uses: JamesIves/github-pages-deploy-action@4.1.7
+        uses: JamesIves/github-pages-deploy-action@v4.3.3
         with:
           branch: gh-pages
           folder: public
