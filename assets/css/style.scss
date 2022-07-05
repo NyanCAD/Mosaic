@@ -10,9 +10,28 @@
 }
 
 h1#project_title, h2#project_tagline {
-  visibility: hidden;
+  display: none;
 }
 
 body, #header_wrap.outer, #footer_wrap.outer {
     background-color: #0e1a32;
+}
+
+#header_wrap .inner {
+	padding: 250px 10px 0 10px;
+}
+
+#menu {
+  border-top: 1px solid grey;
+}
+
+#menu a {
+	margin: 0.5em;
+	display: inline-block;
+	color: lightgrey;
+	font-weight: bold;
+}
+
+#menu a:hover {
+	color: white;
 }
