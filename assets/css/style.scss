@@ -22,11 +22,13 @@ body, #header_wrap.outer, #footer_wrap.outer {
 }
 
 #menu {
-  border-top: 1px solid grey;
+	border-top: 1px solid grey;
+	display: flex;
+	justify-content: space-between;
 }
 
 #menu a {
-	margin: 0.5em;
+	margin: 10px 0;
 	display: inline-block;
 	padding: 10px 50px 10px 10px;
 	color: #fff;
@@ -37,6 +39,14 @@ body, #header_wrap.outer, #footer_wrap.outer {
 	background-image: url('../images/blacktocat.png');
 }
 
-#menu a.dowload_link {
+#menu a.release_link {
 	background-image: url('../images/icon_download.png');
+}
+
+#menu a.documentation_link {
+	background-image: url('../images/book.svg');
+}
+
+#menu a.try_online_link {
+	background-image: url('../images/arrow-up-right-square.svg');
 }
