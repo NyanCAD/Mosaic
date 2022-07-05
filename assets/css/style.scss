@@ -6,7 +6,7 @@
 #header_wrap.outer {
   background-image: url("/Mosaic/Mosaic Logo Designs/Final Designs/Mosiac Logo.png");
   background-repeat: no-repeat;
-  background-position: center;
+  background-position: 50% -50px;
 }
 
 h1#project_title, h2#project_tagline {
@@ -28,10 +28,15 @@ body, #header_wrap.outer, #footer_wrap.outer {
 #menu a {
 	margin: 0.5em;
 	display: inline-block;
-	color: lightgrey;
-	font-weight: bold;
+	padding: 10px 50px 10px 10px;
+	color: #fff;
+	background: #0090ff no-repeat 95% 50%;
 }
 
-#menu a:hover {
-	color: white;
+#menu a.forkme_link {
+	background-image: url('../images/blacktocat.png');
+}
+
+#menu a.dowload_link {
+	background-image: url('../images/icon_download.png');
 }
