@@ -25,6 +25,12 @@ Effortlessly share, review, and collaborate in real-time, wherever you are. It's
 
 Mosaic comes with a simple simulation interface that allows running basic simulations and plotting their results at the click of a button, and from there offers a seamless transition to a Jupyter notebook environment for doing more advanced analysis and automation. There is no "simulation cliff" in what can be done in the graphical interface or some obscure domain specific language, everything is powered by the same simple Python API. The open source edition of Mosaic supports NgSpice and Xyce. Contact us for support of commercial simulators and PDKs.
 
+### High-performance streamed plotting
+
+Mosaic uses a streaming simulation API that allows you to do analysis and plotting *while the simulation is running*.
+This allows you to spot problems early, rather than guessing at the required simulation length and waiting for it to finish.
+All the wile, Mosaic can plot tens of millions of points without breaking a sweat, and offer interactive panning and zooming to boot.
+
 ### Coming soon: real-time back-annotation
 
 It is crucial for a designer to have feedback about their work and quickly explore the effect of various changes.
