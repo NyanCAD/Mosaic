@@ -4,10 +4,6 @@
 
 Mosaic is a tool for designing and simulating analog integrated circuit designs. It focuses on a modern, easy to use interface, instant design feedback, design reuse, verification, and automation.
 
-* [Try the online editor](/Mosaic/app)
-* [Run it on Binder](https://mybinder.org/v2/gh/NyanCAD/Pyttoresque-templates/main)
-* [Install it](https://github.com/NyanCAD/Mosaic/releases)
-
 ### Web based
 
 Manage PDKs and IP in your own server environment, while providing a snappy user interface. No more laggy remote desktop to manage your EDA tools.
