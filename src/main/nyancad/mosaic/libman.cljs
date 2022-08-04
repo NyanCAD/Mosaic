@@ -224,13 +224,21 @@
                  :default-value (get-in @db [cell :sym])
                  :on-blur #(swap! db assoc-in [cell :sym] (.. % -target -value))}]]])))
 
+(def dialect (r/atom "NgSpice"))
 
 (defn model-preview [db]
-  (let [mod (r/cursor db [@selcell :models (keyword @selmod)])]
+  (let [mod (r/cursor db [@selcell :models (keyword @selmod) @dialect])]
     (prn @mod)
     [:div.properties
-     (if (= (:type @mod) "spice")
+     (if (= (get-in @db [@selcell :models (keyword @selmod) :type]) "spice")
        [:<>
+        [:label {:for "dialect"} "Simulator"]
+        [:select {:id "dialect"
+                  :type "text"
+                  :value @dialect
+                  :on-change #(reset! dialect (.. % -target -value))}
+         [:option "NgSpice"]
+         [:option "Xyce"]]
         [:label {:for "reftempl"} "Reference template"]
         [cm/dbfield :textarea {:id "reftempl"} mod
          #(:reftempl % "X{name} {ports} {properties}")
@@ -238,14 +246,18 @@
         [:label {:for "decltempl"} "Declaration template"]
         [cm/dbfield :textarea {:id "decltempl"} mod
          :decltempl
-         #(swap! %1 assoc :decltempl %2)]]
+         #(swap! %1 assoc :decltempl %2)]
+        [:label {:for "vectors" :title "Comma-seperated device outputs to save"} "Vectors"]
+        [cm/dbfield :input {:id "vectors", :placeholder "@M{name}[id], n(xm:m1:gm)"} mod
+         #(apply str (interpose ", " (:vectors %)))
+         #(swap! %1 assoc :vectors (clojure.string/split %2 #", " -1))]]
        (when (and @selcell @selmod)
          [:<>
           [:a {:href (edit-url (second (.split @selcell ":")) (name @selmod))
                :target @selcell} "Edit"]]))
      (when (and @selcell @selmod)
        [:<>
-        [:label {:for "categories"} "Categories"]
+        [:label {:for "categories" :title "Comma-seperated device categories"} "Categories"]
         [cm/dbfield :input {:id "categories"} mod
          #(apply str (interpose ", " (:categories %)))
          #(swap! %1 assoc :categories (clojure.string/split %2 #", " -1))]])]))
@@ -277,6 +289,7 @@
       [schematic-selector modeldb]]
      [:div.proppane
       [:div.preview [model-preview modeldb]]
+      [:h3 "Interface properties"]
       [cell-properties modeldb]]]))
 
 (defn library-manager []
