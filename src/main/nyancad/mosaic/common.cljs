@@ -20,6 +20,21 @@
 (def grid-size 50)
 (def debounce #(goog.functions/debounce % 1000))
 
+(defn dbfield [typ props st valfn changefn]
+  (let [int (r/atom @st)
+        ext (r/atom @st)
+        dbfn (debounce changefn)]
+    (fn [typ props st valfn changefn]
+      (when (not= @ext @st)
+        (reset! int @st)
+        (reset! ext @st))
+      [typ (assoc props
+                  :value (valfn @int)
+                  :on-change (fn [e]
+                               (let [val (.. e -target -value)]
+                                 (dbfn st val)
+                                 (changefn int val))))])))
+
 (defn sign [n] (if (> n 0) 1 -1))
 
 ; like conj but coerces to set

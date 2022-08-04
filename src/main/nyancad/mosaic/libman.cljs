@@ -232,13 +232,13 @@
      (if (= (:type @mod) "spice")
        [:<>
         [:label {:for "reftempl"} "Reference template"]
-        [:textarea {:id "reftempl"
-                    :value (:reftempl @mod "X{name} {ports} {properties}")
-                    :on-change #(swap! mod assoc :reftempl (.. % -target -value))}]
+        [cm/dbfield :textarea {:id "reftempl"} mod
+         #(:reftempl % "X{name} {ports} {properties}")
+         #(swap! %1 assoc :reftempl %2)]
         [:label {:for "decltempl"} "Declaration template"]
-        [:textarea {:id "decltempl"
-                    :value (:decltempl @mod)
-                    :on-change #(swap! mod assoc :decltempl (.. % -target -value))}]]
+        [cm/dbfield :textarea {:id "decltempl"} mod
+         :decltempl
+         #(swap! %1 assoc :decltempl %2)]]
        (when (and @selcell @selmod)
          [:<>
           [:a {:href (edit-url (second (.split @selcell ":")) (name @selmod))
@@ -246,9 +246,9 @@
      (when (and @selcell @selmod)
        [:<>
         [:label {:for "categories"} "Categories"]
-        [:input {:id "categories"
-                 :value (apply str (interpose ", " (:categories @mod)))
-                 :on-change #(swap! mod assoc :categories (clojure.string/split (.. % -target -value) #", " -1))}]])]))
+        [cm/dbfield :input {:id "categories"} mod
+         #(apply str (interpose ", " (:categories %)))
+         #(swap! %1 assoc :categories (clojure.string/split %2 #", " -1))]])]))
 
 (defn cell-view []
   (let [add-cell #(prompt "Enter the name of the new interface"
