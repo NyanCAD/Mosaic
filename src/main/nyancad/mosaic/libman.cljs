@@ -240,17 +240,23 @@
          [:option "NgSpice"]
          [:option "Xyce"]]
         [:label {:for "reftempl"} "Reference template"]
-        [cm/dbfield :textarea {:id "reftempl"} mod
-         #(:reftempl % "X{name} {ports} {properties}")
+        [cm/dbfield :textarea {:id "reftempl", :placeholder "X{name} {ports} {properties}"} mod
+         :reftempl
          #(swap! %1 assoc :reftempl %2)]
         [:label {:for "decltempl"} "Declaration template"]
         [cm/dbfield :textarea {:id "decltempl"} mod
          :decltempl
          #(swap! %1 assoc :decltempl %2)]
         [:label {:for "vectors" :title "Comma-seperated device outputs to save"} "Vectors"]
-        [cm/dbfield :input {:id "vectors", :placeholder "@M{name}[id], n(xm:m1:gm)"} mod
+        [cm/dbfield :input {:id "vectors", :placeholder "id, gm"} mod
          #(apply str (interpose ", " (:vectors %)))
-         #(swap! %1 assoc :vectors (clojure.string/split %2 #", " -1))]]
+         #(swap! %1 assoc :vectors (clojure.string/split %2 #", " -1))]
+        (when (clojure.string/starts-with? (clojure.string/lower-case (:reftempl @mod "")) "x")
+          [:<>
+           [:label {:for "vectorcomp" :title "For subcircuits, the name of the thing inside of which to save vectors"} "Main component"]
+           [cm/dbfield :input {:id "vectorcomp"} mod
+            :component
+            #(swap! %1 assoc :component %2)]])]
        (when (and @selcell @selmod)
          [:<>
           [:a {:href (edit-url (second (.split @selcell ":")) (name @selmod))
