@@ -71,7 +71,6 @@
         xy (kf c)
         idx (bisect-left v xy kf)
         val (get v idx)]
-    (println v xy idx val)
     (if (and (vector? val) (= xy (kf val)))
       (dissjoc v idx)
       v)))

@@ -141,11 +141,9 @@
                 [:span [icon] " " [cm/renamable (r/cursor db [cellname :models key :name])]]
                 key key]))
       (fn [key]
-        (println cell key)
         (when (= (get-in cell [:models key :type]) "schematic")
           #(js/window.open (edit-url (second (.split cellname ":")) (name key)), cellname)))
       (fn [key]
-        (println "add ctxclk")
         #(schem-context-menu % db cellname key))]]))
 
 
@@ -163,11 +161,9 @@
         [cm/connect] "Open"]]]])
 
 (defn shape-selector [cell]
-  (println @cell)
   (let [[width height] (:bg @cell)
         width (+ 2 width)
         height (+ 2 height)]
-    (println width height)
     [:table
      [:tbody
       (doall
@@ -185,7 +181,6 @@
                        :on-change handler}]]))]))]]))
 
 (defn background-selector [cell]
-  (println @cell)
   [:<>
    [:label {:for "bgwidth" :title "Width of the background tile"} "Background width"]
    [:input {:id "bgwidth"
@@ -227,7 +222,7 @@
 (def dialect (r/atom "NgSpice"))
 
 (defn model-preview [db]
-  (let [mod (r/cursor db [@selcell :models (keyword @selmod) @dialect])]
+  (let [mod (r/cursor db [@selcell :models (keyword @selmod) (keyword @dialect)])]
     (prn @mod)
     [:div.properties
      (if (= (get-in @db [@selcell :models (keyword @selmod) :type]) "spice")
