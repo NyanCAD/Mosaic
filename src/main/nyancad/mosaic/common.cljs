@@ -268,3 +268,11 @@
     ((get shortcuts (keyset e) #()))))
 
 (def default-sync "https://c6be5bcc-59a8-492d-91fd-59acc17fef02-bluemix.cloudantnosqldb.appdomain.cloud/schematics")
+
+(defn format [s state]
+  (clojure.string/replace
+   s #"(?<=[^{]|^)\{([^{}]+)\}(?=[^}]|$)"
+   (fn [[_ path]]
+     (get-in state
+       (map keyword
+         (clojure.string/split path "."))))))
