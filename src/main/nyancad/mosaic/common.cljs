@@ -209,6 +209,7 @@
 (def add-cell (r/adapt-react-class icons/FolderPlus))
 (def sync-active (r/adapt-react-class icons/ArrowRepeat))
 (def sync-done (r/adapt-react-class icons/Check))
+(def text (r/adapt-react-class icons/Fonts))
 
 (defn radiobuttons
 ([cursor m] (radiobuttons cursor m nil nil))
@@ -270,9 +271,14 @@
 (def default-sync "https://c6be5bcc-59a8-492d-91fd-59acc17fef02-bluemix.cloudantnosqldb.appdomain.cloud/schematics")
 
 (defn format [s state]
-  (clojure.string/replace
-   s #"(?<=[^{]|^)\{([^{}]+)\}(?=[^}]|$)"
-   (fn [[_ path]]
-     (get-in state
-       (map keyword
-         (clojure.string/split path "."))))))
+  (-> s
+      (clojure.string/replace
+       #"(?<=[^{]|^)\{([^{}]+)\}(?=[^}]|$)"
+       (fn [[_ path]]
+         (get-in state
+                 (map #(let [n (js/parseInt %)]
+                         (if (js/isNaN n)
+                           (keyword %)
+                           n))
+                      (clojure.string/split path ".")))))
+      (clojure.string/replace #"\{\{|\}\}" first)))

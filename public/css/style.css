@@ -591,7 +591,15 @@ line.wirebb:hover {
   stroke: #00000008;
 }
 
+text {
+    user-select: none;
+}
+
 text.identifier {
+    font-size: 0.7em;
+}
+
+g.text text {
     font-size: 0.7em;
 }
 

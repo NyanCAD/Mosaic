@@ -31,7 +31,8 @@
 
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
 (defonce snapshots (pouch-atom db "snapshots" (r/atom {})))
-(defonce watcher (watch-changes db schematic modeldb snapshots))
+(defonce simulations (pouch-atom db (str group "$result") (r/atom (sorted-map))))
+(defonce watcher (watch-changes db schematic modeldb snapshots simulations))
 (def ldb (pouchdb "local"))
 (defonce local (pouch-atom ldb "local"))
 (defonce lwatcher (watch-changes ldb local))
@@ -164,6 +165,27 @@
                   :y1 (* (+ y 0.5) grid-size)
                   :x2 (* (+ x rx 0.5) grid-size)
                   :y2 (* (+ y ry 0.5) grid-size)}]]))
+
+(defn schem-template [fmt]
+  (let [res (val (last @simulations))
+        schem (into {}
+                    (comp (filter #(contains? % :name))
+                          (map #(vector (keyword (:name %)) %)))
+                    (vals @schematic))
+        text (cm/format fmt {:res res, :schem schem})]
+    (for [line (clojure.string/split-lines text)]
+      [:tspan {:x "0" :dy "1em"} line])))
+
+(defn text-sym [key text]
+  (let [x (:x text)
+        y (:y text)
+        content (schem-template (get-in text [:props :text] "Edit me"))]
+    [:g.text {:on-mouse-down #(drag-start key %)
+              :on-mouse-move #(eraser-drag key %)
+              :class (when (contains? @selected key) :selected)
+              :transform (str "translate(" (* (+ x 0.1) grid-size) ", " (* (+ y 0.1) grid-size) ")")}
+     [:text
+      content]]))
 
 (defn device-label [dev width]
   [:text.identifier
@@ -426,7 +448,13 @@
              "port" {::bg []
                      ::conn [[0 0 "P"]]
                      ::sym port-sym
-                     ::props {}}})
+                     ::props {}}
+             "text" {::bg []
+                     ::conn []
+                     ::sym text-sym
+                     ::props {:text {:tooltip "Template to display"
+                                     :placeholder "{schem.R1.props.resistance} {res.@rr1[i].0}"
+                                     :type :textarea}}}})
 
 (defn rotate-shape [shape [a b c d e f] devx, devy]
   (let [size (cm/pattern-size shape)
@@ -925,10 +953,11 @@
         (doall (for [[prop meta] (::props (get models @cell))]
                  [:<> {:key prop}
                   [:label {:for prop :title (:tooltip meta)} prop]
-                  [:input {:id prop
-                           :type "text"
-                           :default-value (get @props prop)
-                           :on-change (debounce #(swap! props assoc prop (.. % -target -value)))}]]))
+                  [(:type meta :input)
+                   {:id prop
+                    :type "text"
+                    :default-value (get @props prop)
+                    :on-change (debounce #(swap! props assoc prop (.. % -target -value)))}]]))
         [:label {:for "spice" :title "Extra spice data"} "spice"]
         [:input {:id "spice"
                  :type "text"
@@ -1104,7 +1133,11 @@
     [:button {:title "Add power supply [shift+p]"
               :class (device-active "port")
               :on-mouse-up #(add-supply (viewbox-coord %))}
-     "VDD"]]
+     "VDD"]
+    [:button {:title "Add text area [t]"
+              :class (device-active "port")
+              :on-mouse-up #(add-device "text" (viewbox-coord %))}
+     [cm/text]]]
    [:button {:title "Add resistor [r]"
              :class (device-active "resistor")
              :on-mouse-up #(add-device "resistor" (viewbox-coord %))}
