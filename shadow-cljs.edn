@@ -18,4 +18,5 @@
   {:target :browser
    :modules {:common {}
              :editor {:init-fn nyancad.mosaic.editor/init :depends-on #{:common}}
-             :libman {:init-fn nyancad.mosaic.libman/init :depends-on #{:common}}}}}}
+             :libman {:init-fn nyancad.mosaic.libman/init :depends-on #{:common}}}
+   :compiler-options {:output-feature-set :es2018}}}}
