@@ -273,12 +273,16 @@
 (defn format [s state]
   (-> s
       (clojure.string/replace
-       #"(?<=[^{]|^)\{([^{}]+)\}(?=[^}]|$)"
-       (fn [[_ path]]
-         (get-in state
-                 (map #(let [n (js/parseInt %)]
-                         (if (js/isNaN n)
-                           (keyword %)
-                           n))
-                      (clojure.string/split path ".")))))
+       #"(?<=[^{]|^)\{([^{}:]+)(?::(?:\.(\d+))?([ef])?)?\}(?=[^}]|$)"
+       (fn [[_ path precision type]]
+         (let [res (get-in state
+                           (map #(let [n (js/parseInt %)]
+                                   (if (js/isNaN n)
+                                     (keyword %)
+                                     n))
+                                (clojure.string/split path ".")))]
+           (case type
+             "e" (.toExponential res (js/parseInt precision))
+             "f" (.toFixed res (js/parseInt precision))
+             res))))
       (clojure.string/replace #"\{\{|\}\}" first)))
