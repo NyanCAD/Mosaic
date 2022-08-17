@@ -167,14 +167,14 @@
                   :y2 (* (+ y ry 0.5) grid-size)}]]))
 
 (defn schem-template [fmt]
-  (let [res (val (last @simulations))
+  (let [res (if-let [l (last @simulations)] (val l) {})
         schem (into {}
                     (comp (filter #(contains? % :name))
                           (map #(vector (keyword (:name %)) %)))
                     (vals @schematic))
         text (cm/format fmt {:res res, :schem schem})]
     (for [line (clojure.string/split-lines text)]
-      [:tspan {:x "0" :dy "1em"} line])))
+      [:tspan {:key line :x "0" :dy "1em"} line])))
 
 (defn text-sym [key text]
   (let [x (:x text)
