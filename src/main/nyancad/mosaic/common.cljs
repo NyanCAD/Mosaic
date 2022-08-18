@@ -209,7 +209,8 @@
 (def add-cell (r/adapt-react-class icons/FolderPlus))
 (def sync-active (r/adapt-react-class icons/ArrowRepeat))
 (def sync-done (r/adapt-react-class icons/Check))
-(def text (r/adapt-react-class icons/Fonts))
+(def text (r/adapt-react-class icons/Paragraph))
+(def namei (r/adapt-react-class icons/Fonts))
 
 (defn radiobuttons
 ([cursor m] (radiobuttons cursor m nil nil))
@@ -280,7 +281,8 @@
                                    (if (js/isNaN n)
                                      (keyword %)
                                      n))
-                                (clojure.string/split path ".")))]
+                                (clojure.string/split path "."))
+                           ##NaN)]
            (case type
              "e" (.toExponential res (js/parseInt precision))
              "f" (.toFixed res (js/parseInt precision))

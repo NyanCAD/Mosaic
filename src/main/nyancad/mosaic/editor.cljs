@@ -212,6 +212,7 @@
                        [0.0 0.5]]
                       [[0.0 0.2]
                        [0.0 0.8]]]]
+     "text" nil
      [lines [[[0.5 0.5]
               [0.3 0.3]
               [0 0.3]
@@ -225,10 +226,10 @@
            :dominant-baseline "middle"
            :transform (-> (:transform label)
                           transform
-                          (.translate (/ grid-size 3) (/ grid-size -2))
+                          (.translate (/ grid-size (if (= (:variant label) "text") -4 4)) (/ grid-size -2))
                           .inverse
                           .toString)}
-    (:name label)]])
+    (:name label (when (= (:variant label) "text") "net"))]])
 
 (defn mosfet-sym [k v]
   (let [shape [[[0.5 1.5]
@@ -1119,6 +1120,12 @@
               :transform (cm/transform-vec (.rotate cm/I 90))
               :name "VDD"))
 
+(defn add-label [coord]
+  (add-device "port" coord
+              :variant "text"
+              :transform (cm/transform-vec (.rotate cm/I 90))))
+
+
 (defn device-tray []
   [:<>
    [variant-tray
@@ -1126,6 +1133,10 @@
               :class (device-active "port")
               :on-mouse-up #(add-device "port" (viewbox-coord %))}
      [cm/label]]
+    [:button {:title "Add wire label [t]"
+              :class (device-active "port")
+              :on-mouse-up #(add-label (viewbox-coord %))}
+     [cm/namei]]
     [:button {:title "Add ground [g]"
               :class (device-active "port")
               :on-mouse-up #(add-gnd (viewbox-coord %))}
@@ -1134,7 +1145,7 @@
               :class (device-active "port")
               :on-mouse-up #(add-supply (viewbox-coord %))}
      "VDD"]
-    [:button {:title "Add text area [t]"
+    [:button {:title "Add text area [shift+t]"
               :class (device-active "port")
               :on-mouse-up #(add-device "text" (viewbox-coord %))}
      [cm/text]]]
@@ -1201,7 +1212,7 @@
 (defn schematic-dots []
   [:<>
    (for [[[x y] ids] (first @location-index)
-         :let [n (count ids)]
+         :let [n (count (remove #(= (get-in @schematic [% :variant]) "text") ids))]
          :when (not= n 2)]
      [:circle
       {:key [x y]
