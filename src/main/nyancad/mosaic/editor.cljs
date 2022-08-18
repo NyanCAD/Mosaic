@@ -1296,6 +1296,8 @@
                 #{:p} #(add-device "port" (::mouse @ui))
                 #{:g} #(add-gnd (::mouse @ui))
                 #{:shift :p} #(add-supply (::mouse @ui))
+                #{:t} #(add-device "text" (::mouse @ui))
+                #{:shift :t} #(add-label (::mouse @ui))
                 #{:backspace} delete-selected
                 #{:delete} delete-selected
                 #{:w} (fn [_] ; right away start a wire or not?
