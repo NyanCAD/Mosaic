@@ -105,7 +105,7 @@
 
 (defonce syncactive (r/atom false))
 
-(declare drag-start eraser-drag)
+(declare drag-start eraser-drag models)
 
 (defn device [size k v & elements]
   (assert (js/isFinite size))
@@ -166,38 +166,48 @@
                   :x2 (* (+ x rx 0.5) grid-size)
                   :y2 (* (+ y ry 0.5) grid-size)}]]))
 
-(defn schem-template [fmt]
+(defn schem-template [dev fmt]
   (let [res (if-let [l (last @simulations)] (val l) {})
         schem (into {}
                     (comp (filter #(contains? % :name))
                           (map #(vector (keyword (:name %)) %)))
                     (vals @schematic))
-        text (cm/format fmt {:res res, :schem schem})]
+        text (cm/format fmt {:res res, :schem schem :this dev})]
     (for [line (clojure.string/split-lines text)]
-      [:tspan {:key line :x "0" :dy "1em"} line])))
+      [:tspan {:key line :x "0" :dy "1.2em"} line])))
 
 (defn text-sym [key text]
   (let [x (:x text)
         y (:y text)
-        content (schem-template (get-in text [:props :text] "Edit me"))]
+        content (schem-template text (get text :template (get-in models ["text" ::template])))]
     [:g.text {:on-mouse-down #(drag-start key %)
               :on-mouse-move #(eraser-drag key %)
               :class (when (contains? @selected key) :selected)
-              :transform (str "translate(" (* (+ x 0.1) grid-size) ", " (* (+ y 0.1) grid-size) ")")}
+              :transform (str "translate(" (* (+ x 0.1) grid-size) ", " (* (+ y 0.05) grid-size) ")")}
      [:text
       content]]))
 
 (defn device-label [dev width]
   [:text.identifier
-   {:text-anchor "left"
-    :dominant-baseline "bottom"
-    :transform (-> (:transform dev)
+   {:transform (-> (:transform dev)
                    transform
                    (.translate (* grid-size (/ width -2)) (* grid-size (/ width -2)))
                    .inverse
                    (.translate (* grid-size 0.05) (* grid-size -0.65))
                    .toString)}
     (:name dev)])
+
+(defn device-template [dev width]
+  (when-let [text (get dev :template
+                       (::template (get models (:cell dev))))]
+    [:text.identifier
+     {:transform (-> (:transform dev)
+                     transform
+                     (.translate (* grid-size (/ width -2)) (* grid-size (/ width -2)))
+                     .inverse
+                     (.translate (* grid-size 0.6) (* grid-size -0.45))
+                     .toString)}
+     (schem-template dev text)]))
 
 (defn port-sym [key label]
   [device 1 key label
@@ -246,7 +256,7 @@
                 [1.2 1.5]]]]
     [device 3 k v
      [lines shape]
-     [device-label v 3]
+     [device-template v 3]
      (if (= (:cell v) "nmos")
        [arrow 1.3 1.5 0.12 0]
        [arrow 1.4 1.5 0.12 180])]))
@@ -263,7 +273,7 @@
                 [1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
-     [device-label v 3]
+     [device-template v 3]
      [lines shape]
      (if (= (:cell v) "npn")
        [arrow 1.4 1.81 0.12 -140]
@@ -275,7 +285,7 @@
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
-     [device-label v 3]
+     [device-template v 3]
      [:rect.outline {:x (* 1.35 grid-size)
                      :y (* 1.1 grid-size)
                      :width (* 0.3 grid-size)
@@ -292,7 +302,7 @@
                [[1.5 1.6]
                 [1.5 2.5]]]]
     [device 3 k v
-     [device-label v 3]
+     [device-template v 3]
      [lines shape]]))
 
 (defn inductor-sym [k v]
@@ -301,7 +311,7 @@
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
-     [device-label v 3]
+     [device-template v 3]
      [lines shape]
      [:path {:d "M75,55
                  a5,5 90 0,0 0,10
@@ -318,7 +328,7 @@
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
-     [device-label v 3]
+     [device-template v 3]
      [lines shape]
      [:circle.outline
       {:cx (* grid-size 1.5)
@@ -332,7 +342,7 @@
                [[1.5 1.9]
                 [1.5 2.5]]]]
     [device 3 k v
-     [device-label v 3]
+     [device-template v 3]
      [lines shape]
      [:circle.outline
       {:cx (* grid-size 1.5)
@@ -349,7 +359,7 @@
                [[1.5 1.6]
                 [1.5 2.5]]]]
     [device 3 k v
-     [device-label v 3]
+     [device-template v 3]
      [lines shape]
      [arrow 1.5 1.6 0.2 270]]))
 
@@ -391,6 +401,7 @@
 (def models {"pmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
+                     ::template "{this.name}: {this.props.w}/{this.props.l}"
                      ::props {:m {:tooltip "multiplier"}
                               :nf {:tooltip "number of fingers"}
                               :w {:tooltip "width" :unit "meter"}
@@ -398,6 +409,7 @@
              "nmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
+                     ::template "{this.name}: {this.props.w}/{this.props.l}"
                      ::props {:m {:tooltip "multiplier"}
                               :nf {:tooltip "number of fingers"}
                               :w {:tooltip "width" :unit "meter"}
@@ -405,6 +417,7 @@
              "npn" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
+                     ::template "{this.name}: {this.props.w}/{this.props.l}"
                     ::props {:m {:tooltip "multiplier"}
                              :nf {:tooltip "number of fingers"}
                              :w {:tooltip "width" :unit "meter"}
@@ -412,6 +425,7 @@
              "pnp" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
+                     ::template "{this.name}: {this.props.w}/{this.props.l}"
                     ::props {:m {:tooltip "multiplier"}
                              :nf {:tooltip "number of fingers"}
                              :w {:tooltip "width" :unit "meter"}
@@ -419,23 +433,28 @@
              "resistor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
                          ::sym resistor-sym
+                         ::template "{this.name}: {this.props.resistance}Ω"
                          ::props {:resistance {:tooltip "Resistance" :unit "Ohm"}}}
              "capacitor" {::bg cm/twoport-bg
                           ::conn cm/twoport-conn
                           ::sym capacitor-sym
+                          ::template "{this.name}: {this.props.capacitance}F"
                           ::props {:capacitance {:tooltip "Capacitance" :unit "Farad"}}}
              "inductor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
                          ::sym inductor-sym
+                         ::template "{this.name}: {this.props.inductance}H"
                          ::props {:inductance {:tooltip "Inductance" :unit "Henry"}}}
              "vsource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
                         ::sym vsource-sym
+                        ::template "{this.name}: {this.props.dc}V"
                         ::props {:dc {:tooltip "DC voltage" :unit "Volt"}
                                  :ac {:tooltip "AC voltage" :unit "Volt"}}}
              "isource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
                         ::sym isource-sym
+                        ::template "{this.name}: {this.props.dc}I"
                         ::props {:dc {:tooltip "DC current" :unit "Ampere"}
                                  :ac {:tooltip "AC current" :unit "Ampere"}}}
              "diode" {::bg cm/twoport-bg
@@ -453,9 +472,8 @@
              "text" {::bg []
                      ::conn []
                      ::sym text-sym
-                     ::props {:text {:tooltip "Template to display"
-                                     :placeholder "{schem.R1.props.resistance} {res.@rr1[i].0}"
-                                     :type :textarea}}}})
+                     ::template "Operating Point:\n{res.op}"
+                     ::props {}}})
 
 (defn rotate-shape [shape [a b c d e f] devx, devy]
   (let [size (cm/pattern-size shape)
@@ -501,6 +519,7 @@
   (let [cell (:cell dev)]
     (cond
       (= cell "wire") (wire-locations dev)
+      (= cell "text") []
       (contains? models cell) (builtin-locations dev) 
       :else (circuit-locations dev))))
 
@@ -954,16 +973,19 @@
         (doall (for [[prop meta] (::props (get models @cell))]
                  [:<> {:key prop}
                   [:label {:for prop :title (:tooltip meta)} prop]
-                  [(:type meta :input)
-                   {:id prop
-                    :type "text"
-                    :default-value (get @props prop)
-                    :on-change (debounce #(swap! props assoc prop (.. % -target -value)))}]]))
-        [:label {:for "spice" :title "Extra spice data"} "spice"]
+                  [:input {:id prop
+                           :type "text"
+                           :default-value (get @props prop)
+                           :on-change (debounce #(swap! props assoc prop (.. % -target -value)))}]]))
+        [:label {:for "spice" :title "Extra spice data"} "Spice"]
         [:input {:id "spice"
                  :type "text"
                  :default-value (:spice @props)
-                 :on-change (debounce #(swap! props assoc :spice (.. % -target -value)))}]]])))
+                 :on-change (debounce #(swap! props assoc :spice (.. % -target -value)))}]
+        [:label {:for "template" :title "Template to display"} "Text"]
+        [:textarea {:id "template"
+                    :default-value (get-in @schematic [key :template] (::template (get models @cell)))
+                    :on-change (debounce #(swap! schematic assoc-in [key :template] (.. % -target -value)))}]]])))
 
 (defn copy []
   (let [sel @selected
@@ -1211,15 +1233,16 @@
 
 (defn schematic-dots []
   [:<>
-   (for [[[x y] ids] (first @location-index)
-         :let [n (count (remove #(= (get-in @schematic [% :variant]) "text") ids))]
-         :when (not= n 2)]
-     [:circle
-      {:key [x y]
-       :class (if (> n 2) "wire" "nc")
-       :cx (* grid-size (+ x 0.5))
-       :cy (* grid-size (+ y 0.5))
-       :r (/ grid-size 10)}])])
+   (doall
+    (for [[[x y] ids] (first @location-index)
+          :let [n (count (remove #(= (get-in @schematic [% :variant]) "text") ids))]
+          :when (not= n 2)]
+      [:circle
+       {:key [x y]
+        :class (if (> n 2) "wire" "nc")
+        :cx (* grid-size (+ x 0.5))
+        :cy (* grid-size (+ y 0.5))
+        :r (/ grid-size 10)}]))])
 
 (defn tool-elements []
   (let [{sel ::selected

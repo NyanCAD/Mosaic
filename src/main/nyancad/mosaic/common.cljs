@@ -11,6 +11,7 @@
             clojure.edn
             clojure.set
             clojure.string
+            [clojure.pprint :refer [pprint]]
             [clojure.zip :as zip]
             goog.functions))
 
@@ -271,20 +272,29 @@
 
 (def default-sync "https://c6be5bcc-59a8-492d-91fd-59acc17fef02-bluemix.cloudantnosqldb.appdomain.cloud/schematics")
 
+(defn pprint-str [data]
+  (-> data
+      pprint
+      with-out-str
+      clojure.string/trim
+      (clojure.string/replace " " "\u00a0")))
+
 (defn format [s state]
   (-> s
       (clojure.string/replace
        #"(?<=[^{]|^)\{([^{}:]+)(?::(?:\.(\d+))?([ef])?)?\}(?=[^}]|$)"
        (fn [[_ path precision type]]
-         (let [res (get-in state
-                           (map #(let [n (js/parseInt %)]
-                                   (if (js/isNaN n)
-                                     (keyword %)
-                                     n))
-                                (clojure.string/split path "."))
-                           ##NaN)]
+         (let [pathvec (map #(let [n (js/parseInt %)]
+                               (if (js/isNaN n)
+                                 (keyword %)
+                                 n))
+                            (clojure.string/split path "."))
+               res (get-in state pathvec)
+               fres (js/parseFloat res)]
            (case type
-             "e" (.toExponential res (js/parseInt precision))
-             "f" (.toFixed res (js/parseInt precision))
-             res))))
+             "e" (.toExponential fres (js/parseInt precision))
+             "f" (.toFixed fres (js/parseInt precision))
+             (if (map? res)
+              (pprint-str res)
+              (or res "?"))))))
       (clojure.string/replace #"\{\{|\}\}" first)))
