@@ -109,7 +109,9 @@
 
 (defn database-selector []
   [:div.cellsel
-   [categories [] (category-trie @modeldb)]])
+   (if (seq @modeldb)
+     [categories [] (category-trie @modeldb)]
+     [:div.empty "There aren't any interfaces yet. Open a different workspace or click \"Add interface\" to get started."])])
 
 (defn edit-url [cell mod]
   (let [mname (str cell "$" mod)]
@@ -130,21 +132,23 @@
   (let [cellname @selcell
         cell (get @db cellname)]
     [:div.schematics
-     [cm/radiobuttons selmod
-      (doall (for [[key mod] (:models cell)
-                   :when (or (= @selcat ["Everything"])
-                             (some (partial = (apply str (interpose "/" @selcat))) (:categories mod)))
-                   :let [schem? (= (get-in cell [:models key :type]) "schematic")
-                         icon (if schem? cm/schemmodel cm/codemodel)]]
-                ; inactive, active, key, title
-               [[:span [icon] " " (get mod :name key)]
-                [:span [icon] " " [cm/renamable (r/cursor db [cellname :models key :name])]]
-                key key]))
-      (fn [key]
-        (when (= (get-in cell [:models key :type]) "schematic")
-          #(js/window.open (edit-url (second (.split cellname ":")) (name key)), cellname)))
-      (fn [key]
-        #(schem-context-menu % db cellname key))]]))
+     (if @selcell
+       [cm/radiobuttons selmod
+        (doall (for [[key mod] (:models cell)
+                     :when (or (= @selcat ["Everything"])
+                               (some (partial = (apply str (interpose "/" @selcat))) (:categories mod)))
+                     :let [schem? (= (get-in cell [:models key :type]) "schematic")
+                           icon (if schem? cm/schemmodel cm/codemodel)]]
+                 ; inactive, active, key, title
+                 [[:span [icon] " " (get mod :name key)]
+                  [:span [icon] " " [cm/renamable (r/cursor db [cellname :models key :name])]]
+                  key key]))
+        (fn [key]
+          (when (= (get-in cell [:models key :type]) "schematic")
+            #(js/window.open (edit-url (second (.split cellname ":")) (name key)), cellname)))
+        (fn [key]
+          #(schem-context-menu % db cellname key))]
+       [:div.empty "There are no implementations to show. Select an interface to edit its schematics and SPICE models."])]))
 
 
 (defn db-properties []
@@ -207,7 +211,7 @@
 (defn cell-properties [db]
   (let [cell @selcell
         sc (r/cursor db [cell])]
-    (when cell
+    (if cell
       [:<>
        [:div.properties
         [background-selector sc]
@@ -217,7 +221,8 @@
         [:label {:for "symurl" :title "image url for this component"} "url"]
         [:input {:id "symurl" :type "text"
                  :default-value (get-in @db [cell :sym])
-                 :on-blur #(swap! db assoc-in [cell :sym] (.. % -target -value))}]]])))
+                 :on-blur #(swap! db assoc-in [cell :sym] (.. % -target -value))}]]]
+      [:div.empty "Select an interface to edit its properties."])))
 
 (def dialect (r/atom "NgSpice"))
 
@@ -256,12 +261,13 @@
          [:<>
           [:a {:href (edit-url (second (.split @selcell ":")) (name @selmod))
                :target @selcell} "Edit"]]))
-     (when (and @selcell @selmod)
+     (if (and @selcell @selmod)
        [:<>
         [:label {:for "categories" :title "Comma-seperated device categories"} "Categories"]
         [cm/dbfield :input {:id "categories"} mod
          #(apply str (interpose ", " (:categories %)))
-         #(swap! %1 assoc :categories (clojure.string/split %2 #", " -1))]])]))
+         #(swap! %1 assoc :categories (clojure.string/split %2 #", " -1))]]
+       [:div.empty "Select a schematic or SPICE model to edit its properties."])]))
 
 (defn cell-view []
   (let [add-cell #(prompt "Enter the name of the new interface"
