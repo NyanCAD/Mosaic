@@ -13,7 +13,7 @@
 (def params (js/URLSearchParams. js/window.location.search))
 (def dbname (or (.get params "db") (js/localStorage.getItem "db") "schematics"))
 (def dburl (if js/window.dburl (.-href (js/URL. dbname js/window.dburl)) dbname))
-(def sync (or (.get params "sync") (js/localStorage.getItem "sync") cm/default-sync))
+(def sync (or (.get params "sync") (js/localStorage.getItem "sync") js/window.default_sync))
 (defonce db (pouchdb dburl))
 
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
@@ -326,6 +326,7 @@
   (set! js/window.name "libman")
   (set! js/document.onclick #(swap! context-content assoc :body nil))
   (js/localStorage.setItem "db" dbname)
-  (js/localStorage.setItem "sync" sync)
+  (when (seq sync)
+    (js/localStorage.setItem "sync" sync))
   (synchronise)
   (render))

@@ -270,8 +270,6 @@
     (println (keyset e))
     ((get shortcuts (keyset e) #()))))
 
-(def default-sync "https://c6be5bcc-59a8-492d-91fd-59acc17fef02-bluemix.cloudantnosqldb.appdomain.cloud/schematics")
-
 (defn pprint-str [data]
   (-> data
       pprint
