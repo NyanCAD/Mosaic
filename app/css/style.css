@@ -339,6 +339,9 @@ input, textarea {
     list-style-type: none;
 }
 
+#mosaic_libman .empty {
+    margin: 1em 0;
+}
 /* editor */
 #mosaic_editor * {
   margin: 0;
