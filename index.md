@@ -27,7 +27,7 @@ Mosaic uses a streaming simulation API that allows you to do analysis and plotti
 This allows you to spot problems early, rather than guessing at the required simulation length and waiting for it to finish.
 All the wile, Mosaic can plot tens of millions of points without breaking a sweat, and offer interactive panning and zooming to boot.
 
-### Coming soon: real-time back-annotation
+### Real-time back-annotation
 
 It is crucial for a designer to have feedback about their work and quickly explore the effect of various changes.
 Real-time back-annotation will run short simulations like operating point and frequency analysis in the background and annotate your schematic with currents, voltages, gains, bandwidths, etc.
