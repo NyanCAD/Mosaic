@@ -7,7 +7,7 @@
             [react-bootstrap-icons :as icons]
             [clojure.spec.alpha :as s]
             reagent.ratom
-            nyancad.hipflask
+            nyancad.mosaic.jsatom
             clojure.edn
             clojure.set
             clojure.string
@@ -16,8 +16,9 @@
             goog.functions))
 
 ; allow taking a cursor of a pouch atom
-(extend-type ^js nyancad.hipflask/PAtom reagent.ratom/IReactiveAtom)
+(extend-type ^js nyancad.mosaic.jsatom/JsAtom reagent.ratom/IReactiveAtom)
 
+(def sep ":")
 (def grid-size 50)
 (def debounce #(goog.functions/debounce % 1000))
 

@@ -6,19 +6,11 @@
   (:require clojure.string
             [reagent.core :as r]
             [reagent.dom :as rd]
-            [nyancad.hipflask :refer [pouch-atom pouchdb sep watch-changes]]
+            [nyancad.mosaic.jsatom :refer [json-atom]]
             [nyancad.mosaic.common :as cm]))
 
-; initialise the model database
-(def params (js/URLSearchParams. js/window.location.search))
-(def dbname (or (.get params "db") (js/localStorage.getItem "db") "schematics"))
-(def dburl (if js/window.dburl (.-href (js/URL. dbname js/window.dburl)) dbname))
-(def sync (or (.get params "sync") (js/localStorage.getItem "sync") js/window.default_sync))
-(defonce db (pouchdb dburl))
-
-(defonce modeldb (pouch-atom db "models" (r/atom {})))
-(defonce snapshots (pouch-atom db "snapshots" (r/atom {})))
-(defonce watcher (watch-changes db modeldb snapshots))
+(defonce modeldb (r/atom {}))
+(defonce snapshots (r/atom {}))
 
 ; used for ephermeal UI state
 (defonce selcat (r/atom []))
@@ -116,9 +108,10 @@
 (defn edit-url [cell mod]
   (let [mname (str cell "$" mod)]
     (doto (js/URL. "editor" js/window.location)
-      (.. -searchParams (append "schem" mname))
-      (.. -searchParams (append "db" dbname))
-      (.. -searchParams (append "sync" sync)))))
+      ;(.. -searchParams (append "schem" mname))
+      ;(.. -searchParams (append "db" dbname))
+      ;(.. -searchParams (append "sync" sync))
+      )))
 
 (defn schem-context-menu [e db cellname key]
   (.preventDefault e)
@@ -150,19 +143,6 @@
           #(schem-context-menu % db cellname key))]
        [:div.empty "There are no implementations to show. Select an interface to edit its schematics and SPICE models."])]))
 
-
-(defn db-properties []
-  [:div.dbprops
-   [:details [:summary "Workspace properties"]
-    [:form.properties
-     [:label {:for "dbname"} "Name"]
-     [:input {:id "dbname" :name "db"
-              :default-value dbname}]
-     [:label {:for "dbsync"} "URL"]
-     [:input {:id "dbsync" :name "sync"
-              :default-value sync}]
-     [:button.primary {:type "submit"}
-        [cm/connect] "Open"]]]])
 
 (defn shape-selector [cell]
   (let [[width height] (:bg @cell)
@@ -271,7 +251,7 @@
 
 (defn cell-view []
   (let [add-cell #(prompt "Enter the name of the new interface"
-                          (fn [name] (swap! modeldb assoc (str "models" sep name) {:name name})))
+                          (fn [name] (swap! modeldb assoc (str "models" cm/sep name) {:name name})))
         add-schem #(prompt "Enter the name of the new schematic"
                           (fn [name] (swap! modeldb assoc-in [@selcell :models (keyword name)] {:name name, :type "schematic"})))
         add-spice #(prompt "Enter the name of the new SPICE model"
@@ -307,8 +287,7 @@
      (if @syncactive
        [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
        [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
-    [database-selector]
-    [db-properties]]
+    [database-selector]]
    [cell-view]
    [contextmenu]
    [modal]])
@@ -319,20 +298,8 @@
   (rd/render [library-manager]
              (.getElementById js/document "mosaic_libman")))
 
-(defn synchronise []
-  (when (seq sync) ; pass nil to disable synchronization
-    (let [es (.sync db sync #js{:live true})]
-      (.on es "paused" #(reset! syncactive false))
-      (.on es "active" #(reset! syncactive true))
-      (.on es "denied" #(alert (str "Permission denied synchronising to " sync ", changes are saved locally")))
-      (.on es "error" #(alert (str "Error synchronising to " sync ", changes are saved locally"))))))
-
 (defn ^:export init []
 ;;   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (set! js/window.name "libman")
   (set! js/document.onclick #(swap! context-content assoc :body nil))
-  (js/localStorage.setItem "db" dbname)
-  (when (seq sync)
-    (js/localStorage.setItem "sync" sync))
-  (synchronise)
   (render))

@@ -2,11 +2,53 @@
   "name": "mosaic",
   "version": "0.0.1",
   "private": true,
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "activationEvents": [],
+  "main": "./out/main.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "Mosaic.schematic",
+        "displayName": "Mosaic Schematic",
+        "selector": [
+          {
+            "filenamePattern": "*.nyancir"
+          }
+        ]
+      },
+      {
+        "viewType": "Mosaic.library",
+        "displayName": "Mosaic Library",
+        "selector": [
+          {
+            "filenamePattern": "*.nyanlib"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "Mosaic.schematic.new",
+        "title": "Create new Mosaic schematic",
+        "category": "Mosaic"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "shadow-cljs release frontend extension",
+    "watch": "shadow-cljs watch frontend extension"
+  },
   "devDependencies": {
+    "@types/node": "^16.18.34",
+    "@types/vscode": "^1.73.0",
     "shadow-cljs": "2.26.2"
   },
   "dependencies": {
     "bootstrap-icons": "^1.11.2",
+    "jsonc-parser": "^3.2.0",
     "pouchdb": "8.0.1",
     "react": "18.2.0",
     "react-bootstrap-icons": "^1.10.3",

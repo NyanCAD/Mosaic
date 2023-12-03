@@ -6,7 +6,7 @@
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
             [shadow.resource :as rc]
-            [nyancad.hipflask :refer [pouch-atom pouchdb update-keys sep watch-changes]]
+            [nyancad.mosaic.jsatom :refer [json-atom update-keyset]]
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go go-loop <!]]
             clojure.edn
@@ -16,26 +16,18 @@
             [nyancad.mosaic.common :as cm
              :refer [grid-size debounce sconj
                      point transform transform-vec
-                     mosfet-shape bjt-conn]]))
+                     mosfet-shape bjt-conn sep]]))
+(def group "schem")
 
-
-(def params (js/URLSearchParams. js/window.location.search))
-(def group (or (.get params "schem") "myschem"))
-(def dbname (or (.get params "db") "schematics"))
-(def dburl (if js/window.dburl (.-href (js/URL. dbname js/window.dburl)) dbname))
-(def sync (or (.get params "sync") nil))
-(defonce db (pouchdb dburl))
-(defonce schematic (pouch-atom db group (r/atom {})))
+(defonce document (.-innerText (.getElementById js/document "document")))
+(defonce schematic (json-atom document (r/atom {})))
 (set-validator! (.-cache schematic)
                 #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
 
-(defonce modeldb (pouch-atom db "models" (r/atom {})))
-(defonce snapshots (pouch-atom db "snapshots" (r/atom {})))
-(defonce simulations (pouch-atom db (str group "$result") (r/atom (sorted-map))))
-(defonce watcher (watch-changes db schematic modeldb snapshots simulations))
-(def ldb (pouchdb "local"))
-(defonce local (pouch-atom ldb "local"))
-(defonce lwatcher (watch-changes ldb local))
+(defonce modeldb (r/atom {}))
+(defonce snapshots (r/atom {}))
+(defonce simulations (r/atom (sorted-map)))
+(defonce local (atom {}))
 
 (defn initial [cell]
   (case cell
@@ -376,7 +368,7 @@
                   port k v)))
 
 (defn ckt-url [cell model]
-  (str "?" (.toString (js/URLSearchParams. #js{:schem (str cell "$" model) :db dbname :sync sync}))))
+  (str "?" (.toString (js/URLSearchParams. #js{:schem (str cell "$" model)}))))
 
 (defn circuit-sym [k v]
   (let [cell (:cell v)
@@ -633,7 +625,7 @@
     (if @staging
       (swap! staging
              update :transform f)
-      (swap! schematic update-keys @selected
+      (swap! schematic update-keyset @selected
              update :transform f))))
 
 (defn delete-selected []
@@ -721,7 +713,7 @@
 (defn add-wire [[x y] first?]
   (if first?
     (add-wire-segment [x y]) ; just add a new wire, else finish old wire
-    (let [dev (update-keys @staging #{:rx :ry} js/Math.round)
+    (let [dev (update-keyset @staging #{:rx :ry} js/Math.round)
           {rx :rx ry :ry} dev
           x (js/Math.round (+ (:x dev) rx)) ; use end pos of previous wire instead
           y (js/Math.round (+ (:y dev) ry))
@@ -871,7 +863,7 @@
                     :x (js/Math.round (+ x dx))
                     :y (js/Math.round (+ y dy))))]
     (swap! ui endfn)
-    (swap! schematic update-keys selected round-coords)))
+    (swap! schematic update-keyset selected round-coords)))
 
 (defn drag-end-box []
   (let [[x y] (::mouse-start @ui)
@@ -1007,11 +999,6 @@
             ::dragging ::device
             ::selected (set (keys devmap)))))
 
-(defn simulator-url []
-    (doto (js/URL. js/window.simulatorurl js/window.location)
-      (.. -searchParams (append "schem" group))
-      (.. -searchParams (append "db" (or (and (seq sync) sync) dburl)))))
-
 (defn menu-items []
   [:<>
    [:div.primary
@@ -1064,14 +1051,6 @@
        [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
        [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])
    [:div.secondary
-    [:a {:href (simulator-url)
-         :target "simulator"
-         :title "Open simulator"}
-     [cm/simulate]]
-    [:a {:href js/window.notebookurl
-         :target "jupyter"
-         :title "Open JupyterLab"}
-     [cm/notebook]]
     [:a {:href ".."
          :target "libman"
          :title "Open library manager"}
@@ -1349,10 +1328,6 @@
              (.getElementById js/document "mosaic_editor")))
 
 (defn ^:export init []
-  (when (seq sync) ; pass nil to disable synchronization
-    (let [es (.sync db sync #js{:live true :retry true})]
-      (.on es "paused" #(reset! syncactive false))
-      (.on es "active" #(reset! syncactive true))))
   (render))
 
 (defn ^:export clear []

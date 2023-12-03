@@ -9,14 +9,19 @@
   "src/test"]
 
  :dependencies
- [[reagent "1.2.0"]
-  [org.clojars.pepijndevos/hipflask "0.10.2"]]
+ [[reagent "1.2.0"]]
 
  :dev-http {8080 "public"}
  :builds
  {:frontend
   {:target :browser
+   :js-options {:entry-keys ["module" "browser" "main"]}
    :modules {:common {}
              :editor {:init-fn nyancad.mosaic.editor/init :depends-on #{:common}}
              :libman {:init-fn nyancad.mosaic.libman/init :depends-on #{:common}}}
-   :compiler-options {:output-feature-set :es2018}}}}
+   :devtools {:devtools-url "http://localhost:9630"}
+   :compiler-options {:output-feature-set :es2018}}
+  :extension
+  {:target :node-library
+   :output-to "out/main.js"
+   :exports-var nyancad.mosaic.extension/exports}}}
