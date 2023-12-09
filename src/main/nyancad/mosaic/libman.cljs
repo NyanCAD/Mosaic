@@ -6,7 +6,7 @@
   (:require clojure.string
             [reagent.core :as r]
             [reagent.dom :as rd]
-            [nyancad.mosaic.jsatom :refer [json-atom]]
+            ;; [nyancad.mosaic.jsatom :refer [json-atom]]
             [nyancad.mosaic.common :as cm]))
 
 (defonce modeldb (r/atom {}))

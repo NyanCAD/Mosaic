@@ -4,7 +4,12 @@
 
 (ns nyancad.mosaic.extension
   (:require ["vscode" :as vscode]
-            [reagent.dom.server :as rdom]))
+            [reagent.dom.server :as rdom]
+            [cljs.core.async :refer [go go-loop <!]]
+            [cljs.core.async.interop :refer-macros [<p!]]
+            goog.functions))
+
+(def debounce #(goog.functions/debounce % 100))
 
 (defn get-html [^js context ^js document ^js webview]
   (let [css (.asWebviewUri webview (-> context .-extensionUri (vscode/Uri.joinPath "public" "css" "style.css")))
@@ -34,18 +39,42 @@
        [:script {:src common}]
        [:script {:src editor}]]])))
 
+(defonce editqueue (atom []))
+
+(def apply-edits (debounce (fn apply-edits [document]
+  (let [[edits _] (reset-vals! editqueue [])]
+    (.log js/console edits)
+    (go
+      (doseq [edit edits
+              :let [we (vscode/WorkspaceEdit.)]]
+        (.replace we
+                  (.-uri document)
+                  (vscode/Range. (.positionAt document (.-offset edit))
+                                 (.positionAt document (+ (.-offset edit) (.-length edit))))
+                  (.-content edit))
+        (<p! (.. vscode -workspace (applyEdit we)))))))))
+
 (deftype SchematicEditorProvider [context]
   Object
   (resolveCustomTextEditor [this ^js document ^js webviewpanel token]
     (set! (.. webviewpanel -webview -html) (get-html context document (.-webview webviewpanel)))
+    (.. webviewpanel -webview
+        (onDidReceiveMessage
+         (fn [msg]
+           (.log js/console msg)
+           (doseq [edit (.-update msg)]
+             (swap! editqueue conj edit))
+           (apply-edits document))))
     (let [handler (fn [^js e]
                     (when (= (.. e -document -uri (toString)) (.. document -uri (toString)))
-                        (.. webviewpanel -webview
-                            (postMessage
-                             (amap (.-contentChanges e) idx ret
-                                   #js{:offset (.-rangeOffset (aget ret idx))
-                                       :length (.-rangeLength (aget ret idx))
-                                       :content (.-text (aget ret idx))})))))
+                      (.. webviewpanel -webview
+                          (postMessage
+                           #js{:type "update"
+                               :version (.. e -document -version)
+                               :update (amap (.-contentChanges e) idx ret
+                                             #js{:offset (.-rangeOffset (aget ret idx))
+                                                 :length (.-rangeLength (aget ret idx))
+                                                 :content (.-text (aget ret idx))})}))))
           sub (vscode/workspace.onDidChangeTextDocument handler)]
       (.onDidDispose webviewpanel #(.dispose sub)))))
 

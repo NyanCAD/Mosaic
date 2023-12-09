@@ -6,9 +6,8 @@
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
             [shadow.resource :as rc]
-            [nyancad.mosaic.jsatom :refer [json-atom update-keyset]]
+            [nyancad.mosaic.jsatom :refer [json-atom]]
             [clojure.spec.alpha :as s]
-            [cljs.core.async :refer [go go-loop <!]]
             clojure.edn
             clojure.set
             clojure.string
@@ -16,7 +15,7 @@
             [nyancad.mosaic.common :as cm
              :refer [grid-size debounce sconj
                      point transform transform-vec
-                     mosfet-shape bjt-conn sep]]))
+                     mosfet-shape bjt-conn sep update-keyset]]))
 (def group "schem")
 
 (defonce document (.-innerText (.getElementById js/document "document")))
@@ -46,7 +45,7 @@
     "X"))
 
 (defn make-name [base]
-  (let [ids (map #(str group sep (initial base) %) (next (range)))]
+  (let [ids (map #(keyword (str (initial base) %)) (next (range)))]
     (first (remove @schematic ids))))
 
 (defonce ui (r/atom {::zoom [0 0 500 500]
@@ -59,7 +58,7 @@
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme #{"tetris" "eyesore"})
 (s/def ::tool #{::cursor ::eraser ::wire ::pan ::device ::probe})
-(s/def ::selected (s/and set? (s/coll-of string?)))
+(s/def ::selected (s/and set? (s/coll-of keyword?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view ::box}))
 (s/def ::staging (s/nilable :nyancad.mosaic.common/device))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected]
@@ -81,11 +80,10 @@
 (defn restore [state]
   (let [del (reduce disj (set (keys @schematic)) (keys state))
         norev (reduce #(update %1 %2 dissoc :_rev) state (keys state))]
-    (go
-      (remove-watch schematic ::undo)
-      (<! (swap! schematic into norev)) ; update
-      (<! (swap! schematic #(apply dissoc %1 %2) del)) ; delete
-      (add-watch schematic ::undo #(cm/newdo undotree %4)))))
+    (remove-watch schematic ::undo)
+    (swap! schematic into norev) ; update
+    (swap! schematic #(apply dissoc %1 %2) del) ; delete
+    (add-watch schematic ::undo #(cm/newdo undotree %4))))
 
 (defn undo-schematic []
   (when-let [st (cm/undo undotree)]
@@ -482,14 +480,14 @@
   (next (take-while #(not= % (+ start width))
                     (iterate #(+ % (cm/sign width)) start))))
 
-(defn wire-locations [{:keys [:_id :x :y :rx :ry]}]
+(defn wire-locations [{:keys [:x :y :rx :ry]}]
   [[[x y] [(+ x rx) (+ y ry)]]
    (cond
      (= rx 0) (map #(vector x %) (exrange y ry))
      (= ry 0) (map #(vector % y) (exrange x rx))
      :else [])])
 
-(defn builtin-locations [{:keys [:_id :x :y :cell :transform]}]
+(defn builtin-locations [{:keys [:x :y :cell :transform]}]
   (let [mod (get models cell)
         conn (::conn mod)
         [w h] (::bg mod)]
@@ -498,7 +496,7 @@
                      [(inc x) (inc y) "%"])
                    transform x y)]))
 
-(defn circuit-locations [{:keys [:_id :x :y :cell :transform]}]
+(defn circuit-locations [{:keys [:x :y :cell :transform]}]
   (let [mod (get @modeldb (str "models" sep cell))
         conn (:conn mod)
         [w h] (:bg mod)]
@@ -516,10 +514,10 @@
       :else (circuit-locations dev))))
 
 (defn build-location-index [sch]
-  (loop [connidx {} bodyidx {} [dev & other] (vals sch)]
+  (loop [connidx {} bodyidx {} [[id dev] & other] (seq sch)]
     (let [[connloc bodyloc] (device-locations dev)
-          nconnidx (reduce #(update %1 %2 sconj (:_id dev)) connidx connloc)
-          nbodyidx (reduce #(update %1 %2 sconj (:_id dev)) bodyidx bodyloc)]
+          nconnidx (reduce #(update %1 %2 sconj id) connidx connloc)
+          nbodyidx (reduce #(update %1 %2 sconj id) bodyidx bodyloc)]
       (if other
         (recur nconnidx nbodyidx other)
         [nconnidx nbodyidx]))))
@@ -537,6 +535,7 @@
           {} bodyidx))
 
 (defn split-wire [wirename coords]
+  (println wirename coords)
   (let [{:keys [:x :y :rx :ry]} (get @schematic wirename)
         x2 (+ x rx)
         y2 (+ y ry)
@@ -546,7 +545,7 @@
                      [[x1 y1] & [[x2 y2] & _ :as other]] allcoords
                      schem {}]
                 (if other
-                  (recur (name (gensym wirename)) other
+                  (recur (keyword (gensym (name wirename))) other
                         ;; if the start and end point cover the same device, skip
                          (if (empty? (clojure.set/intersection (get widx [x1 y1]) (get widx [x2 y2])))
                            (assoc schem w
@@ -557,14 +556,15 @@
     (swap! schematic (partial merge-with merge) wires)))
 
 (defn split-wires []
+  (println "split wires")
   (remove-watch schematic ::split) ; don't recursively split
   (remove-watch schematic ::undo) ; don't add splitting to undo tree
-  (go (doseq [[w coords] (build-wire-split-index @location-index)]
-        (<! (split-wire w coords)))
+  (doseq [[w coords] (build-wire-split-index @location-index)]
+        (split-wire w coords))
       (add-watch schematic ::undo #(cm/newdo undotree %4))
-      (add-watch schematic ::split split-wires)))
+      (add-watch schematic ::split split-wires))
 
-(add-watch schematic ::split split-wires)
+;; (add-watch schematic ::split #(debounce split-wires))
 
 
 (defn viewbox-coord [e]
@@ -614,7 +614,7 @@
 
 (defn commit-staged [dev]
   (let [id (make-name (:cell dev))
-        name (last (clojure.string/split id sep))]
+        name id]
     (swap! schematic assoc id
            (if (:name dev)
              dev
@@ -688,9 +688,9 @@
   (when (and (= (.-buttons e) 1)
              (= @tool ::eraser)
              (not (contains? @inflight-deletions k)))
-    (go (swap! inflight-deletions conj k)
-        (<! (swap! schematic dissoc k))
-        (swap! inflight-deletions disj k))))
+    (swap! inflight-deletions conj k)
+        (swap! schematic dissoc k)
+        (swap! inflight-deletions disj k)))
 
 (defn drag [e]
   ;; store mouse position for use outside mouse events
@@ -708,7 +708,8 @@
                     :x (js/Math.floor x)
                     :y (js/Math.floor y)
                     :rx 0 :ry 0}
-         ::dragging ::wire))
+         ::dragging ::wire)
+  (split-wires))
 
 (defn add-wire [[x y] first?]
   (if first?
@@ -725,12 +726,12 @@
         same-tile (swap! ui assoc ; the dragged wire stayed at the same tile, exit
                          ::staging nil
                          ::dragging nil)
-        on-port (go (<! (commit-staged dev)) ; the wire landed on a port or wire, commit and exit
+        on-port (do (commit-staged dev) ; the wire landed on a port or wire, commit and exit
                     (swap! ui assoc
                            ::staging nil
                            ::dragging nil))
-        :else (go
-                (<! (commit-staged dev)) ; commit and start new segment
+        :else (do
+                (commit-staged dev) ; commit and start new segment
                 (add-wire-segment [x y]))))))
 
 (defn select-connected []

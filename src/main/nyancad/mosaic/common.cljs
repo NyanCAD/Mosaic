@@ -7,16 +7,12 @@
             [react-bootstrap-icons :as icons]
             [clojure.spec.alpha :as s]
             reagent.ratom
-            nyancad.mosaic.jsatom
             clojure.edn
             clojure.set
             clojure.string
             [clojure.pprint :refer [pprint]]
             [clojure.zip :as zip]
             goog.functions))
-
-; allow taking a cursor of a pouch atom
-(extend-type ^js nyancad.mosaic.jsatom/JsAtom reagent.ratom/IReactiveAtom)
 
 (def sep ":")
 (def grid-size 50)
@@ -42,6 +38,11 @@
 ; like conj but coerces to set
 (def sconj (fnil conj #{}))
 (def ssconj (fnil conj (sorted-set)))
+
+(defn update-keyset
+  "Apply f to every value in keys"
+  ([m keys f] (into m (map #(vector % (f (get m %)))) keys))
+  ([m keys f & args] (into m (map #(vector % (apply f (get m %) args))) keys)))
 
 (defn bisect-left
   ([a x] (bisect-left a x identity))
@@ -122,7 +123,7 @@
 (defmethod cell-type :default [_]
   (s/keys :req-un [::cell ::transform ::x ::y]))
 (s/def ::device (s/multi-spec cell-type ::cell))
-(s/def ::schematic (s/map-of string? ::device))
+(s/def ::schematic (s/map-of keyword? ::device))
 
 ; https://clojure.atlassian.net/browse/CLJS-3207
 (s/assert ::x 0)
