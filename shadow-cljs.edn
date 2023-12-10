@@ -20,7 +20,8 @@
              :editor {:init-fn nyancad.mosaic.editor/init :depends-on #{:common}}
              :libman {:init-fn nyancad.mosaic.libman/init :depends-on #{:common}}}
    :devtools {:devtools-url "http://localhost:9630"}
-   :compiler-options {:output-feature-set :es2018}}
+   :compiler-options {:output-feature-set :es2018
+                      :source-map-inline true}}
   :extension
   {:target :node-library
    :output-to "out/main.js"

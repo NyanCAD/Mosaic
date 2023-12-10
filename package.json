@@ -5,6 +5,7 @@
   "engines": {
     "vscode": "^1.74.0"
   },
+  "repository": "https://github.com/NyanCAD/Mosaic",
   "activationEvents": [],
   "main": "./out/main.js",
   "contributes": {
