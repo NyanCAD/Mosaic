@@ -36,7 +36,7 @@
   Object
   (resolveCustomTextEditor [this ^js document ^js webviewpanel token]
     (set! (.. webviewpanel -webview -html) (get-html context document (.-webview webviewpanel)))
-    (let [editqueue (chan)]
+    (let [editqueue (chan 128)]
       (go-loop []
         (doseq [edit (<! editqueue)
                 :let [we (vscode/WorkspaceEdit.)]]
