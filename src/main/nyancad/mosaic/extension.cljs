@@ -36,6 +36,7 @@
   Object
   (resolveCustomTextEditor [this ^js document ^js webviewpanel token]
     (set! (.. webviewpanel -webview -html) (get-html context document (.-webview webviewpanel)))
+    (set! (.. webviewpanel -webview -options) #js{:enableScripts true})
     (let [editqueue (chan 128)]
       (go-loop []
         (doseq [edit (<! editqueue)
