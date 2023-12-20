@@ -25,4 +25,5 @@
   :extension
   {:target :node-library
    :output-to "out/main.js"
-   :exports-var nyancad.mosaic.extension/exports}}}
+   :exports-var nyancad.mosaic.extension/exports
+   :compiler-options {:optimizations :simple}}}}

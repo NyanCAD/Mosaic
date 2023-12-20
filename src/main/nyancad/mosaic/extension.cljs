@@ -37,21 +37,26 @@
   (resolveCustomTextEditor [this ^js document ^js webviewpanel token]
     (set! (.. webviewpanel -webview -html) (get-html context document (.-webview webviewpanel)))
     (set! (.. webviewpanel -webview -options) #js{:enableScripts true})
-    (let [editqueue (chan 128)]
+    (let [editqueue (chan 128)
+          check #(= (.-oldcontent ^js %1) (.getText document %2))]
       (go-loop []
         (doseq [edit (<! editqueue)
-                :let [we (vscode/WorkspaceEdit.)]]
-          (.replace we
-                    (.-uri document)
-                    (vscode/Range. (.positionAt document (.-offset edit))
-                                   (.positionAt document (+ (.-offset edit) (.-length edit))))
-                    (.-content edit))
-          (<p! (.. vscode -workspace (applyEdit we))))
+                :let [we (vscode/WorkspaceEdit.)
+                      vsrange (vscode/Range. (.positionAt document (.-offset edit))
+                                           (.positionAt document (+ (.-offset edit) (.-length edit))))]]
+          (if (check edit vsrange)
+            (do
+              (.replace we
+                        (.-uri document)
+                        vsrange
+                        (.-content edit))
+              (<p! (.. vscode -workspace (applyEdit we))))
+            (js/console.log "Rejected:" edit)))
         (recur))
       (.. webviewpanel -webview
           (onDidReceiveMessage
            (fn [msg]
-             (.log js/console msg)
+            ;;  (.log js/console msg)
              (go (>! editqueue (.-update msg)))))))
     (let [handler (fn [^js e]
                     (when (= (.. e -document -uri (toString)) (.. document -uri (toString)))

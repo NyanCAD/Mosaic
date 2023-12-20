@@ -20,6 +20,9 @@
                                          (clj->js path)
                                          (or (clj->js value) js/undefined)
                                          #js{})]
+                (doseq [up update]
+                  (set! (.-oldcontent ^js up) (subs @(.-document ja) (.-offset up) (+ (.-offset up) (.-length up)))))
+                (js/console.log update)
                 (.postMessage vscode #js{:type "update" :update update})
                 (swap! (.-document ja) jsonc/applyEdits update)))]
     (cond
@@ -52,12 +55,12 @@
   ([doc] (json-atom doc (atom {})))
   ([doc cache]
    (reset! cache (js->clj (jsonc/parse doc) :keywordize-keys true))
-   (let [ja (JsAtom. (atom doc) (atom 0) cache)]
+   (let [ja (JsAtom. (atom doc) (atom 1) cache)]
      (.addEventListener js/window "message"
        (fn [event]
          (when (and (= (.. event -data -type) "update")
                     (> (.. event -data -version) @(.-version ja)))
-           (.log js/console "reset!!!")
+           (.log js/console "reset!!!" (.. event -data -version) @(.-version ja))
            (swap! (.-document ja) jsonc/applyEdits (.. event -data -update))
            (reset! (.-version ja) (.. event -data -version))
            (reset! cache (js->clj (jsonc/parse @(.-document ja)) :keywordize-keys true)))))
