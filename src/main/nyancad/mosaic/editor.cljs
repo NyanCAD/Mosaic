@@ -1101,7 +1101,7 @@
                "npn" (rc/inline "icons/npn.svg")
                "pnp" (rc/inline "icons/pnp.svg")
                "")]
-    [:span {:dangerouslySetInnerHTML {:__html icon}}]))
+    [:span {:dangerouslySetInnerHTML (r/unsafe-html icon)}]))
 
 (defn variant-tray [& variants]
   (let [active (r/atom 0)
