@@ -25,6 +25,7 @@ jobs:
       - name: build js
         run: |
           npm install
+          pip install -U marimo
           npx shadow-cljs release frontend
 
       - name: Deploy to Github pages 🚀
