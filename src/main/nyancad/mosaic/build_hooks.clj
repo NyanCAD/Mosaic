@@ -10,12 +10,12 @@
         mode (:shadow.build/mode build-state)]
     (println (str "[" build-id "] Running marimo export..."))
 
-    (let [result (shell/sh "marimo" "export" "html-wasm" "src/notebook.py"
+    (shell/sh "rm" "-rf" "public/notebook")
+    (let [result (shell/sh "marimo" "export" "html-wasm" "src/marimo/notebook.py"
                            "-o" "public/notebook/index.html"
                            "--mode" "edit"
                            "--show-save"
-                           "--extra-script" "../js/common.js"
-                           "--extra-script" "../js/filestore.js")]
+                           "--html-head" "../../src/marimo/head.html")]
       (if (= 0 (:exit result))
         (println (str "[" build-id "] Marimo export completed successfully"))
         (do
