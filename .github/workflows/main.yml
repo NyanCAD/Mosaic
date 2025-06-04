@@ -29,28 +29,8 @@ jobs:
           npx shadow-cljs release frontend
 
       - name: Deploy to Github pages 🚀
-        uses: JamesIves/github-pages-deploy-action@v4.3.3
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages
           folder: public
           target-folder: app
-          
-      - name: Deploy JS to Pyttoresque 🚀
-        uses: JamesIves/github-pages-deploy-action@v4.3.3
-        with:
-          token: ${{ secrets.PAT }}
-          repository-name: NyanCAD/Pyttoresque
-          branch: main
-          folder: public/js
-          target-folder: pyttoresque/app/static
-          clean: false
-
-      - name: Deploy CSS to Pyttoresque 🚀
-        uses: JamesIves/github-pages-deploy-action@v4.3.3
-        with:
-          token: ${{ secrets.PAT }}
-          repository-name: NyanCAD/Pyttoresque
-          branch: main
-          folder: public/css
-          target-folder: pyttoresque/app/static
-          clean: false
