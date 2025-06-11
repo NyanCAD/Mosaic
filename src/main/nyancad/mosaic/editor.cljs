@@ -1014,7 +1014,7 @@
 
 (defn notebook-url []
   (let [url-params (js/URLSearchParams. #js{:schem group})]
-    (str "/notebook/?" (.toString url-params))))
+    (str "notebook/?" (.toString url-params))))
 
 (defn menu-items []
   [:<>
