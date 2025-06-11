@@ -1012,6 +1012,10 @@
       (.. -searchParams (append "schem" group))
       (.. -searchParams (append "db" (or (and (seq sync) sync) dburl)))))
 
+(defn notebook-url []
+  (let [url-params (js/URLSearchParams. #js{:schem group})]
+    (str "/notebook/?" (.toString url-params))))
+
 (defn menu-items []
   [:<>
    [:div.primary
@@ -1064,7 +1068,7 @@
        [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
        [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])
    [:div.secondary
-    [:a {:href ".."
+    [:a {:href "library"
          :target "libman"
          :title "Open library manager"}
      [cm/library]]
@@ -1296,7 +1300,7 @@
       [tool-elements]]]
     [:details#mosaic_notebook
      [:summary "Notebook"]
-     [:iframe {:src "/notebook/"}]]]])
+     [:iframe {:src (notebook-url)}]]]])
 
 (def shortcuts {#{:c} #(add-device "capacitor" (::mouse @ui))
                 #{:r} #(add-device "resistor" (::mouse @ui))

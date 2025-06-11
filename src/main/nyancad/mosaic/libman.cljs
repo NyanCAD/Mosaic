@@ -115,7 +115,7 @@
 
 (defn edit-url [cell mod]
   (let [mname (str cell "$" mod)]
-    (doto (js/URL. "editor" js/window.location)
+    (doto (js/URL. ".." js/window.location)
       (.. -searchParams (append "schem" mname))
       (.. -searchParams (append "db" dbname))
       (.. -searchParams (append "sync" sync)))))
