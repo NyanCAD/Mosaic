@@ -231,6 +231,7 @@ input, textarea {
     display: block;
     padding: 10px 15px;
     margin-top: 5px;
+    cursor: pointer;
 }
 #mosaic_libman input[type=radio]:checked + label {
     background-color: rgba(0, 0, 0, 0.041);
@@ -262,9 +263,11 @@ input, textarea {
 #mosaic_libman .cellsel details summary {
     padding: 10px 15px;
     border-radius: 7px;
+    cursor: pointer;
 }
 #mosaic_libman .dbprops details summary {
     padding:1em;
+    cursor: pointer;
 }
 #mosaic_libman .dbprops details form {
     margin: 0 1em 1em 1em;
@@ -388,11 +391,17 @@ input, textarea {
   justify-content: flex-end;
 }
 
+#mosaic_app .content-wrapper {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
 #mosaic_app .content {
     position: relative;
-    flex-grow: 1;
-    flex-shrink: 5;
-    overflow:hidden;
+    flex: 1;
+    overflow: hidden;
+    z-index: 1; /* Lower z-index than notebook */
 }
 
 #mosaic_app .devicetray {
@@ -454,6 +463,7 @@ input, textarea {
   color: #222222A5;
   border: none;
   box-sizing: content-box;
+  cursor: pointer;
 }
 
 #mosaic_app .chrome svg {
@@ -503,6 +513,7 @@ input, textarea {
 }
 #mosaic_app .devicetray summary {
     list-style-type: none;
+    cursor: pointer;
 }
 #mosaic_app .devicetray summary::after {
     content: "";
@@ -799,4 +810,87 @@ rect.select {
 }
 .eyesore circle.wire {
   fill: #39bfff;
+}
+
+/* Notebook sidebar styles */
+#mosaic_notebook {
+    display: flex;
+    flex-direction: column;
+    background: white;
+    border-left: 1px solid #ddd;
+    transition: width 0.3s ease;
+    min-height: 100%;
+    position: relative;
+    z-index: 2; /* Higher z-index than content */
+}
+
+#mosaic_notebook[open] {
+    width: 50%;
+}
+
+#mosaic_notebook:not([open]) {
+    width: 0;
+}
+
+#mosaic_notebook summary {
+    cursor: pointer;
+    background-color: white;
+    box-shadow: 0px 0px 8px #0000001A;
+    font-weight: 500;
+    color: #222222A5;
+    user-select: none;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+}
+
+/* Collapsed state - vertical text */
+#mosaic_notebook:not([open]) summary {
+    writing-mode: vertical-lr;
+    text-orientation: mixed;
+    padding: 1em 0.5em;
+    margin-left: -2em;
+    border-bottom-left-radius: 5px;
+}
+
+/* Expanded state - horizontal text */
+#mosaic_notebook[open] summary {
+    writing-mode: horizontal-tb;
+    padding: 0.5em 1em;
+}
+
+#mosaic_notebook summary:hover {
+    background-color: lightgray;
+}
+
+#mosaic_notebook summary::marker {
+    content: none; /* Remove default triangle */
+}
+
+#mosaic_notebook summary::after {
+    content: "◀";
+    font-size: 14px;
+    transition: transform 0.2s ease;
+    margin-left: 8px;
+}
+
+#mosaic_notebook[open] summary::after {
+    transform: rotate(180deg);
+}
+
+/* Collapsed state - position arrow */
+#mosaic_notebook:not([open]) summary::after {
+    writing-mode: horizontal-tb;
+    margin-left: 0;
+    margin-top: 10px;
+}
+
+#mosaic_notebook iframe {
+    flex: 1;
+    border: none;
+    width: 100%;
+    height: 100%;
+    min-height: 0; /* Allow iframe to shrink */
 }

@@ -1064,24 +1064,13 @@
        [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
        [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])
    [:div.secondary
-    [:a {:href (simulator-url)
-         :target "simulator"
-         :title "Open simulator"}
-     [cm/simulate]]
-    [:a {:href js/window.notebookurl
-         :target "jupyter"
-         :title "Open JupyterLab"}
-     [cm/notebook]]
     [:a {:href ".."
          :target "libman"
          :title "Open library manager"}
      [cm/library]]
     [:a {:title "Save Snapshot"
          :on-click snapshot}
-     [cm/save]]
-    [:select {:on-change #(swap! ui assoc ::theme (.. % -target -value))}
-     [:option {:value "tetris"} "Tetris"]
-     [:option {:value "eyesore"} "Classic"]]]])
+     [cm/save]]]])
 
 
 (defn device-active [cell]
@@ -1271,39 +1260,43 @@
   [:div#mosaic_app {:class @theme}
    [:div.menu.chrome
     [menu-items]]
-   [:div.content
-    [:div.devicetray.chrome
-     [device-tray]]
-    (when-let [sel (seq @selected)]
-      [:div.sidebar
-       (doall (for [key sel]
-                ^{:key key} [deviceprops key]))])
-    [:svg#mosaic_canvas {:xmlns "http://www.w3.org/2000/svg"
-                         :height "100%"
-                         :width "100%"
-                         :class [@theme @tool] ; for export
-                         :view-box @zoom
-                         :on-wheel scroll-zoom
-                         :on-mouse-down drag-start-background
-                         :on-mouse-up drag-end
-                         :on-mouse-move drag
-                         :on-context-menu context-menu}
-     [:defs
-      [:pattern {:id "gridfill",
-                 :pattern-units "userSpaceOnUse"
-                 :width grid-size
-                 :height grid-size}
-       [:line.grid {:x1 0 :y1 0 :x2 grid-size :y2 0}]
-       [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]]
-     [:rect {:fill "url(#gridfill)"
-             :on-mouse-up drag-end
-             :x (* -500 grid-size)
-             :y (* -500 grid-size)
-             :width (* 1000 grid-size)
-             :height (* 1000 grid-size)}]
-     [schematic-elements @schematic]
-     [schematic-dots]
-     [tool-elements]]]])
+   [:div.content-wrapper
+    [:div.content
+     [:div.devicetray.chrome
+      [device-tray]]
+     (when-let [sel (seq @selected)]
+       [:div.sidebar
+        (doall (for [key sel]
+                 ^{:key key} [deviceprops key]))])
+     [:svg#mosaic_canvas {:xmlns "http://www.w3.org/2000/svg"
+                          :height "100%"
+                          :width "100%"
+                          :class [@theme @tool] ; for export
+                          :view-box @zoom
+                          :on-wheel scroll-zoom
+                          :on-mouse-down drag-start-background
+                          :on-mouse-up drag-end
+                          :on-mouse-move drag
+                          :on-context-menu context-menu}
+      [:defs
+       [:pattern {:id "gridfill",
+                  :pattern-units "userSpaceOnUse"
+                  :width grid-size
+                  :height grid-size}
+        [:line.grid {:x1 0 :y1 0 :x2 grid-size :y2 0}]
+        [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]]
+      [:rect {:fill "url(#gridfill)"
+              :on-mouse-up drag-end
+              :x (* -500 grid-size)
+              :y (* -500 grid-size)
+              :width (* 1000 grid-size)
+              :height (* 1000 grid-size)}]
+      [schematic-elements @schematic]
+      [schematic-dots]
+      [tool-elements]]]
+    [:details#mosaic_notebook
+     [:summary "Notebook"]
+     [:iframe {:src "/notebook/"}]]]])
 
 (def shortcuts {#{:c} #(add-device "capacitor" (::mouse @ui))
                 #{:r} #(add-device "resistor" (::mouse @ui))
