@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nyancad"
+version = "0.1.0"
+description = "NyanCAD Python library for schematic editor with anywidget integration"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MPL-2.0"}
+authors = [
+    {name = "Pepijn de Vos", email = "me@pepijndevos.nl"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "anywidget>=0.9.0",
+    "traitlets",
+]
+
+[project.urls]
+Homepage = "https://github.com/NyanCAD/Mosaic"
+Repository = "https://github.com/NyanCAD/Mosaic"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["nyancad*"]

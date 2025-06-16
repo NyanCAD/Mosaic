@@ -1,24 +1,37 @@
 import marimo
 
-__generated_with = "0.9.14"
-app = marimo.App(width="medium")
+__generated_with = "0.13.15"
+app = marimo.App()
 
 
 @app.cell
-def __():
+def _():
     import marimo as mo
-    return mo,
+    return (mo,)
 
 
 @app.cell
-def __(mo):
-    mo.md("# Test Notebook")
-    return
+async def _():
+    import micropip
+
+    # Install the nyancad package from local wheel
+    await micropip.install("http://localhost:8080/wheels/nyancad-0.1.0-py3-none-any.whl")
+
+    from nyancad import SchematicReader
+    return (SchematicReader,)
 
 
 @app.cell
-def __(mo):
-    mo.md("This is a simple test notebook to verify the marimo export functionality.")
+def _(SchematicReader, mo):
+    # Create the schematic reader widget
+    reader = mo.ui.anywidget(SchematicReader())
+    reader
+    return (reader,)
+
+
+@app.cell
+def _(reader):
+    reader.schematic_data
     return
 
 
