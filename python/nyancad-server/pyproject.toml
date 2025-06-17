@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nyancad-server"
+version = "0.1.0"
+description = "NyanCAD server package with marimo integration"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MPL-2.0"}
+authors = [
+    {name = "Pepijn de Vos", email = "me@pepijndevos.nl"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "marimo>=0.13.0",
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "nyancad>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/NyanCAD/Mosaic"
+Repository = "https://github.com/NyanCAD/Mosaic"
+
+[project.scripts]
+nyancad-server = "nyancad_server.server:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["nyancad_server*"]
+
+[tool.setuptools.package-data]
+nyancad_server = ["public/**/*", "notebook.py"]

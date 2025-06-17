@@ -1,0 +1,2 @@
+recursive-include nyancad_server/public *
+include nyancad_server/notebook.py
