@@ -19,7 +19,8 @@ from marimo._server.model import SessionMode
 from marimo._server.registry import LIFESPAN_REGISTRY
 from marimo._server.sessions import SessionManager
 from marimo._server.tokens import AuthToken
-from marimo._server.utils import initialize_fd_limit
+from marimo._server.utils import initialize_asyncio, initialize_fd_limit
+from marimo._server.uvicorn_utils import initialize_signals
 from marimo._utils.lifespans import Lifespans
 from marimo._utils.marimo_path import MarimoPath
 
@@ -119,12 +120,11 @@ def main():
     args = parser.parse_args()
     
     try:
-        # Initialize marimo components
+        # Initialize marimo components (matching start.py order)
         initialize_fd_limit(limit=4096)
+        initialize_signals()
         
         app = create_app()
-        
-        # Let uvicorn handle everything (avoids process cleanup issues)
         
         print(f"Starting NyanCAD server on http://{args.host}:{args.port}")
         print(f"  - Static files served at: http://{args.host}:{args.port}/")
@@ -151,11 +151,9 @@ def main():
         # Set server on app state (required by marimo signal handler)
         app.state.server = server
         
-        try:
-            server.run()
-        except KeyboardInterrupt:
-            # Let marimo's signal handler do the cleanup, then exit clean
-            sys.exit(0)
+        # Initialize asyncio last, then start server (marimo pattern)
+        initialize_asyncio()
+        server.run()
         
     except Exception as e:
         print(f"Error starting server: {e}", file=sys.stderr)
