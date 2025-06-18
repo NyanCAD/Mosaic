@@ -25,7 +25,7 @@ jobs:
       - name: build js
         run: |
           npm install
-          pip install -i https://test.pypi.org/simple/ -U marimo
+          pip install -U marimo
           npx shadow-cljs release frontend
 
       - name: Deploy to Github pages 🚀
