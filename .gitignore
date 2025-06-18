@@ -124,6 +124,8 @@ dist
 # shadow-cljs
 .shadow-cljs
 public/js
+public/notebook
+public/wheels
 
 .calva
 .clj-kondo

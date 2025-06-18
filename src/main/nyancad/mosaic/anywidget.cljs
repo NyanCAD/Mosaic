@@ -19,9 +19,10 @@
 ;; Individual pouch-atoms using cursors into the main cache
 (defonce schematic-atom (pouch-atom db group (r/cursor schematic-cache [group])))
 (defonce model-atom (pouch-atom db "models" (r/cursor schematic-cache ["models"])))
+(defonce simulations (pouch-atom db (str group "$result") (r/atom (sorted-map))))
 
 ;; Watch changes for the initial groups - returns atom with group->cache mapping
-(defonce schematic-groups (watch-changes db schematic-atom model-atom))
+(defonce schematic-groups (watch-changes db schematic-atom model-atom simulations))
 
 (defn watch-subcircuits []
   (go-loop [devs (seq (vals @schematic-atom))]
@@ -61,4 +62,13 @@
                  (watch-subcircuits)
                  (.set model "schematic_data" (clj->js new-state))
                  (.save_changes model)))
+
+    ;; Watch for simulation data changes from Python side
+    (.on model "change:simulation_data"
+         (fn []
+           (let [simulation-data (js->clj (.get model "simulation_data") :keywordize-keys true)
+                 timestamp (.toISOString (js/Date.))
+                 key (str group "$result:" timestamp)]
+             (println "Received simulation data from Python, storing with key:" key)
+             (swap! simulations assoc key simulation-data))))
     nil))

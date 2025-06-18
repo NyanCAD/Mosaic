@@ -14,64 +14,61 @@ pip install nyancad
 
 ```python
 import marimo as mo
-from nyancad import SchematicReader
+from nyancad import SchematicBridge
 
-# Create a schematic reader widget
-reader = SchematicReader()
+# Create a schematic bridge widget
+bridge = SchematicBridge()
 
 # Display the widget (shows connection status)
-reader
+bridge
 
 # Access live schematic data
-print(f"Components: {reader.component_count}")
-print(f"Resistors: {len(reader.get_components_by_type('resistor'))}")
+print(bridge.schematic_data)
 
-# Get all components
-for component in reader.components:
-    print(f"{component['name']}: {component['type']} at ({component['position']['x']}, {component['position']['y']})")
+# Send simulation data back to the editor
+bridge.simulation_data = {
+    "results": [1.2, 3.4, 5.6],
+    "timestamp": "2024-01-01T00:00:00Z"
+}
 ```
 
 ### Integration with Marimo
 
-The SchematicReader widget automatically connects to the NyanCAD editor running in the same marimo session. Any changes made in the schematic editor will be immediately reflected in the Python widget.
+The SchematicBridge widget automatically connects to the NyanCAD editor running in the same marimo session. Any changes made in the schematic editor will be immediately reflected in the Python widget.
 
 ```python
 # In a marimo cell
-reader = SchematicReader()
-reader  # This will show the connection status
+bridge = SchematicBridge()
+bridge  # This will show the connection status
 
 # In another marimo cell - access the live data
 mo.md(f"""
 ## Schematic Analysis
-- **Total Components**: {reader.component_count}
-- **Resistors**: {len(reader.get_components_by_type('resistor'))}
-- **Capacitors**: {len(reader.get_components_by_type('capacitor'))}
+Raw schematic data: {len(bridge.schematic_data)} items
 """)
+
+# View the actual schematic data structure
+bridge.schematic_data
 ```
 
 ## Features
 
 - **Live Sync**: Real-time synchronization with NyanCAD schematic editor via PouchDB
+- **Bidirectional Communication**: Send simulation data back to the editor from Python
 - **Zero Configuration**: Automatically detects and connects to the active schematic
-- **Component Analysis**: Easy access to component data, positions, and properties
-- **Type Filtering**: Filter components by type (resistor, capacitor, etc.)
+- **Raw Data Access**: Direct access to the complete schematic data structure
 - **Marimo Integration**: Seamless integration with marimo notebooks
 
 ## API Reference
 
-### SchematicReader
+### SchematicBridge
 
-The main widget class that provides access to live schematic data.
+The main widget class that provides bidirectional communication with the Mosaic editor.
 
 #### Properties
 
-- `schematic_data` (dict): Raw schematic data from the Mosaic editor
-- `components` (list): Processed list of all components with metadata
-- `component_count` (int): Total number of components in the schematic
-
-#### Methods
-
-- `get_components_by_type(component_type)`: Get all components of a specific type
+- `schematic_data` (dict): Raw schematic data from the Mosaic editor, automatically synced
+- `simulation_data` (dict): Simulation data to send to the Mosaic editor. Setting this will store the data with a timestamp in the editor's database
 
 ## Development
 

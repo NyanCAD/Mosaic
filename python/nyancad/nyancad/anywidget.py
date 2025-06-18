@@ -8,15 +8,18 @@ import anywidget
 import traitlets
 
 
-class SchematicReader(anywidget.AnyWidget):
+class SchematicBridge(anywidget.AnyWidget):
     """
-    An anywidget that provides live access to schematic data from the Mosaic editor.
+    An anywidget that provides live bidirectional communication with the Mosaic editor.
     
     The widget displays a simple status indicator and automatically syncs schematic
-    data from the Mosaic editor's PouchDB storage into the Python model.
+    data from the Mosaic editor's PouchDB storage into the Python model, while also
+    enabling Python to send simulation data back to the editor.
     
     Attributes:
         schematic_data (dict): Live schematic data from the Mosaic editor
+        simulation_data (dict): Simulation data to send to the Mosaic editor.
+                               Setting this will store the data with a timestamp in the editor's database.
     """
     
     # ESM shim that dynamically imports the Shadow CLJS compiled anywidget module
@@ -29,6 +32,9 @@ export default { render };
     # Schematic data that gets synced from the ClojureScript side
     schematic_data = traitlets.Dict().tag(sync=True)
     
+    # Simulation data that gets synced to the ClojureScript side
+    simulation_data = traitlets.Dict().tag(sync=True)
+    
     def __init__(self, **kwargs):
-        """Initialize the SchematicReader widget."""
+        """Initialize the SchematicBridge widget."""
         super().__init__(**kwargs)
