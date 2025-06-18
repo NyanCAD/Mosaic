@@ -4,17 +4,42 @@
 
 (ns nyancad.mosaic.anywidget
   (:require [reagent.core :as r]
-            [nyancad.hipflask :refer [pouch-atom pouchdb watch-changes sep]]))
+            [cljs.core.async :refer [go-loop <!]]
+            [nyancad.hipflask :refer [pouch-atom pouchdb watch-changes add-watch-group done?]]))
 
 ;; Extract parameters like editor.cljs (but for schematic, not notebook)
 (def params (js/URLSearchParams. js/window.location.search))
 (def group (or (.get params "schem") "myschem"))
 (def dbname (or (.get params "db") "schematics"))
 
-;; Create database and pouch-atom for schematic access
+;; Create database and top-level cache for all schematic data
 (defonce db (pouchdb dbname))
-(defonce schematic-atom (pouch-atom db group (r/atom {})))
-(defonce schematic-watcher (watch-changes db schematic-atom))
+(defonce schematic-cache (r/atom {group {}, "models" {}})) ; Top-level cache containing all schematics
+
+;; Individual pouch-atoms using cursors into the main cache
+(defonce schematic-atom (pouch-atom db group (r/cursor schematic-cache [group])))
+(defonce model-atom (pouch-atom db "models" (r/cursor schematic-cache ["models"])))
+
+;; Watch changes for the initial groups - returns atom with group->cache mapping
+(defonce schematic-groups (watch-changes db schematic-atom model-atom))
+
+(defn watch-subcircuits []
+  (go-loop [devs (seq (vals @schematic-atom))]
+    (when (seq devs)
+      (let [dev (first devs)
+            cell (:cell dev)
+            model (get-in dev [:props :model])
+            schem (str cell "$" model)
+            typ (get-in @model-atom [(str "models:" cell) :models (keyword model) :type])]
+        (println dev)
+        (println "cell" cell "model" model "schem" schem  "typ" typ)
+        (if (and model (not (contains? @schematic-groups schem)) (= typ "schematic"))
+          (let [_ (swap! schematic-cache assoc schem {})
+                subschem (pouch-atom db schem (r/cursor schematic-cache [schem]))]
+            (add-watch-group schematic-groups subschem)
+            (<! (done? subschem))
+            (recur (concat (rest devs) (seq (vals @subschem)))))
+          (recur (rest devs)))))))
 
 (defn render
   "Render placeholder icon and set up schematic data sync"
@@ -26,13 +51,14 @@
     (set! (.-innerHTML el) "Connected to editor.")
 
     ;; Set initial schematic data on model
-    (.set model "schematic_data" (clj->js @schematic-atom))
+    (.set model "schematic_data" (clj->js @schematic-cache))
     (.save_changes model)
 
     ;; Watch for changes to schematic atom and update model
-    (add-watch schematic-atom ::anywidget-sync
+    (add-watch schematic-cache ::anywidget-sync
                (fn [key atom old-state new-state]
                  (println "Schematic updated, syncing to anywidget model")
+                 (watch-subcircuits)
                  (.set model "schematic_data" (clj->js new-state))
                  (.save_changes model)))
     nil))
