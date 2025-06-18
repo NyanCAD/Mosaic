@@ -28,9 +28,16 @@ jobs:
           pip install -U marimo
           npx shadow-cljs release frontend
 
-      - name: Deploy to Github pages 🚀
-        uses: JamesIves/github-pages-deploy-action@v4
+      - name: Setup SSH key
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          branch: gh-pages
-          folder: public
-          target-folder: app
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add SSH host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H nyancad.com >> ~/.ssh/known_hosts
+
+      - name: Deploy to server via rsync 🚀
+        run: |
+          rsync -avz --delete public/ deploy@nyancad.com:/var/www/nyancad.com/
