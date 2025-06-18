@@ -40,4 +40,4 @@ jobs:
 
       - name: Deploy to server via rsync 🚀
         run: |
-          rsync -avz --delete public/ deploy@nyancad.com:/var/www/nyancad.com/
+          rsync -avz --delete --omit-dir-times public/ deploy@nyancad.com:/var/www/nyancad.com/
