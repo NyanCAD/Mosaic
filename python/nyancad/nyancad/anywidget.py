@@ -6,6 +6,7 @@ Provides a live bridge to schematic data from the Mosaic editor via PouchDB.
 
 import anywidget
 import traitlets
+import marimo as mo
 
 
 class SchematicBridge(anywidget.AnyWidget):
@@ -34,7 +35,16 @@ export default { render };
     
     # Simulation data that gets synced to the ClojureScript side
     simulation_data = traitlets.Dict().tag(sync=True)
+
+    @property
+    def name(self):
+        return mo.query_params()["schem"]
+
+def schematic_bridge():
+    """
+    Create a SchematicBridge widget for use in Marimo notebooks.
     
-    def __init__(self, **kwargs):
-        """Initialize the SchematicBridge widget."""
-        super().__init__(**kwargs)
+    Returns:
+        SchematicBridge: An instance of the SchematicBridge widget.
+    """
+    return mo.ui.anywidget(SchematicBridge())

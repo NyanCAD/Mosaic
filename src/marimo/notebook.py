@@ -7,7 +7,7 @@ app = marimo.App()
 @app.cell
 def _():
     import marimo as mo
-    return (mo,)
+    return
 
 
 @app.cell
@@ -15,23 +15,32 @@ async def _():
     import micropip
 
     # Install the nyancad package from local wheel
-    await micropip.install("http://localhost:8080/wheels/nyancad-0.1.0-py3-none-any.whl")
+    await micropip.install(
+        "http://localhost:8080/wheels/nyancad-0.1.0-py3-none-any.whl"
+    )
 
-    from nyancad import SchematicBridge
-    return (SchematicBridge,)
+    from nyancad.anywidget import schematic_bridge
+    from nyancad.netlist import spice_netlist
+    return schematic_bridge, spice_netlist
 
 
 @app.cell
-def _(SchematicBridge, mo):
-    # Create the schematic bridge widget
-    reader = mo.ui.anywidget(SchematicBridge())
+def _(schematic_bridge):
+    # Create the schematic reader widget
+    reader = schematic_bridge()
     reader
     return (reader,)
 
 
 @app.cell
-def _(reader):
-    reader.schematic_data
+def _(reader, spice_netlist):
+    spice = spice_netlist(reader.name, reader.schematic_data)
+    return (spice,)
+
+
+@app.cell
+def _(reader, spice):
+    reader.simulation_data = {"spice": spice}
     return
 
 
