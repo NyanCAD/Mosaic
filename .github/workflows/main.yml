@@ -85,11 +85,6 @@ jobs:
     needs:
     - build
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/nyancad
-    permissions:
-      id-token: write  # IMPORTANT: mandatory for trusted publishing
     steps:
       - name: Download nyancad distributions
         uses: actions/download-artifact@v4
@@ -98,6 +93,8 @@ jobs:
           path: dist/
       - name: Publish nyancad distribution 📦 to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
 
   publish-nyancad-server-to-pypi:
     name: Publish nyancad-server 🐍 distribution 📦 to PyPI
@@ -105,11 +102,6 @@ jobs:
     needs:
     - build
     runs-on: ubuntu-latest
-    environment:
-      name: pypi-server
-      url: https://pypi.org/p/nyancad-server
-    permissions:
-      id-token: write  # IMPORTANT: mandatory for trusted publishing
     steps:
       - name: Download nyancad-server distributions
         uses: actions/download-artifact@v4
@@ -118,3 +110,5 @@ jobs:
           path: dist/
       - name: Publish nyancad-server distribution 📦 to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
