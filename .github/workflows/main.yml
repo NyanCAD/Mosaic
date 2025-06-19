@@ -7,10 +7,12 @@ name: CI
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   workflow_dispatch:
 
 jobs:
   build:
+    name: Build distribution 📦
     runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
@@ -22,11 +24,46 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: build js
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build marimo
+
+      - name: Build JS (required for Python packages)
         run: |
           npm install
-          pip install -U marimo
           npx shadow-cljs release frontend
+
+      - name: Build Python packages
+        run: |
+          mkdir -p public/wheels
+          
+          # Build nyancad package
+          cd python/nyancad
+          python -m build --outdir ../../public/wheels
+          cd ../..
+          
+          # Build nyancad-server package
+          cd python/nyancad-server
+          python -m build --outdir ../../public/wheels
+          cd ../..
+
+      - name: Store nyancad distribution packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nyancad-distributions
+          path: public/wheels/nyancad-*
+
+      - name: Store nyancad-server distribution packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nyancad-server-distributions
+          path: public/wheels/nyancad_server-*
 
       - name: Setup SSH key
         uses: webfactory/ssh-agent@v0.9.0
@@ -41,3 +78,43 @@ jobs:
       - name: Deploy to server via rsync 🚀
         run: |
           rsync -avz --delete public/* deploy@nyancad.com:/var/www/nyancad.com/
+
+  publish-nyancad-to-pypi:
+    name: Publish nyancad 🐍 distribution 📦 to PyPI
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+    - build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/nyancad
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+    steps:
+      - name: Download nyancad distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: nyancad-distributions
+          path: dist/
+      - name: Publish nyancad distribution 📦 to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-nyancad-server-to-pypi:
+    name: Publish nyancad-server 🐍 distribution 📦 to PyPI
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+    - build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi-server
+      url: https://pypi.org/p/nyancad-server
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+    steps:
+      - name: Download nyancad-server distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: nyancad-server-distributions
+          path: dist/
+      - name: Publish nyancad-server distribution 📦 to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
