@@ -20,11 +20,10 @@
 
 
 (def params (js/URLSearchParams. js/window.location.search))
-(def group (or (.get params "schem") "myschem"))
-(def dbname (or (.get params "db") "schematics"))
-(def dburl (if js/window.dburl (.-href (js/URL. dbname js/window.dburl)) dbname))
-(def sync (or (.get params "sync") nil))
-(defonce db (pouchdb dburl))
+(def group (or (.get params "schem") (cm/random-name)))
+(def dbname "schematics")
+(def sync nil)
+(defonce db (pouchdb dbname))
 (defonce schematic (pouch-atom db group (r/atom {})))
 (set-validator! (.-cache schematic)
                 #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
@@ -375,8 +374,8 @@
     (draw-pattern (+ 2 (max width height)) pattern
                   port k v)))
 
-(defn ckt-url [cell model]
-  (str "?" (.toString (js/URLSearchParams. #js{:schem (str cell "$" model) :db dbname :sync sync}))))
+(defn ckt-url [model]
+  (str "?" (.toString (js/URLSearchParams. #js{:schem model}))))
 
 (defn circuit-sym [k v]
   (let [cell (:cell v)
@@ -387,7 +386,7 @@
      (if sym
        [:image {:href sym
                 :on-mouse-down #(.preventDefault %) ; prevent dragging the image
-                :on-double-click #(.assign js/window.location (ckt-url cell model))}]
+                :on-double-click #(.assign js/window.location (ckt-url model))}]
        [:<>
         [lines (for [x (range 1.5 (+ 1.5 width))] [[x 0.5] [x 1.0]])]
         [lines (for [y (range 1.5 (+ 1.5 height))] [[0.5 y] [1.0 y]])]
@@ -944,11 +943,11 @@
         name (r/cursor schematic [key :name])]
     (fn [key]
       [:<>
-       [:h1 @cell ": " (or @name key)]
+       [:h1 (get-in @modeldb [@cell :name]) ": " (or @name key)]
        [:div.properties
         (when-not (contains? models @cell)
           [:<>
-           [:a {:href (ckt-url @cell (:model @props))} "Edit"]
+           [:a {:href (ckt-url (:model @props))} "Edit"]
            [:label {:for "cell" :title "cell name"} "cell"]
            [:select {:id "cell"
                      :type "text"
@@ -956,7 +955,7 @@
                      :on-change #(reset! cell (.. % -target -value))}
             [:option]
             (for [[k m] @modeldb]
-              [:option {:key k} (:name m)])]])
+              [:option {:key k :value k} (:name m)])]])
         [:label {:for "name" :title "Instance name"} "name"]
         [:input {:id "name"
                  :type "text"
@@ -968,8 +967,8 @@
                   :default-value (:model @props)
                   :on-change #(swap! props assoc :model (.. % -target -value))}
          [:option {:value ""} "Ideal"]
-         (for [m (keys (get-in  @modeldb [(str "models" sep @cell) :models]))]
-           [:option {:key m} m])]
+         (for [[k v] (get-in  @modeldb [@cell :models])]
+           [:option {:key k :value k} (:name v)])]
         (doall (for [[prop meta] (::props (get models @cell))]
                  [:<> {:key prop}
                   [:label {:for prop :title (:tooltip meta)} prop]
@@ -1007,14 +1006,13 @@
             ::dragging ::device
             ::selected (set (keys devmap)))))
 
-(defn simulator-url []
-    (doto (js/URL. js/window.simulatorurl js/window.location)
-      (.. -searchParams (append "schem" group))
-      (.. -searchParams (append "db" (or (and (seq sync) sync) dburl)))))
-
 (defn notebook-url []
   (let [url-params (js/URLSearchParams. #js{:schem group})]
     (str "notebook/?" (.toString url-params))))
+
+(def cell-index (r/track #(cm/build-cell-index @modeldb)))
+
+
 
 (defn menu-items []
   [:<>
@@ -1064,9 +1062,26 @@
     [:a {:title "redo [ctrl+shift+z]"
          :on-click redo-schematic}
      [cm/redoi]]]
-   (if @syncactive
-       [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
-       [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])
+   [:div.status
+    [:select {:id "cell" ;; TODO change with text input with autocomplete
+              :type "text"
+              :value (get @cell-index (keyword group) "models:top")
+              :on-change (fn [e]
+                           (let [oldcell (get @cell-index (keyword group) "models:top")
+                                 newcell (.. e -target -value)
+                                 model (get-in @modeldb [oldcell :models (keyword group)])]
+                             (swap! modeldb update-in [oldcell :models] dissoc (keyword group))
+                             (swap! modeldb update-in [newcell :models] assoc (keyword group) model)))}
+     [:option {:value "models:top"} "top"]
+     (for [[k m] @modeldb
+           :when (not= k "models:top")]
+       [:option {:key k :value k} (:name m)])]
+    "/"
+    (cm/renamable (r/cursor modeldb [(get @cell-index (keyword group) "models:top") :models (keyword group) :name]) "new schematic")
+    (if @syncactive
+      [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
+      [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
+
    [:div.secondary
     [:a {:href "library"
          :target "libman"
@@ -1346,6 +1361,7 @@
              (.getElementById js/document "mosaic_editor")))
 
 (defn ^:export init []
+  (js/history.replaceState nil nil (str js/window.location.pathname "?schem=" group))
   (when (seq sync) ; pass nil to disable synchronization
     (let [es (.sync db sync #js{:live true :retry true})]
       (.on es "paused" #(reset! syncactive false))

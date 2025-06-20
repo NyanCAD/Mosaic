@@ -113,19 +113,16 @@
      [categories [] (category-trie @modeldb)]
      [:div.empty "There aren't any interfaces yet. Open a different workspace or click \"Add interface\" to get started."])])
 
-(defn edit-url [cell mod]
-  (let [mname (str cell "$" mod)]
+(defn edit-url [mod]
     (doto (js/URL. ".." js/window.location)
-      (.. -searchParams (append "schem" mname))
-      (.. -searchParams (append "db" dbname))
-      (.. -searchParams (append "sync" sync)))))
+      (.. -searchParams (append "schem" mod))))
 
 (defn schem-context-menu [e db cellname key]
   (.preventDefault e)
   (reset! context-content
           {:x (.-clientX e), :y (.-clientY e)
            :body [:ul
-                  [:li {:on-click #(js/window.open (edit-url (second (.split cellname ":")) (name key)), cellname)} "edit"]
+                  [:li {:on-click #(js/window.open (edit-url (name key)), cellname)} "edit"]
                   [:li {:on-click #(swap! db update-in [cellname :models] dissoc key)} "delete"]]}))
 
 (defn schematic-selector [db]
@@ -145,7 +142,7 @@
                   key key]))
         (fn [key]
           (when (= (get-in cell [:models key :type]) "schematic")
-            #(js/window.open (edit-url (second (.split cellname ":")) (name key)), cellname)))
+            #(js/window.open (edit-url (name key)), cellname)))
         (fn [key]
           #(schem-context-menu % db cellname key))]
        [:div.empty "There are no implementations to show. Select an interface to edit its schematics and SPICE models."])]))
@@ -259,7 +256,7 @@
             #(swap! %1 assoc :component %2)]])]
        (when (and @selcell @selmod)
          [:<>
-          [:a {:href (edit-url (second (.split @selcell ":")) (name @selmod))
+          [:a {:href (edit-url (name @selmod))
                :target @selcell} "Edit"]]))
      (if (and @selcell @selmod)
        [:<>
@@ -273,9 +270,9 @@
   (let [add-cell #(prompt "Enter the name of the new interface"
                           (fn [name] (swap! modeldb assoc (str "models" sep name) {:name name})))
         add-schem #(prompt "Enter the name of the new schematic"
-                          (fn [name] (swap! modeldb assoc-in [@selcell :models (keyword name)] {:name name, :type "schematic"})))
+                          (fn [name] (swap! modeldb assoc-in [@selcell :models (keyword (cm/random-name))] {:name name, :type "schematic"})))
         add-spice #(prompt "Enter the name of the new SPICE model"
-                           (fn [name] (swap! modeldb assoc-in [@selcell :models (keyword name)] {:name name :type "spice"})))]
+                           (fn [name] (swap! modeldb assoc-in [@selcell :models (keyword (cm/random-name))] {:name name :type "spice"})))]
     [:<>
      [:div.schsel
       [:div.addbuttons

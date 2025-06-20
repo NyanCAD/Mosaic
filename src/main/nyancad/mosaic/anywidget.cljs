@@ -51,8 +51,9 @@
     ;; Show placeholder icon
     (set! (.-innerHTML el) "Connected to editor.")
 
-    ;; Set initial schematic data on model
+    ;; Set initial schematic data and name on model
     (.set model "schematic_data" (clj->js @schematic-cache))
+    (.set model "name" group)
     (.save_changes model)
 
     ;; Watch for changes to schematic atom and update model

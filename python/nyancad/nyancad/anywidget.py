@@ -35,10 +35,9 @@ export default { render };
     
     # Simulation data that gets synced to the ClojureScript side
     simulation_data = traitlets.Dict().tag(sync=True)
-
-    @property
-    def name(self):
-        return mo.query_params()["schem"]
+    
+    # Schematic name that gets synced from the ClojureScript side
+    name = traitlets.Unicode().tag(sync=True)
 
 def schematic_bridge():
     """

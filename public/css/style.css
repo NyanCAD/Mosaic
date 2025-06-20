@@ -494,7 +494,7 @@ input, textarea {
   fill: white;
 }
 
-#mosaic_app .chrome input {
+#mosaic_app .chrome input[type=radio] {
   display: none;
 }
 

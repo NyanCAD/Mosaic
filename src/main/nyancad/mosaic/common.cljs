@@ -230,27 +230,29 @@
                      :on-context-menu (when ctxclk (ctxclk name))}
              (if (= name @cursor) active-label label)]]))]))
 
-(defn renamable [cursor]
-  (r/with-let [active (r/atom false)
-               to (atom nil)
-               edit #(reset! active true)]
-    (if (or @active (empty? @cursor))
-      [:form {:on-submit (fn [^js e]
-                           (js/console.log e)
-                           (.preventDefault e)
-                           (reset! cursor (.. e -target -elements -namefield -value))
-                           (reset! active false))}
-       [:input {:type :text
-                :name "namefield"
-                :auto-focus true
-                :default-value @cursor
-                :on-blur (fn [e]
-                           (reset! cursor (.. e -target -value))
-                           (reset! active false))}]]
-      [:span {:on-click #(if (= (.-detail %) 1)
-                           (reset! to (js/window.setTimeout edit 1000))
-                           (js/window.clearTimeout @to))}
-       @cursor])))
+(defn renamable
+  ([cursor] (renamable cursor nil))
+  ([cursor default]
+   (r/with-let [active (r/atom false)
+                to (atom nil)
+                edit #(reset! active true)]
+     (if (or @active (and (empty? @cursor) (not default)))
+       [:form {:on-submit (fn [^js e]
+                            (js/console.log e)
+                            (.preventDefault e)
+                            (reset! cursor (.. e -target -elements -namefield -value))
+                            (reset! active false))}
+        [:input {:type :text
+                 :name "namefield"
+                 :auto-focus true
+                 :default-value @cursor
+                 :on-blur (fn [e]
+                            (reset! cursor (.. e -target -value))
+                            (reset! active false))}]]
+       [:span {:on-click #(if (= (.-detail %) 1)
+                            (reset! to (js/window.setTimeout edit 1000))
+                            (js/window.clearTimeout @to))}
+        (or @cursor default)]))))
 
 (defn keyset [e]
   (letfn [(conj-when [s e c] (if c (conj s e) s))]
@@ -296,3 +298,10 @@
               (pprint-str res)
               (or res "?"))))))
       (clojure.string/replace #"\{\{|\}\}" first)))
+
+(defn random-name [] (str (random-uuid)))
+
+(defn build-cell-index [modeldb]
+  (into {} (for [[key cell] modeldb
+                 mod (keys (:models cell))]
+             [mod key])))

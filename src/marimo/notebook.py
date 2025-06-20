@@ -11,14 +11,7 @@ def _():
 
 
 @app.cell
-async def _():
-    import micropip
-
-    # Install the nyancad package from local wheel
-    await micropip.install(
-        "http://localhost:8080/wheels/nyancad-0.1.0-py3-none-any.whl"
-    )
-
+def _():
     from nyancad.anywidget import schematic_bridge
     from nyancad.netlist import spice_netlist
     return schematic_bridge, spice_netlist
@@ -41,6 +34,12 @@ def _(reader, spice_netlist):
 @app.cell
 def _(reader, spice):
     reader.simulation_data = {"spice": spice}
+    return
+
+
+@app.cell
+def _(reader):
+    reader.schematic_data
     return
 
 
