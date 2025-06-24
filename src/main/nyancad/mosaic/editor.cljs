@@ -364,13 +364,13 @@
 
 (defn circuit-shape [k v]
   (let [model (:cell v)
-        size (get-in @modeldb [(str "models" sep model) :bg] [1 1])]
+        size (get-in @modeldb [model :bg] [1 1])]
     (draw-background size k v)))
 
 (defn circuit-conn [k v]
   (let [model (:cell v)
-        [width height] (get-in @modeldb [(str "models" sep model) :bg] [1 1])
-        pattern (get-in @modeldb [(str "models" sep model) :conn] [])]
+        [width height] (get-in @modeldb [model :bg] [1 1])
+        pattern (get-in @modeldb [model :conn] [])]
     (draw-pattern (+ 2 (max width height)) pattern
                   port k v)))
 
@@ -380,8 +380,8 @@
 (defn circuit-sym [k v]
   (let [cell (:cell v)
         model (get-in v [:props :model])
-        [width height] (get-in @modeldb [(str "models" sep cell) :bg] [1 1])
-        sym (get-in @modeldb [(str "models" sep cell) :sym])]
+        [width height] (get-in @modeldb [cell :bg] [1 1])
+        sym (get-in @modeldb [cell :sym])]
     [device (+ 2 (max width height)) k v
      (if sym
        [:image {:href sym
@@ -506,7 +506,7 @@
                    transform x y)]))
 
 (defn circuit-locations [{:keys [:_id :x :y :cell :transform]}]
-  (let [mod (get @modeldb (str "models" sep cell))
+  (let [mod (get @modeldb cell)
         conn (:conn mod)
         [w h] (:bg mod)]
     [(rotate-shape conn transform x y)
@@ -1011,8 +1011,6 @@
     (str "notebook/?" (.toString url-params))))
 
 (def cell-index (r/track #(cm/build-cell-index @modeldb)))
-
-
 
 (defn menu-items []
   [:<>

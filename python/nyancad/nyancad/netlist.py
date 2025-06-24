@@ -7,17 +7,14 @@ This module communicates with CouchDB to fetch schematics, and generate SPICE ne
 """
 
 from collections import deque, namedtuple
+from InSpice.Spice.Netlist import Circuit, SubCircuit
 
-class SchemId(namedtuple("SchemId", ["cell", "model", "device"])):
+class SchemId(namedtuple("SchemId", ["schem", "device"])):
     @classmethod
     def from_string(cls, id):
         schem, dev, *_= id.split(':') + [None]
-        cell, model = schem.split('$')
-        return cls(cell, model, dev)
+        return cls(schem, dev)
 
-    @property
-    def schem(self):
-        return f"{self.cell}${self.model}"
 
 def shape_ports(shape):
     for y, s in enumerate(shape):
@@ -81,7 +78,7 @@ def getports(doc, models):
     elif cell in {'resistor', 'capacitor', 'inductor', 'vsource', 'isource', 'diode'}:
         return rotate(twoport_shape, tr, x, y)
     else:
-        return rotate(models[f"models:{cell}"]['conn'], tr, x, y)
+        return rotate(models[cell]['conn'], tr, x, y)
 
 
 def port_index(docs, models):
@@ -222,14 +219,14 @@ def circuit_spice(docs, models, declarations, corner, sim):
             ports = ' '.join(p(c) for c in ['C', 'B', 'E'])
             templ = "Q{name} {ports} {properties}"
         else:  # subcircuit
-            m = models[f"models:{cell}"]
+            m = models[cell]
             ports = ' '.join(p(c[2]) for c in m['conn'])
             templ = "X{name} {ports} {properties}"
 
         # a spice type model can overwrite its reference
         # for example if the mosfet is really a subcircuit
         try:
-            m = models[f"models:{cell}"]["models"][mname][sim]
+            m = models[cell]["models"][mname][sim]
             templ = m['reftempl']
             declarations.add(m['decltempl'].format(corner=corner))
         except KeyError:
@@ -249,7 +246,7 @@ def spice_netlist(name, schem, extra="", corner='tt', temp=None, sim="NgSpice", 
     for subname, docs in schem.items():
         if subname in {name, "models"}: continue
         _id = SchemId.from_string(subname)
-        mod = models[f"models:{_id.cell}"]
+        mod = models[_id.cell]
         ports = ' '.join(c[2] for c in mod['conn'])
         body = circuit_spice(docs, models, declarations, corner, sim)
         declarations.add(f".subckt {_id.model} {ports}\n{body}\n.ends {_id.model}") # parameters??
@@ -303,7 +300,7 @@ def ngspice_vectors(name, schem, path=()):
         if elem['cell'] == 'port' and elem['name'].lower() != 'gnd':
             vectors.append(('.'.join(path + (elem['name'],))).lower())
             continue
-        m = models.get("models:"+elem['cell'], {})
+        m = models.get(elem['cell'], {})
         n = m.get('models', {}).get(elem.get('props', {}).get('model'), {})
         if n.get('type') == 'spice':
             vex = n.get('NgSpice', {}).get('vectors', [])
@@ -330,3 +327,167 @@ def ngspice_vectors(name, schem, path=()):
                 full = typ+elem['name']
             vectors.extend(f"@{full}[{v}]".lower() for v in vex)
     return vectors
+
+
+class NyanCADMixin:
+    """Mixin providing NyanCAD integration for InSpice netlist objects."""
+    
+    def populate_from_nyancad(self, docs, models, corner='tt', sim='NgSpice'):
+        """Populate this netlist with elements from NyanCAD docs."""
+        nl = netlist(docs, models)
+        
+        for dev_id, ports in nl.items():
+            dev = docs[dev_id]
+            self._add_nyancad_element(dev_id, dev, ports, models, corner, sim)
+    
+    def _add_nyancad_element(self, dev_id, dev, ports, models, corner, sim):
+        """Add a single NyanCAD element to this netlist."""
+        cell = dev['cell']
+        name = dev.get('name') or dev_id.replace(':', '_')  # InSpice names can't have colons
+        props = dev.get('props', {})
+        mname = props.get('model', '')
+        
+        # Parameter name mapping from NyanCAD to InSpice
+        param_mapping = {
+            'W': 'width',
+            'L': 'length', 
+            'nf': 'nfin',
+        }
+        
+        # Helper to get port by name
+        def p(port_name):
+            return ports[port_name]
+        
+        # Helper to map parameters
+        def map_params(props, exclude=None):
+            exclude = exclude or set()
+            params = {}
+            for k, v in props.items():
+                if v and k not in exclude:
+                    mapped_key = param_mapping.get(k, k)
+                    params[mapped_key] = v
+            return params
+        
+        # Map device types to InSpice API methods
+        if cell == "resistor":
+            resistance = props.get('resistance')
+            self.R(name, p('P'), p('N'), resistance)
+            
+        elif cell == "capacitor":
+            capacitance = props.get('capacitance')
+            self.C(name, p('P'), p('N'), capacitance)
+            
+        elif cell == "inductor":
+            inductance = props.get('inductance')
+            self.L(name, p('P'), p('N'), inductance)
+            
+        elif cell == "diode":
+            model = props.get('model')
+            params = map_params(props, {'model'})
+            self.D(name, p('P'), p('N'), model=model, **params)
+            
+        elif cell == "vsource":
+            dc = props.get('dc')
+            ac = props.get('ac')
+            tran = props.get('tran')
+            params = map_params(props, {'dc', 'ac', 'tran'})
+            self.V(name, p('P'), p('N'), dc, ac, tran, **params)
+            
+        elif cell == "isource":
+            dc = props.get('dc')
+            ac = props.get('ac')
+            tran = props.get('tran')
+            params = map_params(props, {'dc', 'ac', 'tran'})
+            self.I(name, p('P'), p('N'), dc, ac, tran, **params)
+            
+        elif cell in {"pmos", "nmos"}:
+            bulk_node = p('B') if 'B' in ports else self.gnd
+            model = props.get('model', cell)
+            params = map_params(props, {'model'})
+            self.M(name, p('D'), p('G'), p('S'), bulk_node, model=model, **params)
+            
+        elif cell in {"npn", "pnp"}:
+            model = props.get('model', cell)
+            params = map_params(props, {'model'})
+            self.Q(name, p('C'), p('B'), p('E'), model=model, **params)
+            
+        else:  # subcircuit
+            if cell in models:
+                m = models[cell]
+                port_list = [p(c[2]) for c in m['conn']]
+                model_name = props.get('model', cell)
+                params = map_params(props, {'model'})
+                self.X(name, model_name, *port_list, **params)
+        
+
+
+class NyanCircuit(NyanCADMixin, Circuit):
+    """InSpice Circuit populated from NyanCAD schematic data."""
+    
+    def __init__(self, name, schem, corner='tt', sim='NgSpice', **kwargs):
+        """
+        Create InSpice Circuit from full NyanCAD schematic data.
+        
+        Parameters:
+        - name: Top-level schematic name (key in schem)
+        - schem: Full schematic dictionary with models and subcircuits
+        - corner, sim: Simulation parameters
+        """
+        super().__init__(title=name, **kwargs)
+        
+        models = schem["models"]
+        
+        # Inverted loop: iterate over models and their implementations, 
+        # then check if they exist in the schematic
+        for cell_name, model_def in models.items():
+            model_implementations = model_def.get('models', {})
+            for model_name in model_implementations.keys():
+                # model_name is the full subcircuit_key
+                if model_name in schem:
+                    docs = schem[model_name]
+                    nodes = [c[2] for c in model_def['conn']]
+                    subcircuit = NyanSubCircuit(model_name, nodes, docs, models, corner, sim)
+                    self.subcircuit(subcircuit)
+        
+        # Populate main circuit elements
+        self.populate_from_nyancad(schem[name], models, corner, sim)
+
+
+class NyanSubCircuit(NyanCADMixin, SubCircuit):
+    """InSpice SubCircuit populated from NyanCAD docs."""
+    
+    def __init__(self, name, nodes, docs, models, corner='tt', sim='NgSpice', **kwargs):
+        """
+        Create InSpice SubCircuit from NyanCAD docs.
+        
+        Parameters:
+        - name: Subcircuit name
+        - nodes: List of external node names
+        - docs: NyanCAD document dictionary for this subcircuit
+        - models: Model definitions
+        - corner, sim: Simulation parameters
+        """
+        super().__init__(name, *nodes, **kwargs)
+        self.populate_from_nyancad(docs, models, corner, sim)
+
+
+def inspice_netlist(name, schem, corner='tt', sim='NgSpice', **kwargs):
+    """
+    Convenience function to create InSpice Circuit from NyanCAD schematic.
+    
+    Parameters:
+    - name: Top-level schematic name
+    - schem: Full schematic dictionary  
+    - corner, sim: Simulation parameters
+    - **kwargs: Additional Circuit constructor arguments
+    
+    Returns:
+    - NyanCircuit instance
+    
+    Usage:
+    ```
+    circuit = inspice_netlist("top$top", schem_data)
+    simulator = circuit.simulator(temperature=25, nominal_temperature=25)
+    ```
+    """
+    return NyanCircuit(name, schem, corner, sim, **kwargs)

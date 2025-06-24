@@ -26,6 +26,7 @@ classifiers = [
 dependencies = [
     "anywidget>=0.9.0",
     "traitlets",
+    "InSpice",
 ]
 
 [project.urls]

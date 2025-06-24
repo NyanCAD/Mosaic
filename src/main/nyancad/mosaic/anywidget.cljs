@@ -30,13 +30,10 @@
       (let [dev (first devs)
             cell (:cell dev)
             model (get-in dev [:props :model])
-            schem (str cell "$" model)
-            typ (get-in @model-atom [(str "models:" cell) :models (keyword model) :type])]
-        (println dev)
-        (println "cell" cell "model" model "schem" schem  "typ" typ)
-        (if (and model (not (contains? @schematic-groups schem)) (= typ "schematic"))
-          (let [_ (swap! schematic-cache assoc schem {})
-                subschem (pouch-atom db schem (r/cursor schematic-cache [schem]))]
+            typ (get-in @model-atom [cell :models (keyword model) :type])]
+        (if (and model (not (contains? @schematic-groups model)) (= typ "schematic"))
+          (let [_ (swap! schematic-cache assoc model {})
+                subschem (pouch-atom db model (r/cursor schematic-cache [model]))]
             (add-watch-group schematic-groups subschem)
             (<! (done? subschem))
             (recur (concat (rest devs) (seq (vals @subschem)))))
