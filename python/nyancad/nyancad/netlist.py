@@ -358,15 +358,6 @@ class NyanCADMixin:
         def p(port_name):
             return ports[port_name]
         
-        # Helper to map parameters
-        def map_params(props, exclude=None):
-            exclude = exclude or set()
-            params = {}
-            for k, v in props.items():
-                if v and k not in exclude:
-                    mapped_key = param_mapping.get(k, k)
-                    params[mapped_key] = v
-            return params
         
         # Map device types to InSpice API methods
         if cell == "resistor":
@@ -382,41 +373,34 @@ class NyanCADMixin:
             self.L(name, p('P'), p('N'), inductance)
             
         elif cell == "diode":
-            model = props.get('model')
-            params = map_params(props, {'model'})
-            self.D(name, p('P'), p('N'), model=model, **params)
+            self.D(name, p('P'), p('N'), **props)
             
         elif cell == "vsource":
             dc = props.get('dc')
             ac = props.get('ac')
             tran = props.get('tran')
-            params = map_params(props, {'dc', 'ac', 'tran'})
-            self.V(name, p('P'), p('N'), dc, ac, tran, **params)
+            self.V(name, p('P'), p('N'), dc, ac, tran)
             
         elif cell == "isource":
             dc = props.get('dc')
             ac = props.get('ac')
             tran = props.get('tran')
-            params = map_params(props, {'dc', 'ac', 'tran'})
-            self.I(name, p('P'), p('N'), dc, ac, tran, **params)
+            self.I(name, p('P'), p('N'), dc, ac, tran)
             
         elif cell in {"pmos", "nmos"}:
             bulk_node = p('B') if 'B' in ports else self.gnd
-            model = props.get('model', cell)
-            params = map_params(props, {'model'})
-            self.M(name, p('D'), p('G'), p('S'), bulk_node, model=model, **params)
+            # Map parameter names and copy dict to avoid mutation
+            self.M(name, p('D'), p('G'), p('S'), bulk_node, **props)
             
         elif cell in {"npn", "pnp"}:
-            model = props.get('model', cell)
-            params = map_params(props, {'model'})
-            self.Q(name, p('C'), p('B'), p('E'), model=model, **params)
+            self.Q(name, p('C'), p('B'), p('E'), **props)
             
         else:  # subcircuit
             if cell in models:
                 m = models[cell]
                 port_list = [p(c[2]) for c in m['conn']]
-                model_name = props.get('model', cell)
-                params = map_params(props, {'model'})
+                params = props.copy()
+                model_name = params.pop('model')
                 self.X(name, model_name, *port_list, **params)
         
 

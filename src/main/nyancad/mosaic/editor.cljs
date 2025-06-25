@@ -400,35 +400,29 @@
 (def models {"pmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
-                     ::template "{this.name}: {this.props.w}/{this.props.l}"
+                     ::template "{this.name}: {this.props.width}/{this.props.length}"
                      ::props {:m {:tooltip "multiplier"}
-                              :nf {:tooltip "number of fingers"}
-                              :w {:tooltip "width" :unit "meter"}
-                              :l {:tooltip "lenght" :unit "meter"}}}
+                              :nfin {:tooltip "number of fingers"}
+                              :width {:tooltip "width" :unit "meter"}
+                              :length {:tooltip "length" :unit "meter"}}}
              "nmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
-                     ::template "{this.name}: {this.props.w}/{this.props.l}"
+                     ::template "{this.name}: {this.props.width}/{this.props.length}"
                      ::props {:m {:tooltip "multiplier"}
-                              :nf {:tooltip "number of fingers"}
-                              :w {:tooltip "width" :unit "meter"}
-                              :l {:tooltip "lenght" :unit "meter"}}}
+                              :nfin {:tooltip "number of fingers"}
+                              :width {:tooltip "width" :unit "meter"}
+                              :length {:tooltip "length" :unit "meter"}}}
              "npn" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
-                     ::template "{this.name}: {this.props.w}/{this.props.l}"
-                    ::props {:m {:tooltip "multiplier"}
-                             :nf {:tooltip "number of fingers"}
-                             :w {:tooltip "width" :unit "meter"}
-                             :l {:tooltip "lenght" :unit "meter"}}}
+                     ::template "{this.name}: {this.props.width}/{this.props.length}"
+                    ::props {:m {:tooltip "multiplier"}}}
              "pnp" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
-                     ::template "{this.name}: {this.props.w}/{this.props.l}"
-                    ::props {:m {:tooltip "multiplier"}
-                             :nf {:tooltip "number of fingers"}
-                             :w {:tooltip "width" :unit "meter"}
-                             :l {:tooltip "lenght" :unit "meter"}}}
+                     ::template "{this.name}: {this.props.width}/{this.props.length}"
+                    ::props {:m {:tooltip "multiplier"}}}
              "resistor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
                          ::sym resistor-sym
@@ -449,13 +443,15 @@
                         ::sym vsource-sym
                         ::template "{this.name}: {this.props.dc}V"
                         ::props {:dc {:tooltip "DC voltage" :unit "Volt"}
-                                 :ac {:tooltip "AC voltage" :unit "Volt"}}}
+                                 :ac {:tooltip "AC voltage" :unit "Volt"}
+                                 :tran {:tooltip "Transient voltage" :unit "Volt"}}}
              "isource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
                         ::sym isource-sym
                         ::template "{this.name}: {this.props.dc}I"
                         ::props {:dc {:tooltip "DC current" :unit "Ampere"}
-                                 :ac {:tooltip "AC current" :unit "Ampere"}}}
+                                 :ac {:tooltip "AC current" :unit "Ampere"}}
+                                 :tran {:tooltip "Transient current" :unit "Ampere"}}
              "diode" {::bg cm/twoport-bg
                       ::conn cm/twoport-conn
                       ::sym diode-sym
@@ -976,11 +972,6 @@
                            :type "text"
                            :default-value (get @props prop)
                            :on-change (debounce #(swap! props assoc prop (.. % -target -value)))}]]))
-        [:label {:for "spice" :title "Extra spice data"} "Spice"]
-        [:input {:id "spice"
-                 :type "text"
-                 :default-value (:spice @props)
-                 :on-change (debounce #(swap! props assoc :spice (.. % -target -value)))}]
         [:label {:for "template" :title "Template to display"} "Text"]
         [:textarea {:id "template"
                     :default-value (get-in @schematic [key :template] (::template (get models @cell)))
