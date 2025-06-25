@@ -417,7 +417,7 @@ class NyanCircuit(NyanCADMixin, Circuit):
         - schem: Full schematic dictionary with models and subcircuits
         - corner, sim: Simulation parameters
         """
-        super().__init__(title=name, **kwargs)
+        super().__init__(title="schematic", **kwargs)
         
         models = schem["models"]
         
@@ -427,9 +427,9 @@ class NyanCircuit(NyanCADMixin, Circuit):
             model_implementations = model_def.get('models', {})
             for model_name in model_implementations.keys():
                 # model_name is the full subcircuit_key
-                if model_name in schem:
+                if model_name in schem and model_name != name:
                     docs = schem[model_name]
-                    nodes = [c[2] for c in model_def['conn']]
+                    nodes = [c[2] for c in model_def.get('conn', [])]
                     subcircuit = NyanSubCircuit(model_name, nodes, docs, models, corner, sim)
                     self.subcircuit(subcircuit)
         
