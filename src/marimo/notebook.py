@@ -7,68 +7,142 @@ app = marimo.App()
 @app.cell
 def _():
     import marimo as mo
-    return (mo,)
-
-
-@app.cell
-def _():
+    import pandas as pd
+    import numpy as np
     from nyancad.anywidget import schematic_bridge
     from nyancad.netlist import inspice_netlist
-    return inspice_netlist, schematic_bridge
+    from nyancad.plot import timeplot, active_traces
+    from InSpice import Simulator
+    from holoviews.streams import Pipe
+    return (
+        Pipe,
+        Simulator,
+        active_traces,
+        inspice_netlist,
+        mo,
+        np,
+        pd,
+        schematic_bridge,
+        timeplot,
+    )
 
 
 @app.cell
-def _():
-    from InSpice import Simulator
-    return (Simulator,)
+def _(df):
+    # Generate cleaner column-oriented code
+    data_dict = df.to_dict('list')
+    print("df = pd.DataFrame(")
+    for key, value in data_dict.items():
+        print(f"    {repr(key)}: {repr(value)},")
+    print(")")
+    return
+
+
+@app.cell
+def _(cols, data, timeplot):
+    timeplot([data, cols])
+    return
+
+
+@app.cell
+def _(analysis, mo):
+    vectors = mo.ui.multiselect(
+        options=[*analysis.nodes.keys(), *analysis.branches.keys()], label="Vectors"
+    )
+    vectors
+    return (vectors,)
+
+
+@app.cell
+def _(analysis, data, np, pd, vectors):
+    df = pd.DataFrame()
+    for vec in vectors.options.values():
+        df[vec] = np.array(analysis[vec])
+        df["index"] = np.array(analysis[vec].abscissa)
+    data.update(data=df)
+    return (df,)
+
+
+@app.cell
+def _(Pipe, active_traces):
+    cols = active_traces()
+    data = Pipe(data=[])
+    return cols, data
+
+
+@app.cell
+def _(cols, vectors):
+    cols.update(cols=vectors.value)
+    return
 
 
 @app.cell(hide_code=True)
-def _(
-    ac_points,
-    ac_sens_output,
-    ac_sens_points,
-    ac_sens_start_freq,
-    ac_sens_stop_freq,
-    ac_sens_variation,
-    ac_start_freq,
-    ac_stop_freq,
-    ac_variation,
-    dc_sens_output,
-    dc_source,
-    dc_start,
-    dc_step,
-    dc_stop,
-    disto_f2overf1,
-    disto_points,
-    disto_spectral,
-    disto_start_freq,
-    disto_stop_freq,
-    disto_variation,
-    mo,
-    noise_output,
-    noise_points,
-    noise_ref,
-    noise_src,
-    noise_start_freq,
-    noise_stop_freq,
-    noise_summary,
-    noise_variation,
-    op_back_annotate,
-    pz_node1,
-    pz_node2,
-    pz_node3,
-    pz_node4,
-    pz_pz_type,
-    pz_tf_type,
-    tf_input,
-    tf_output,
-    tran_max,
-    tran_start,
-    tran_step,
-    tran_stop,
-    tran_uic,
-):
+def _(mo, spice):
+    # Create all widgets directly using circuit data
+    element_names = list(spice.element_names)
+    node_names = list(spice.node_names)
+
+    # Operating Point Analysis UI
+    op_back_annotate = mo.ui.checkbox(label="Back-annotate", value=True)
+
+    # DC Analysis UI
+    dc_source = mo.ui.dropdown(element_names, label="Source Name")
+    dc_start = mo.ui.number(label="Start Value", value=0, step=0.1)
+    dc_stop = mo.ui.number(label="Stop Value", value=5, step=0.1)
+    dc_step = mo.ui.number(label="Step Value", value=0.1, step=0.01)
+
+    # AC Analysis UI
+    ac_variation = mo.ui.dropdown(["dec", "oct", "lin"], value="dec", label="Point Spacing")
+    ac_points = mo.ui.number(label="Number of Points", value=10, step=1)
+    ac_start_freq = mo.ui.number(label="Start Frequency (Hz)", value=1, step=1)
+    ac_stop_freq = mo.ui.number(label="Stop Frequency (Hz)", value=1e6, step=1000)
+
+    # Transient Analysis UI
+    tran_step = mo.ui.number(label="Step Time (s)", value=1e-5, step=1e-6)
+    tran_start = mo.ui.number(label="Start Time (s)", value=0, step=1e-6)
+    tran_stop = mo.ui.number(label="End Time (s)", value=1e-3, step=1e-4)
+    tran_max = mo.ui.number(label="Max Time Step (s)", value=1e-4, step=1e-5)
+    tran_uic = mo.ui.checkbox(label="Use Initial Conditions", value=False)
+
+    # Pole-Zero Analysis UI
+    pz_node1 = mo.ui.dropdown(node_names, label="Input Node 1")
+    pz_node2 = mo.ui.dropdown(node_names, label="Input Node 2")
+    pz_node3 = mo.ui.dropdown(node_names, label="Output Node 1")
+    pz_node4 = mo.ui.dropdown(node_names, label="Output Node 2")
+    pz_tf_type = mo.ui.dropdown(["vol", "cur"], value="vol", label="Transfer Function Type")
+    pz_pz_type = mo.ui.dropdown(["pol", "zer", "pz"], value="pz", label="Analysis Type")
+
+    # Noise Analysis UI
+    noise_output = mo.ui.dropdown(node_names, label="Output Node")
+    noise_ref = mo.ui.dropdown(node_names, label="Reference Node")
+    noise_src = mo.ui.dropdown(element_names, label="Input Source")
+    noise_variation = mo.ui.dropdown(["dec", "oct", "lin"], value="dec", label="Point Spacing")
+    noise_points = mo.ui.number(label="Number of Points", value=10, step=1)
+    noise_start_freq = mo.ui.number(label="Start Frequency (Hz)", value=10, step=1)
+    noise_stop_freq = mo.ui.number(label="Stop Frequency (Hz)", value=1e5, step=1000)
+    noise_summary = mo.ui.number(label="Points per Summary", value=1, step=1)
+
+    # Distortion Analysis UI
+    disto_variation = mo.ui.dropdown(["dec", "oct", "lin"], value="dec", label="Point Spacing")
+    disto_points = mo.ui.number(label="Number of Points", value=10, step=1)
+    disto_start_freq = mo.ui.number(label="Start Frequency (Hz)", value=100, step=1)
+    disto_stop_freq = mo.ui.number(label="Stop Frequency (Hz)", value=1e4, step=1000)
+    disto_f2overf1 = mo.ui.number(label="F2/F1 Ratio (optional)", value=0.9, step=0.1)
+    disto_spectral = mo.ui.checkbox(label="Spectral Analysis", value=False)
+
+    # Transfer Function Analysis UI
+    tf_output = mo.ui.text(label="Output Variable", value="v(out)")
+    tf_input = mo.ui.dropdown(element_names, label="Input Source")
+
+    # DC Sensitivity Analysis UI
+    dc_sens_output = mo.ui.text(label="Output Variable", value="v(out)")
+
+    # AC Sensitivity Analysis UI
+    ac_sens_output = mo.ui.text(label="Output Variable", value="v(out)")
+    ac_sens_variation = mo.ui.dropdown(["dec", "oct", "lin"], value="dec", label="Point Spacing")
+    ac_sens_points = mo.ui.number(label="Number of Points", value=10, step=1)
+    ac_sens_start_freq = mo.ui.number(label="Start Frequency (Hz)", value=100, step=1)
+    ac_sens_stop_freq = mo.ui.number(label="Stop Frequency (Hz)", value=1e5, step=1000)
 
     # Create the tabbed interface for all analysis types
     simtabs = mo.ui.tabs({
@@ -176,7 +250,56 @@ def _(
     })
 
     simtabs
-    return (simtabs,)
+    return (
+        ac_points,
+        ac_sens_output,
+        ac_sens_points,
+        ac_sens_start_freq,
+        ac_sens_stop_freq,
+        ac_sens_variation,
+        ac_start_freq,
+        ac_stop_freq,
+        ac_variation,
+        dc_sens_output,
+        dc_source,
+        dc_start,
+        dc_step,
+        dc_stop,
+        disto_f2overf1,
+        disto_points,
+        disto_spectral,
+        disto_start_freq,
+        disto_stop_freq,
+        disto_variation,
+        noise_output,
+        noise_points,
+        noise_ref,
+        noise_src,
+        noise_start_freq,
+        noise_stop_freq,
+        noise_summary,
+        noise_variation,
+        pz_node1,
+        pz_node2,
+        pz_node3,
+        pz_node4,
+        pz_pz_type,
+        pz_tf_type,
+        simtabs,
+        tf_input,
+        tf_output,
+        tran_max,
+        tran_start,
+        tran_step,
+        tran_stop,
+        tran_uic,
+    )
+
+
+@app.cell
+def _(simtabs):
+    simtabs.value
+    return
 
 
 @app.cell
@@ -324,121 +447,7 @@ def _(
 
     print("Analysis completed successfully!")
     analysis
-    return
-
-
-@app.cell
-def _(mo, spice):
-    # Create all widgets directly using circuit data
-    element_names = list(spice.element_names)
-    node_names = list(spice.node_names)
-
-    # Operating Point Analysis UI
-    op_back_annotate = mo.ui.checkbox(label="Back-annotate", value=True)
-
-    # DC Analysis UI
-    dc_source = mo.ui.dropdown(element_names, label="Source Name")
-    dc_start = mo.ui.number(label="Start Value", value=0, step=0.1)
-    dc_stop = mo.ui.number(label="Stop Value", value=5, step=0.1)
-    dc_step = mo.ui.number(label="Step Value", value=0.1, step=0.01)
-
-    # AC Analysis UI
-    ac_variation = mo.ui.dropdown(["dec", "oct", "lin"], value="dec", label="Point Spacing")
-    ac_points = mo.ui.number(label="Number of Points", value=10, step=1)
-    ac_start_freq = mo.ui.number(label="Start Frequency (Hz)", value=1, step=1)
-    ac_stop_freq = mo.ui.number(label="Stop Frequency (Hz)", value=1e6, step=1000)
-
-    # Transient Analysis UI
-    tran_step = mo.ui.number(label="Step Time (s)", value=1e-5, step=1e-6)
-    tran_start = mo.ui.number(label="Start Time (s)", value=0, step=1e-6)
-    tran_stop = mo.ui.number(label="End Time (s)", value=1e-3, step=1e-4)
-    tran_max = mo.ui.number(label="Max Time Step (s)", value=1e-4, step=1e-5)
-    tran_uic = mo.ui.checkbox(label="Use Initial Conditions", value=False)
-
-    # Pole-Zero Analysis UI
-    pz_node1 = mo.ui.dropdown(node_names, label="Input Node 1")
-    pz_node2 = mo.ui.dropdown(node_names, label="Input Node 2")
-    pz_node3 = mo.ui.dropdown(node_names, label="Output Node 1")
-    pz_node4 = mo.ui.dropdown(node_names, label="Output Node 2")
-    pz_tf_type = mo.ui.dropdown(["vol", "cur"], value="vol", label="Transfer Function Type")
-    pz_pz_type = mo.ui.dropdown(["pol", "zer", "pz"], value="pz", label="Analysis Type")
-
-    # Noise Analysis UI
-    noise_output = mo.ui.dropdown(node_names, label="Output Node")
-    noise_ref = mo.ui.dropdown(node_names, label="Reference Node")
-    noise_src = mo.ui.dropdown(element_names, label="Input Source")
-    noise_variation = mo.ui.dropdown(["dec", "oct", "lin"], value="dec", label="Point Spacing")
-    noise_points = mo.ui.number(label="Number of Points", value=10, step=1)
-    noise_start_freq = mo.ui.number(label="Start Frequency (Hz)", value=10, step=1)
-    noise_stop_freq = mo.ui.number(label="Stop Frequency (Hz)", value=1e5, step=1000)
-    noise_summary = mo.ui.number(label="Points per Summary", value=1, step=1)
-
-    # Distortion Analysis UI
-    disto_variation = mo.ui.dropdown(["dec", "oct", "lin"], value="dec", label="Point Spacing")
-    disto_points = mo.ui.number(label="Number of Points", value=10, step=1)
-    disto_start_freq = mo.ui.number(label="Start Frequency (Hz)", value=100, step=1)
-    disto_stop_freq = mo.ui.number(label="Stop Frequency (Hz)", value=1e4, step=1000)
-    disto_f2overf1 = mo.ui.number(label="F2/F1 Ratio (optional)", value=0.9, step=0.1)
-    disto_spectral = mo.ui.checkbox(label="Spectral Analysis", value=False)
-
-    # Transfer Function Analysis UI
-    tf_output = mo.ui.text(label="Output Variable", value="v(out)")
-    tf_input = mo.ui.dropdown(element_names, label="Input Source")
-
-    # DC Sensitivity Analysis UI
-    dc_sens_output = mo.ui.text(label="Output Variable", value="v(out)")
-
-    # AC Sensitivity Analysis UI
-    ac_sens_output = mo.ui.text(label="Output Variable", value="v(out)")
-    ac_sens_variation = mo.ui.dropdown(["dec", "oct", "lin"], value="dec", label="Point Spacing")
-    ac_sens_points = mo.ui.number(label="Number of Points", value=10, step=1)
-    ac_sens_start_freq = mo.ui.number(label="Start Frequency (Hz)", value=100, step=1)
-    ac_sens_stop_freq = mo.ui.number(label="Stop Frequency (Hz)", value=1e5, step=1000)
-
-    return (
-        ac_points,
-        ac_sens_output,
-        ac_sens_points,
-        ac_sens_start_freq,
-        ac_sens_stop_freq,
-        ac_sens_variation,
-        ac_start_freq,
-        ac_stop_freq,
-        ac_variation,
-        dc_sens_output,
-        dc_source,
-        dc_start,
-        dc_step,
-        dc_stop,
-        disto_f2overf1,
-        disto_points,
-        disto_spectral,
-        disto_start_freq,
-        disto_stop_freq,
-        disto_variation,
-        noise_output,
-        noise_points,
-        noise_ref,
-        noise_src,
-        noise_start_freq,
-        noise_stop_freq,
-        noise_summary,
-        noise_variation,
-        op_back_annotate,
-        pz_node1,
-        pz_node2,
-        pz_node3,
-        pz_node4,
-        pz_pz_type,
-        pz_tf_type,
-        tf_input,
-        tf_output,
-        tran_max,
-        tran_start,
-        tran_step,
-        tran_stop,
-        tran_uic,
-    )
+    return (analysis,)
 
 
 if __name__ == "__main__":
