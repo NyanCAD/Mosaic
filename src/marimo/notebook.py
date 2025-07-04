@@ -29,7 +29,7 @@ def _(analysis, mo, widget_state):
     vectors = mo.ui.multiselect(
         options=_options,
         label="Vectors",
-        value=[v for v in widget_state["selected_vectors"] if v in _options],
+        value=[v for v in widget_state["selected_vectors"] or _options if v in _options],
     )
     vectors
     return (vectors,)
@@ -366,7 +366,6 @@ def _(
     tran_stop,
     tran_uic,
 ):
-
     # Run simulation with direct widget access
     _simulator = Simulator.factory(simulator=simname.value)
     _simulation = _simulator.simulation(spice)
@@ -647,6 +646,14 @@ def _(
     widget_state["ac_sens_points"] = ac_sens_points.value
     widget_state["ac_sens_start_freq"] = ac_sens_start_freq.value
     widget_state["ac_sens_stop_freq"] = ac_sens_stop_freq.value
+    return
+
+
+@app.cell
+def _(analysis, op_back_annotate, reader, simtabs):
+    if simtabs.value == "op" and op_back_annotate.value:
+        data = {k: float(v[0]) for k, v in analysis.nodes.items()}
+        reader.simulation_data = {"op": data}
     return
 
 

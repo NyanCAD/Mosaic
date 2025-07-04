@@ -171,9 +171,11 @@
                     (comp (filter #(contains? % :name))
                           (map #(vector (keyword (:name %)) %)))
                     (vals @schematic))
-        text (cm/format fmt {:res res, :schem schem :this dev})]
-    (for [line (clojure.string/split-lines text)]
-      [:tspan {:key line :x "0" :dy "1.2em"} line])))
+        text (cm/format fmt {:res res, :schem schem :self dev})]
+    (map-indexed
+      (fn [idx line]
+        [:tspan {:key line :x "0" :dy (if (zero? idx) "0" "1.2em")} line])
+      (clojure.string/split-lines text))))
 
 (defn text-sym [key text]
   (let [x (:x text)
@@ -182,19 +184,9 @@
     [:g.text {:on-mouse-down #(drag-start key %)
               :on-mouse-move #(eraser-drag key %)
               :class (when (contains? @selected key) :selected)
-              :transform (str "translate(" (* (+ x 0.1) grid-size) ", " (* (+ y 0.05) grid-size) ")")}
+              :transform (str "translate(" (* (+ x 0.1) grid-size) ", " (* (+ y 0.3) grid-size) ")")}
      [:text
       content]]))
-
-(defn device-label [dev width]
-  [:text.identifier
-   {:transform (-> (:transform dev)
-                   transform
-                   (.translate (* grid-size (/ width -2)) (* grid-size (/ width -2)))
-                   .inverse
-                   (.translate (* grid-size 0.05) (* grid-size -0.65))
-                   .toString)}
-    (:name dev)])
 
 (defn device-template [dev width]
   (when-let [text (get dev :template
@@ -204,7 +196,7 @@
                      transform
                      (.translate (* grid-size (/ width -2)) (* grid-size (/ width -2)))
                      .inverse
-                     (.translate (* grid-size 0.6) (* grid-size -0.45))
+                     (.translate (* grid-size 0.6) (* grid-size -0.25))
                      .toString)}
      (schem-template dev text)]))
 
@@ -238,7 +230,9 @@
                           (.translate (/ grid-size (if (= (:variant label) "text") -4 4)) (/ grid-size -2))
                           .inverse
                           .toString)}
-    (:name label (when (= (:variant label) "text") "net"))]])
+    (if (nil? (:variant label))
+      (schem-template label (get label :template (get-in models ["port" ::template])))
+      (:name label "net"))]])
 
 (defn mosfet-sym [k v]
   (let [shape [[[0.5 1.5]
@@ -400,7 +394,7 @@
 (def models {"pmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
-                     ::template "{this.name}: {this.props.width}/{this.props.length}"
+                     ::template "{self.name}: {self.props.width}/{self.props.length}"
                      ::props {:m {:tooltip "multiplier"}
                               :nfin {:tooltip "number of fingers"}
                               :width {:tooltip "width" :unit "meter"}
@@ -408,7 +402,7 @@
              "nmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
-                     ::template "{this.name}: {this.props.width}/{this.props.length}"
+                     ::template "{self.name}: {self.props.width}/{self.props.length}"
                      ::props {:m {:tooltip "multiplier"}
                               :nfin {:tooltip "number of fingers"}
                               :width {:tooltip "width" :unit "meter"}
@@ -416,39 +410,39 @@
              "npn" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
-                     ::template "{this.name}: {this.props.width}/{this.props.length}"
+                     ::template "{self.name}: {self.props.width}/{self.props.length}"
                     ::props {:m {:tooltip "multiplier"}}}
              "pnp" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
-                     ::template "{this.name}: {this.props.width}/{this.props.length}"
+                     ::template "{self.name}: {self.props.width}/{self.props.length}"
                     ::props {:m {:tooltip "multiplier"}}}
              "resistor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
                          ::sym resistor-sym
-                         ::template "{this.name}: {this.props.resistance}Ω"
+                         ::template "{self.name}: {self.props.resistance}Ω"
                          ::props {:resistance {:tooltip "Resistance" :unit "Ohm"}}}
              "capacitor" {::bg cm/twoport-bg
                           ::conn cm/twoport-conn
                           ::sym capacitor-sym
-                          ::template "{this.name}: {this.props.capacitance}F"
+                          ::template "{self.name}: {self.props.capacitance}F"
                           ::props {:capacitance {:tooltip "Capacitance" :unit "Farad"}}}
              "inductor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
                          ::sym inductor-sym
-                         ::template "{this.name}: {this.props.inductance}H"
+                         ::template "{self.name}: {self.props.inductance}H"
                          ::props {:inductance {:tooltip "Inductance" :unit "Henry"}}}
              "vsource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
                         ::sym vsource-sym
-                        ::template "{this.name}: {this.props.dc}V"
+                        ::template "{self.name}: {self.props.dc}V"
                         ::props {:dc {:tooltip "DC voltage" :unit "Volt"}
                                  :ac {:tooltip "AC voltage" :unit "Volt"}
                                  :tran {:tooltip "Transient voltage" :unit "Volt"}}}
              "isource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
                         ::sym isource-sym
-                        ::template "{this.name}: {this.props.dc}I"
+                        ::template "{self.name}: {self.props.dc}I"
                         ::props {:dc {:tooltip "DC current" :unit "Ampere"}
                                  :ac {:tooltip "AC current" :unit "Ampere"}}
                                  :tran {:tooltip "Transient current" :unit "Ampere"}}
@@ -463,6 +457,7 @@
              "port" {::bg []
                      ::conn [[0 0 "P"]]
                      ::sym port-sym
+                     ::template "{self.name}: {res.op[self.name.toLowerCase()]:.2f}V"
                      ::props {}}
              "text" {::bg []
                      ::conn []

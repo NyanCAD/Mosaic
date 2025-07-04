@@ -283,20 +283,22 @@
   (-> s
       (clojure.string/replace
        #"(?<=[^{]|^)\{([^{}:]+)(?::(?:\.(\d+))?([ef])?)?\}(?=[^}]|$)"
-       (fn [[_ path precision type]]
-         (let [pathvec (map #(let [n (js/parseInt %)]
-                               (if (js/isNaN n)
-                                 (keyword %)
-                                 n))
-                            (clojure.string/split path "."))
-               res (get-in state pathvec)
-               fres (js/parseFloat res)]
-           (case type
-             "e" (.toExponential fres (js/parseInt precision))
-             "f" (.toFixed fres (js/parseInt precision))
-             (if (map? res)
-              (pprint-str res)
-              (or res "?"))))))
+       (fn [[_ code precision type]]
+         (try
+           (let [key-names (map name (keys state))
+                 values (map clj->js (vals state))
+                 func (apply js/Function (concat key-names [(str "return (" code ")")]))
+                 result (js->clj (apply func values))
+                 fres (js/parseFloat result)]
+             (case type
+               "e" (.toExponential fres (js/parseInt precision))
+               "f" (.toFixed fres (js/parseInt precision))
+               (if (map? result)
+                 (pprint-str result)
+                 (or result "?"))))
+           (catch js/Error e
+             (js/console.error "Error formatting" s e)
+             "?"))))
       (clojure.string/replace #"\{\{|\}\}" first)))
 
 (defn random-name [] (str (random-uuid)))
