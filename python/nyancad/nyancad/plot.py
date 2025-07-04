@@ -26,22 +26,24 @@ def configure_tools(plot, element):
         if isinstance(t, WheelZoomTool):
             t.dimensions = 'width'
 
-def _timeplot(data, cols=[]):
-    print(data)
-    print(cols)
-    traces = {k: hv.Curve(data, 'index', k).redim(**{k:'amplitude', 'index':'time'}) for k in cols}
-    if not cols: # hack
+def _timeplot(data, cols=None):
+    if cols is None:
+        cols = data.columns.tolist()
+    traces = {k: hv.Curve(data, 'index', k).redim(**{k:'amplitude'}) for k in cols}
+    if not cols: # add dummy trace to avoid error
         traces = {"dummy": hv.Scatter([])}
     return hv.NdOverlay(traces, kdims='k')
 
-def timeplot(streams):
-    curve_dmap = hv.DynamicMap(_timeplot, streams=streams)
-    return downsample1d(curve_dmap).opts(responsive=True, height=500, hooks=[configure_tools])
-    # return dynspread(datashade(curve_dmap, aggregator=ds.by('k', ds.any())))
-    # return spread(datashade(curve_dmap, aggregator=ds.by('k', ds.count()), width=1000, height=1000))
-    # return spread(datashade(curve_dmap, aggregator=ds.count_cat('k'), width=1000, height=1000))
+def timeplot(data, cols=None):
+    return downsample1d(_timeplot(data, cols)).opts(hooks=[configure_tools])
 
-def _bodeplot(data, cols=[]):
+def live_timeplot(streams):
+    curve_dmap = hv.DynamicMap(_timeplot, streams=streams)
+    return downsample1d(curve_dmap).opts(hooks=[configure_tools])
+
+def bodeplot(data, cols=None):
+    if cols is None:
+        cols = data.columns.tolist()
     data[data==0] = np.finfo(float).eps # prevent infinity
     xlim = (0.1, 10) if data.index.empty else (data.index[0], data.index[-1])
     mag_traces = []
@@ -60,17 +62,19 @@ def _bodeplot(data, cols=[]):
     phase = hv.Overlay(pha_traces).opts(logx=True, xlim=xlim)
     return hv.Layout([mag, phase]).cols(1)
 
-def bodeplot(streams):
-    return hv.DynamicMap(_bodeplot, streams=streams)
+def live_bodeplot(streams):
+    return hv.DynamicMap(bodeplot, streams=streams)
 
-def _sweepplot(data, cols=[]):
-    traces = {k: hv.Curve(data, 'index', k).redim(**{k:'amplitude', 'index':'sweep'}) for k in cols}
+def sweepplot(data, cols=None):
+    if cols is None:
+        cols = data.columns.tolist()
+    traces = {k: hv.Curve(data, 'index', k).redim(**{k:'amplitude'}) for k in cols}
     if not cols:
         traces = {"dummy": hv.Curve([])}
     return hv.NdOverlay(traces, kdims='k')
 
-def sweepplot(streams):
-    return hv.DynamicMap(_sweepplot, streams=streams)
+def live_sweepplot(streams):
+    return hv.DynamicMap(sweepplot, streams=streams)
 
 def table(streams):
     return hv.DynamicMap(
@@ -78,7 +82,9 @@ def table(streams):
         streams=streams
     )
 
-def _fftplot(data, cols=[], n=1024):
+def fftplot(data, cols=[], n=1024):
+    if cols is None:
+        cols = data.columns.tolist()
     traces = []
     for k in cols:
         fftdat = fft(data[k], n).iloc[:n//2]
@@ -90,8 +96,8 @@ def _fftplot(data, cols=[], n=1024):
 
     return hv.Overlay(traces).opts(logx=True, logy=True)
 
-def fftplot(streams, n=1024):
-    return hv.DynamicMap(functools.partial(_fftplot, n=n), streams=streams)
+def live_fftplot(streams, n=1024):
+    return hv.DynamicMap(functools.partial(fftplot, n=n), streams=streams)
 
 ## processing
 
