@@ -894,3 +894,191 @@ rect.select {
     height: 100%;
     min-height: 0; /* Allow iframe to shrink */
 }
+
+/* Authentication page */
+#mosaic_auth {
+    font: 400 16px/18px 'Roboto', sans-serif;
+    color: #222222A5;
+    background: #f9f9f9;
+    width: 100%;
+    height: 100vh;
+    margin: 0;
+    padding: 0;
+}
+
+#mosaic_auth .auth-container,
+#mosaic_auth .account-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+#mosaic_auth .auth-card,
+#mosaic_auth .account-card {
+    background: white;
+    box-shadow: 0px 0px 8px #00000008;
+    border: 0.5px solid #7070701f;
+    border-radius: 7px;
+    padding: 40px;
+    width: 100%;
+    max-width: 400px;
+}
+
+#mosaic_auth .account-card {
+    max-width: 500px;
+}
+
+#mosaic_auth .auth-card h1 {
+    font: 500 25px/25px 'Roboto', sans-serif;
+    letter-spacing: 0.85px;
+    color: #222222;
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+#mosaic_auth .form-group {
+    margin-bottom: 20px;
+}
+
+#mosaic_auth .form-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: #222222A5;
+    font-weight: 500;
+}
+
+#mosaic_auth .form-group input {
+    width: 100%;
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+#mosaic_auth .form-group input:focus {
+    outline: none;
+    border-color: #0E1A32;
+}
+
+#mosaic_auth button,
+#mosaic_auth input[type=submit] {
+    background: #f8f8f8;
+    box-shadow: 0px 1px 4px #00000033;
+    border-radius: 7px;
+    border: none;
+    padding: 10px 15px;
+    cursor: pointer;
+    font: 400 16px/18px 'Roboto', sans-serif;
+}
+
+#mosaic_auth button:active {
+    box-shadow: 0px 0px 4px hsla(0, 0%, 0%, 0.2);
+}
+
+#mosaic_auth button.primary,
+#mosaic_auth input[type=submit] {
+    background-color: #0E1A32;
+    color: white;
+    width: 100%;
+    padding: 12px;
+    margin: 20px 0;
+}
+
+#mosaic_auth button.primary:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+#mosaic_auth button.secondary {
+    display: inline-block;
+    background: #f8f8f8;
+    color: #222222A5;
+    text-decoration: none;
+    text-align: center;
+}
+
+#mosaic_auth button.secondary:hover {
+    background-color: lightgray;
+}
+
+#mosaic_auth button.danger {
+    background: #dc3545;
+    color: white;
+}
+
+#mosaic_auth button.danger:hover {
+    background: #c82333;
+}
+
+#mosaic_auth .auth-toggle {
+    text-align: center;
+    margin-top: 20px;
+}
+
+#mosaic_auth .auth-toggle p {
+    color: #222222A5;
+    margin: 10px 0;
+}
+
+#mosaic_auth .auth-toggle a {
+    color: #0E1A32;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+#mosaic_auth .auth-toggle a:hover {
+    text-decoration: underline;
+}
+
+#mosaic_auth .local-option {
+    border-top: 1px solid #e7e7e7;
+    margin-top: 30px;
+    padding-top: 20px;
+    text-align: center;
+}
+
+#mosaic_auth .local-option p {
+    color: #222222A5;
+    margin-bottom: 15px;
+}
+
+#mosaic_auth .error-message {
+    background: #f8d7da;
+    color: #721c24;
+    padding: 12px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    border: 1px solid #f5c6cb;
+}
+
+#mosaic_auth .user-info {
+    margin: 20px 0;
+}
+
+#mosaic_auth .user-info p {
+    margin: 10px 0;
+    color: #222222A5;
+}
+
+#mosaic_auth .user-info strong {
+    color: #222222;
+}
+
+#mosaic_auth .user-info code {
+    background: #00000008;
+    padding: 4px 8px;
+    border-radius: 5px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 14px;
+    word-break: break-all;
+}
+
+#mosaic_auth .account-actions {
+    display: flex;
+    gap: 15px;
+    margin-top: 30px;
+}
+
+#mosaic_auth .account-actions .button {
+    flex: 1;
+}

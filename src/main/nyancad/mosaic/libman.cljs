@@ -10,11 +10,8 @@
             [nyancad.mosaic.common :as cm]))
 
 ; initialise the model database
-(def params (js/URLSearchParams. js/window.location.search))
-(def dbname (or (.get params "db") (js/localStorage.getItem "db") "schematics"))
-(def dburl (if js/window.dburl (.-href (js/URL. dbname js/window.dburl)) dbname))
-(def sync (or (.get params "sync") (js/localStorage.getItem "sync") js/window.default_sync))
-(defonce db (pouchdb dburl))
+(def sync (cm/get-sync-url))
+(defonce db (pouchdb "schematics"))
 
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
 (defonce snapshots (pouch-atom db "snapshots" (r/atom {})))
@@ -148,18 +145,6 @@
        [:div.empty "There are no implementations to show. Select an interface to edit its schematics and SPICE models."])]))
 
 
-(defn db-properties []
-  [:div.dbprops
-   [:details [:summary "Workspace properties"]
-    [:form.properties
-     [:label {:for "dbname"} "Name"]
-     [:input {:id "dbname" :name "db"
-              :default-value dbname}]
-     [:label {:for "dbsync"} "URL"]
-     [:input {:id "dbsync" :name "sync"
-              :default-value sync}]
-     [:button.primary {:type "submit"}
-        [cm/connect] "Open"]]]])
 
 (defn shape-selector [cell]
   (let [[width height] (:bg @cell)
@@ -304,8 +289,7 @@
      (if @syncactive
        [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
        [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
-    [database-selector]
-    [db-properties]]
+    [database-selector]]
    [cell-view]
    [contextmenu]
    [modal]])
@@ -328,8 +312,5 @@
 ;;   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (set! js/window.name "libman")
   (set! js/document.onclick #(swap! context-content assoc :body nil))
-  (js/localStorage.setItem "db" dbname)
-  (when (seq sync)
-    (js/localStorage.setItem "sync" sync))
   (synchronise)
   (render))

@@ -21,9 +21,8 @@
 
 (def params (js/URLSearchParams. js/window.location.search))
 (def group (or (.get params "schem") (cm/random-name)))
-(def dbname "schematics")
-(def sync nil)
-(defonce db (pouchdb dbname))
+(def sync (cm/get-sync-url))
+(defonce db (pouchdb "schematics"))
 (defonce schematic (pouch-atom db group (r/atom {})))
 (set-validator! (.-cache schematic)
                 #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
@@ -1071,6 +1070,9 @@
          :target "libman"
          :title "Open library manager"}
      [cm/library]]
+    [:a {:href "/auth/"
+         :title "Authentication / Account"}
+     [cm/login]]
     [:a {:title "Save Snapshot"
          :on-click snapshot}
      [cm/save]]]])

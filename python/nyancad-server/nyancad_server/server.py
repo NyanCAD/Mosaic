@@ -2,12 +2,26 @@
 
 import argparse
 import sys
+import os
 from importlib import resources
-from typing import Optional
+from urllib.parse import quote
 
+import httpx
 import uvicorn
 from starlette.applications import Starlette
 from starlette.staticfiles import StaticFiles
+from starlette.routing import Route
+from starlette.responses import JSONResponse, Response
+from starlette.requests import Request
+from starlette.middleware.cors import CORSMiddleware
+
+# CouchDB configuration from environment
+COUCHDB_URL = os.getenv("COUCHDB_URL", "https://api.nyancad.com/").rstrip('/')
+COUCHDB_ADMIN_USER = os.getenv("COUCHDB_ADMIN_USER")
+COUCHDB_ADMIN_PASS = os.getenv("COUCHDB_ADMIN_PASS")
+
+if not COUCHDB_ADMIN_USER or not COUCHDB_ADMIN_PASS:
+    raise ValueError("COUCHDB_ADMIN_USER and COUCHDB_ADMIN_PASS environment variables must be set")
 
 # Marimo server components (mirroring start.py)
 import marimo._server.api.lifespans as lifespans
@@ -23,6 +37,130 @@ from marimo._server.utils import initialize_asyncio, initialize_fd_limit
 from marimo._server.uvicorn_utils import initialize_signals
 from marimo._utils.lifespans import Lifespans
 from marimo._utils.marimo_path import MarimoPath
+
+
+# Authentication endpoints
+async def register_endpoint(request: Request):
+    """Handle user registration."""
+    try:
+        # Parse request body
+        body = await request.json()
+        username = body.get("username", "").strip()
+        password = body.get("password", "").strip()
+        
+        # Basic validation
+        if not username or not password:
+            return JSONResponse(
+                {"error": "Username and password are required"},
+                status_code=400
+            )
+        
+        if len(password) < 6:
+            return JSONResponse(
+                {"error": "Password must be at least 6 characters long"},
+                status_code=400
+            )
+        
+        # Create user document
+        user_doc = {
+            "_id": f"org.couchdb.user:{username}",
+            "name": username,
+            "password": password,
+            "type": "user",
+            "roles": []
+        }
+        
+        async with httpx.AsyncClient() as client:
+            # Create user in CouchDB
+            user_response = await client.put(
+                f"{COUCHDB_URL}/_users/org.couchdb.user:{quote(username)}",
+                json=user_doc,
+                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS),
+                headers={"Content-Type": "application/json"}
+            )
+            
+            # If user creation failed, return CouchDB response unchanged
+            if user_response.status_code >= 300:
+                return Response(
+                    content=user_response.text,
+                    status_code=user_response.status_code,
+                    headers=dict(user_response.headers)
+                )
+            
+            # User created successfully, now login to get session
+            session_response = await client.post(
+                f"{COUCHDB_URL}/_session",
+                data={"name": username, "password": password},
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            )
+            
+            # Forward the session response
+            return Response(
+                content=session_response.text,
+                status_code=session_response.status_code,
+                headers=dict(session_response.headers)
+            )
+            
+    except Exception as e:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
+
+
+async def login_endpoint(request: Request):
+    """Handle user login."""
+    try:
+        # Parse request body
+        body = await request.json()
+        username = body.get("username", "").strip()
+        password = body.get("password", "").strip()
+        
+        # Basic validation
+        if not username or not password:
+            return JSONResponse(
+                {"error": "Username and password are required"},
+                status_code=400
+            )
+        
+        # Forward login request to CouchDB
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{COUCHDB_URL}/_session",
+                data={"name": username, "password": password},
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            )
+            
+            # Forward the response
+            return Response(
+                content=response.text,
+                status_code=response.status_code,
+                headers=dict(response.headers)
+            )
+            
+    except Exception as e:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
+
+
+async def logout_endpoint(request: Request):
+    """Handle user logout."""
+    try:
+        # Get session cookie from request
+        session_cookie = request.cookies.get("AuthSession")
+        
+        # Forward logout request to CouchDB
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{COUCHDB_URL}/_session",
+                cookies={"AuthSession": session_cookie} if session_cookie else {}
+            )
+            
+            # Forward the response
+            return Response(
+                content=response.text,
+                status_code=response.status_code,
+                headers=dict(response.headers)
+            )
+            
+    except Exception as e:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 def create_app() -> Starlette:
@@ -76,9 +214,23 @@ def create_app() -> Starlette:
     
     # Create main Starlette app with signal handler for proper session cleanup
     app = Starlette(
+        routes=[
+            Route("/auth/register", register_endpoint, methods=["POST"]),
+            Route("/auth/login", login_endpoint, methods=["POST"]),
+            Route("/auth/logout", logout_endpoint, methods=["POST"]),
+        ],
         lifespan=Lifespans([
             lifespans.signal_handler,
         ])
+    )
+    
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Configure appropriately for production
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
     )
     
     # Set session manager on main app so signal handler can clean it up

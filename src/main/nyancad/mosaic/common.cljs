@@ -202,6 +202,7 @@
 (def notebook (r/adapt-react-class icons/Book))
 (def simulate (r/adapt-react-class icons/Play))
 (def library (r/adapt-react-class icons/Collection))
+(def login (r/adapt-react-class icons/PersonCircle))
 (def probe (r/adapt-react-class icons/Search))
 (def codemodel (r/adapt-react-class icons/FileCode))
 (def schemmodel (r/adapt-react-class icons/FileDiff))
@@ -307,3 +308,25 @@
   (into {} (for [[key cell] modeldb
                  mod (keys (:models cell))]
              [mod key])))
+
+;; Authentication utilities
+(def couchdb-url "https://api.nyancad.com/")
+
+(defn get-current-user []
+  (.getItem js/localStorage "username"))
+
+(defn set-current-user [username]
+  (.setItem js/localStorage "username" username))
+
+(defn clear-current-user []
+  (.removeItem js/localStorage "username"))
+
+(defn str-to-hex [s]
+  (apply str (map #(str (.toString (.charCodeAt % 0) 16)) s)))
+
+(defn get-sync-url []
+  (when-let [username (get-current-user)]
+    (str couchdb-url "userdb-" (str-to-hex username))))
+
+(defn is-authenticated? []
+  (not (nil? (get-current-user))))
