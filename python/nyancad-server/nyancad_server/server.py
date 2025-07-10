@@ -241,6 +241,11 @@ def create_app(use_wasm: bool = False) -> Starlette:
     return app
 
 
+def create_wasm_app() -> Starlette:
+    """Create the Starlette application in WASM mode."""
+    return create_app(use_wasm=True)
+
+
 def main():
     """Main entry point for the server."""
     parser = argparse.ArgumentParser(description="NyanCAD Server")
