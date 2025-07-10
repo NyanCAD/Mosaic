@@ -162,8 +162,8 @@ async def logout_endpoint(request: Request):
         return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
-def create_app() -> Starlette:
-    """Create the Starlette application with static files and marimo edit integration."""
+def create_app(use_wasm: bool = False) -> Starlette:
+    """Create the Starlette application with static files and optional marimo edit integration."""
     
     # Get the notebook file via symlinked resources
     with resources.path("nyancad_server", "notebook.py") as notebook_path:
@@ -227,8 +227,9 @@ def create_app() -> Starlette:
     # Set session manager on main app so signal handler can clean it up
     app.state.session_manager = session_manager
     
-    # Mount marimo at /notebook
-    app.mount("/notebook", marimo_app)
+    if not use_wasm:
+        # Mount marimo at /notebook
+        app.mount("/notebook", marimo_app)
     
     # Get the static files directory via symlinked resources
     with resources.path("nyancad_server", "public") as public_path:
@@ -259,6 +260,11 @@ def main():
         action="store_true", 
         help="Enable auto-reload for development"
     )
+    parser.add_argument(
+        "--wasm", 
+        action="store_true", 
+        help="Serve WASM notebook files instead of marimo app"
+    )
     
     args = parser.parse_args()
     
@@ -267,7 +273,7 @@ def main():
         initialize_fd_limit(limit=4096)
         initialize_signals()
         
-        app = create_app()
+        app = create_app(use_wasm=args.wasm)
         
         print(f"Starting NyanCAD server on http://{args.host}:{args.port}")
         print(f"  - Static files served at: http://{args.host}:{args.port}/")

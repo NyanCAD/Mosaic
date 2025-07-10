@@ -20,7 +20,7 @@
 
 
 (def params (js/URLSearchParams. js/window.location.search))
-(def group (or (.get params "schem") (cm/random-name)))
+(def group (or (.get params "schem") (.getItem js/localStorage "schem") (cm/random-name)))
 (def sync (cm/get-sync-url))
 (defonce db (pouchdb "schematics"))
 (defonce schematic (pouch-atom db group (r/atom {})))
@@ -1299,9 +1299,11 @@
       [schematic-elements @schematic]
       [schematic-dots]
       [tool-elements]]]
-    [:details#mosaic_notebook
-     [:summary "Notebook"]
-     [:iframe {:src (notebook-url)}]]]])
+     [:details#mosaic_notebook
+      [:summary "Notebook"]
+      [:iframe {:src (notebook-url)}]]]
+   [cm/contextmenu]
+   [cm/modal]])
 
 (def shortcuts {#{:c} #(add-device "capacitor" (::mouse @ui))
                 #{:r} #(add-device "resistor" (::mouse @ui))
@@ -1340,6 +1342,14 @@
 (def immediate-shortcuts
   {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))})
 
+(defn synchronise []
+  (when (seq sync) ; pass nil to disable synchronization
+    (let [es (.sync db sync #js{:live true :retry true})]
+      (.on es "paused" #(reset! syncactive false))
+      (.on es "active" #(reset! syncactive true))
+      (.on es "denied" #(cm/alert (str "Permission denied synchronising to " sync ", changes are saved locally")))
+      (.on es "error" #(cm/alert (str "Error synchronising to " sync ", changes are saved locally"))))))
+
 (defn ^:dev/after-load ^:export  render []
   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (set! js/document.onkeydown (partial cm/keyboard-shortcuts immediate-shortcuts))
@@ -1347,11 +1357,9 @@
              (.getElementById js/document "mosaic_editor")))
 
 (defn ^:export init []
+  (.setItem js/localStorage "schem" group)
   (js/history.replaceState nil nil (str js/window.location.pathname "?schem=" group))
-  (when (seq sync) ; pass nil to disable synchronization
-    (let [es (.sync db sync #js{:live true :retry true})]
-      (.on es "paused" #(reset! syncactive false))
-      (.on es "active" #(reset! syncactive true))))
+  (synchronise)
   (render))
 
 (defn ^:export clear []

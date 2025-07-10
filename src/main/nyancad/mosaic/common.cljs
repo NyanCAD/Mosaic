@@ -330,3 +330,45 @@
 
 (defn is-authenticated? []
   (not (nil? (get-current-user))))
+
+;; Modal dialog functionality
+(defonce modal-content (r/atom nil))
+
+(defn modal []
+  [:div.modal.window
+   {:class (if @modal-content "visible" "hidden")}
+   @modal-content])
+
+(defonce context-content (r/atom {:x 0 :y 0 :body nil}))
+
+(defn contextmenu []
+  (let [{:keys [:x :y :body]} @context-content]
+    [:div.contextmenu.window
+     {:style {:top y, :left, x}
+      :class (if body "visible" "hidden")}
+     body]))
+
+(defn prompt [text cb]
+  (reset! modal-content
+          [:form {:on-submit (fn [^js e]
+                               (js/console.log e)
+                               (.preventDefault e)
+                               (let [name (.. e -target -elements -valuefield -value)]
+                                 (when (seq name)
+                                   (cb name)))
+                               (reset! modal-content nil))}
+           [:div text]
+           [:input {:name "valuefield" :type "text" :auto-focus true}]
+           [:button {:on-click #(reset! modal-content nil)} "Cancel"]
+           [:input {:type "submit" :value "Ok"}]]))
+
+(defn alert [text]
+  (reset! modal-content
+          [:div [:p text]
+           [:button {:on-click #(reset! modal-content nil)} "Ok"]]))
+
+(defn set-context-menu [x y body]
+  (reset! context-content {:x x :y y :body body}))
+
+(defn clear-context-menu []
+  (swap! context-content assoc :body nil))

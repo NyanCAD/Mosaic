@@ -23,48 +23,12 @@
 (defonce selmod (r/atom nil))
 (defonce syncactive (r/atom false))
 
-(defonce modal-content (r/atom nil))
-
-(defn modal []
-  [:div.modal.window
-   {:class (if @modal-content "visible" "hidden")}
-   @modal-content])
-
-(defonce context-content (r/atom {:x 0 :y 0 :body nil}))
-
-(defn contextmenu []
-  (let [{:keys [:x :y :body]} @context-content]
-    [:div.contextmenu.window
-     {:style {:top y, :left, x}
-      :class (if body "visible" "hidden")}
-     body]))
-
-(defn prompt [text cb]
-  (reset! modal-content
-          [:form {:on-submit (fn [^js e]
-                               (js/console.log e)
-                               (.preventDefault e)
-                               (let [name (.. e -target -elements -valuefield -value)]
-                                 (when (seq name)
-                                   (cb name)))
-                               (reset! modal-content nil))}
-           [:div text]
-           [:input {:name "valuefield" :type "text" :auto-focus true}]
-           [:button {:on-click #(reset! modal-content nil)} "Cancel"]
-           [:input {:type "submit" :value "Ok"}]]))
-
-(defn alert [text]
-  (reset! modal-content
-          [:div [:p text]
-           [:button {:on-click #(reset! modal-content nil)} "Ok"]]))
-
 
 (defn cell-context-menu [e db cellname]
   (.preventDefault e)
-  (reset! context-content
-          {:x (.-clientX e), :y (.-clientY e)
-           :body [:ul
-                  [:li {:on-click #(swap! db dissoc cellname)} "delete"]]}))
+  (cm/set-context-menu (.-clientX e) (.-clientY e)
+                       [:ul
+                        [:li {:on-click #(swap! db dissoc cellname)} "delete"]]))
 
 (defn vec-startswith [v prefix]
   (= (subvec v 0 (min (count v) (count prefix))) prefix))
@@ -116,11 +80,10 @@
 
 (defn schem-context-menu [e db cellname key]
   (.preventDefault e)
-  (reset! context-content
-          {:x (.-clientX e), :y (.-clientY e)
-           :body [:ul
-                  [:li {:on-click #(js/window.open (edit-url (name key)), cellname)} "edit"]
-                  [:li {:on-click #(swap! db update-in [cellname :models] dissoc key)} "delete"]]}))
+  (cm/set-context-menu (.-clientX e) (.-clientY e)
+                       [:ul
+                        [:li {:on-click #(js/window.open (edit-url (name key)), cellname)} "edit"]
+                        [:li {:on-click #(swap! db update-in [cellname :models] dissoc key)} "delete"]]))
 
 (defn schematic-selector [db]
   (let [cellname @selcell
@@ -252,12 +215,12 @@
        [:div.empty "Select a schematic or SPICE model to edit its properties."])]))
 
 (defn cell-view []
-  (let [add-cell #(prompt "Enter the name of the new interface"
-                          (fn [name] (swap! modeldb assoc (str "models" sep name) {:name name})))
-        add-schem #(prompt "Enter the name of the new schematic"
-                          (fn [name] (swap! modeldb assoc-in [@selcell :models (keyword (cm/random-name))] {:name name, :type "schematic"})))
-        add-spice #(prompt "Enter the name of the new SPICE model"
-                           (fn [name] (swap! modeldb assoc-in [@selcell :models (keyword (cm/random-name))] {:name name :type "spice"})))]
+  (let [add-cell #(cm/prompt "Enter the name of the new interface"
+                             (fn [name] (swap! modeldb assoc (str "models" sep name) {:name name})))
+        add-schem #(cm/prompt "Enter the name of the new schematic"
+                              (fn [name] (swap! modeldb assoc-in [@selcell :models (keyword (cm/random-name))] {:name name, :type "schematic"})))
+        add-spice #(cm/prompt "Enter the name of the new SPICE model"
+                              (fn [name] (swap! modeldb assoc-in [@selcell :models (keyword (cm/random-name))] {:name name :type "spice"})))]
     [:<>
      [:div.schsel
       [:div.addbuttons
@@ -291,8 +254,8 @@
        [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
     [database-selector]]
    [cell-view]
-   [contextmenu]
-   [modal]])
+   [cm/contextmenu]
+   [cm/modal]])
 
 (def shortcuts {})
 
@@ -300,17 +263,9 @@
   (rd/render [library-manager]
              (.getElementById js/document "mosaic_libman")))
 
-(defn synchronise []
-  (when (seq sync) ; pass nil to disable synchronization
-    (let [es (.sync db sync #js{:live true})]
-      (.on es "paused" #(reset! syncactive false))
-      (.on es "active" #(reset! syncactive true))
-      (.on es "denied" #(alert (str "Permission denied synchronising to " sync ", changes are saved locally")))
-      (.on es "error" #(alert (str "Error synchronising to " sync ", changes are saved locally"))))))
-
 (defn ^:export init []
 ;;   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (set! js/window.name "libman")
-  (set! js/document.onclick #(swap! context-content assoc :body nil))
-  (synchronise)
+  (set! js/document.onclick #(cm/clear-context-menu))
+  (cm/alert "test")
   (render))
