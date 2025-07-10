@@ -13,15 +13,14 @@ from starlette.staticfiles import StaticFiles
 from starlette.routing import Route
 from starlette.responses import JSONResponse, Response
 from starlette.requests import Request
-from starlette.middleware.cors import CORSMiddleware
 
 # CouchDB configuration from environment
 COUCHDB_URL = os.getenv("COUCHDB_URL", "https://api.nyancad.com/").rstrip('/')
-COUCHDB_ADMIN_USER = os.getenv("COUCHDB_ADMIN_USER")
+COUCHDB_ADMIN_USER = os.getenv("COUCHDB_ADMIN_USER", "admin")
 COUCHDB_ADMIN_PASS = os.getenv("COUCHDB_ADMIN_PASS")
 
-if not COUCHDB_ADMIN_USER or not COUCHDB_ADMIN_PASS:
-    raise ValueError("COUCHDB_ADMIN_USER and COUCHDB_ADMIN_PASS environment variables must be set")
+if not COUCHDB_ADMIN_PASS:
+    raise ValueError("COUCHDB_ADMIN_PASS environment variable must be set")
 
 # Marimo server components (mirroring start.py)
 import marimo._server.api.lifespans as lifespans
@@ -224,14 +223,6 @@ def create_app() -> Starlette:
         ])
     )
     
-    # Add CORS middleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # Configure appropriately for production
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["*"],
-    )
     
     # Set session manager on main app so signal handler can clean it up
     app.state.session_manager = session_manager
