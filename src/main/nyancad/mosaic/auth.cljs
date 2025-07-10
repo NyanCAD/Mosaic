@@ -37,8 +37,7 @@
           (let [result (<p! (.json response))]
             (js/console.log "Login successful:" result)
             (cm/set-current-user (.-name result))
-            ;(js/window.location.replace "/")
-            )
+            (js/window.location.replace "/"))
           (let [error-response (<p! (.json response))]
             (reset! error-message (.-error error-response)))))
       (catch js/Error e
@@ -59,8 +58,7 @@
           (let [result (<p! (.json response))]
             (js/console.log "Registration successful:" result)
             (cm/set-current-user (.-name result))
-            ;(js/window.location.replace "/")
-            )
+            (js/window.location.replace "/"))
           (let [error-response (<p! (.json response))]
             (reset! error-message (.-error error-response)))))
       (catch js/Error e

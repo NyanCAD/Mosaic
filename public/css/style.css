@@ -163,32 +163,32 @@ body, html {
 }
 /* library manager */
 
-#mosaic_libman h1 {
+.mosaic-libman h1 {
     font: 500 25px/25px 'Roboto', sans-serif;
     letter-spacing: 0.85px;
     color: #222222;
     text-transform: uppercase;
 }
 
-#mosaic_libman h2 {
+.mosaic-libman h2 {
     font: 500 25px/25px 'Roboto', sans-serif;
     letter-spacing: 0.72px;
     color: #222222;
 }
 
-#mosaic_libman h3 {
+.mosaic-libman h3 {
     font: 500 20px/25px 'Roboto', sans-serif;
     letter-spacing: 0.72px;
     color: #222222;
 }
 
-#mosaic_libman button svg {
+.mosaic-libman button svg {
     margin-right: 0.5em;
     font-size: 20px;
     vertical-align: middle;
 }
 
-#mosaic_libman .libhead {
+.mosaic-libman .libhead {
     display: flex;
     flex-direction: row;
     justify-content: space-between;
@@ -219,7 +219,7 @@ body, html {
     }
 }
 
-#mosaic_libman .addbuttons {
+.mosaic-libman .addbuttons {
     display: flex;
     flex-direction: row;
     justify-content: right;
@@ -228,66 +228,66 @@ body, html {
     border-bottom: 1px solid #e7e7e7;
 }
 
-#mosaic_libman .schsel {
+.mosaic-libman .schsel {
     display: flex;
     flex-direction: column;
     overflow: hidden;
 }
-#mosaic_libman .schsel h2 {
+.mosaic-libman .schsel h2 {
     padding: 0 20px;
 }
 
-#mosaic_libman .schsel .schematics {
+.mosaic-libman .schsel .schematics {
     padding: 0 20px;
     overflow: auto;
 }
 
 
 
-#mosaic_libman .libraries {
+.mosaic-libman .libraries {
     grid-area: libraries;
     display: flex;
     flex-direction: column;
     border-right: 1px solid #e7e7e7;
     overflow: hidden;
 }
-#mosaic_libman .libraries > *{
+.mosaic-libman .libraries > *{
     padding: 1em;
 }
-#mosaic_libman .libraries .dbsel {
+.mosaic-libman .libraries .dbsel {
     flex-grow: 1;
 }
-#mosaic_libman .schematics {
+.mosaic-libman .schematics {
     grid-area: schematics;
     display: flex;
     flex-direction: column;
 }
-#mosaic_libman .cellsel {
+.mosaic-libman .cellsel {
     flex-grow: 1;
     overflow: auto;
 }
-#mosaic_libman .cellsel details {
+.mosaic-libman .cellsel details {
     margin: 0.5em 0;
 }
 
-#mosaic_libman .dbprops {
+.mosaic-libman .dbprops {
     padding: 0;
     background-color: #00000007;
 }
 
-#mosaic_libman .proppane {
+.mosaic-libman .proppane {
   grid-area: properties;
   border-left: 1px solid #e7e7e7;
   padding: 20px;
 }
 
-#mosaic_libman .proppane .preview {
+.mosaic-libman .proppane .preview {
     padding: 1em;
     margin-bottom: 1em;
     background-color: #f3f3f3;
 }
 
-#mosaic_libman .properties {
+.mosaic-libman .properties {
     display: grid;
     grid-template-columns: [labels] auto [controls] auto;
     grid-auto-flow: row;
@@ -295,74 +295,74 @@ body, html {
     align-items: center;
 }
 
-#mosaic_libman .properties label {
+.mosaic-libman .properties label {
   grid-column: labels;
   grid-row: auto;
 }
 
-#mosaic_libman .properties input {
+.mosaic-libman .properties input {
     grid-column: controls;
     grid-row: auto;
     box-sizing: border-box;
     width: 100%;
 }
 
-#mosaic_libman input[type=radio] {
+.mosaic-libman input[type=radio] {
     display: none;
 }
-#mosaic_libman input[type=radio] + label {
+.mosaic-libman input[type=radio] + label {
     display: block;
     padding: 10px 15px;
     margin-top: 5px;
     cursor: pointer;
 }
-#mosaic_libman input[type=radio]:checked + label {
+.mosaic-libman input[type=radio]:checked + label {
     background-color: rgba(0, 0, 0, 0.041);
     border-radius: 7px;
 }
 
-#mosaic_libman .schematics label svg {
+.mosaic-libman .schematics label svg {
     font-size: 1.5em;
     vertical-align: middle;
     margin-right: 0.2em;
 }
 
-#mosaic_libman .schematics label form {
+.mosaic-libman .schematics label form {
     display: inline;
 }
 
-#mosaic_libman details .detailbody {
+.mosaic-libman details .detailbody {
     max-height: 0px;
     transition: max-height 1s;
     overflow: hidden;
     margin-left:7px;
 }
-#mosaic_libman details[open] .detailbody {
+.mosaic-libman details[open] .detailbody {
     max-height: 10000px;
 }
-#mosaic_libman details summary {
+.mosaic-libman details summary {
     list-style-type: none;
 }
-#mosaic_libman .cellsel details summary {
+.mosaic-libman .cellsel details summary {
     padding: 10px 15px;
     border-radius: 7px;
     cursor: pointer;
 }
-#mosaic_libman .dbprops details summary {
+.mosaic-libman .dbprops details summary {
     padding:1em;
     cursor: pointer;
 }
-#mosaic_libman .dbprops details form {
+.mosaic-libman .dbprops details form {
     margin: 0 1em 1em 1em;
 }
 
-#mosaic_libman .cellsel details[open] summary {
+.mosaic-libman .cellsel details[open] summary {
     background: #0E1A32 0% 0% no-repeat padding-box;
     color:white;
 }
 
 
-#mosaic_libman {
+.mosaic-libman {
     display: grid;
     grid-template-areas:
     'libraries schematics properties';
@@ -371,32 +371,36 @@ body, html {
 }
 
 
-#mosaic_libman .empty {
+.mosaic-libman .empty {
     margin: 1em 0;
 }
 /* editor */
-#mosaic_editor * {
+.mosaic-editor * {
   margin: 0;
   padding: 0;
 }
 
-#mosaic_editor h1, #mosaic_editor h2, #mosaic_editor h3, #mosaic_editor h4, #mosaic_editor h5, #mosaic_editor h6 {
+.mosaic-editor h1, .mosaic-editor h2, .mosaic-editor h3, .mosaic-editor h4, .mosaic-editor h5, .mosaic-editor h6 {
   font-size: 1.1em;
   margin: 0.5em 0;
 }
 
-#mosaic_editor, #mosaic_app, #mosaic_libman {
+.mosaic-editor p {
+  margin: 0.5em 0;
+}
+
+.mosaic-editor, .mosaic-container, .mosaic-libman {
   width: 100%;
   height: 100%;
   overflow: hidden;
 }
 
-#mosaic_app {
+.mosaic-container {
   display: flex;
   flex-direction: column;
 }
 
-#mosaic_app .menu {
+.mosaic-container .menu {
   grid-row: 1;
   background-color: white;
   box-shadow: 0px 0px 8px #00000008;
@@ -410,30 +414,30 @@ body, html {
   background-position: 15px 50%;
   padding-left: 65px;
 }
-#mosaic_app .menu .primary {
+.mosaic-container .menu .primary {
   display: flex;
   justify-content: flex-start;
   flex-wrap: wrap;
 }
-#mosaic_app .menu .secondary {
+.mosaic-container .menu .secondary {
   display: flex;
   justify-content: flex-end;
 }
 
-#mosaic_app .content-wrapper {
+.mosaic-container .content-wrapper {
     display: flex;
     flex: 1;
     overflow: hidden;
 }
 
-#mosaic_app .content {
+.mosaic-container .content {
     position: relative;
     flex: 1;
     overflow: hidden;
     z-index: 1; /* Lower z-index than notebook */
 }
 
-#mosaic_app .devicetray {
+.mosaic-container .devicetray {
     position: absolute;
     top: 25px;
     left: 25px;
@@ -452,7 +456,7 @@ body, html {
     user-select: none;
 }
 
-#mosaic_app .sidebar {
+.mosaic-container .sidebar {
     position: absolute;
     top: 25px;
     right: 25px;
@@ -466,7 +470,7 @@ body, html {
     overflow-x: hidden;
     box-sizing: border-box;
 }
-#mosaic_app .sidebar h1 {
+.mosaic-container .sidebar h1 {
     background-color: #0E1A32;
     color: white;
     margin: 0;
@@ -475,13 +479,13 @@ body, html {
     font: 500 18px/20px 'Roboto', sans-serif;
     letter-spacing: 0.70px;
 }
-#mosaic_app .sidebar .properties {
+.mosaic-container .sidebar .properties {
     padding: 20px;
 }
 
-#mosaic_app .chrome a,
-#mosaic_app .chrome button,
-#mosaic_app .chrome label {
+.mosaic-container .chrome a,
+.mosaic-container .chrome button,
+.mosaic-container .chrome label {
   padding: 0.5em;
   margin: 0.75em 0.5em;
   background-color: white;
@@ -495,56 +499,56 @@ body, html {
   cursor: pointer;
 }
 
-#mosaic_app .chrome svg {
+.mosaic-container .chrome svg {
   fill: #222222A5;
 }
 
-#mosaic_app .chrome span.sep {
+.mosaic-container .chrome span.sep {
   border-right: 1px solid lightgray;
   padding: 0;
   margin: 0.75em 0.5em;
 }
 
-#mosaic_app .chrome a:hover,
-#mosaic_app .chrome button:hover {
+.mosaic-container .chrome a:hover,
+.mosaic-container .chrome button:hover {
     background-color: lightgray;
 }
-#mosaic_app .chrome a:active,
-#mosaic_app .chrome a.active,
-#mosaic_app .chrome button.active,
-#mosaic_app .chrome input[type=radio]:checked + label {
+.mosaic-container .chrome a:active,
+.mosaic-container .chrome a.active,
+.mosaic-container .chrome button.active,
+.mosaic-container .chrome input[type=radio]:checked + label {
   background-color: #0E1A32;
   color: white;
 }
-#mosaic_app .chrome a:active svg,
-#mosaic_app .chrome a.active svg,
-#mosaic_app .chrome button.active svg,
-#mosaic_app .chrome input[type=radio]:checked + label svg {
+.mosaic-container .chrome a:active svg,
+.mosaic-container .chrome a.active svg,
+.mosaic-container .chrome button.active svg,
+.mosaic-container .chrome input[type=radio]:checked + label svg {
   fill: white;
 }
 
-#mosaic_app .chrome input[type=radio] {
+.mosaic-container .chrome input[type=radio] {
   display: none;
 }
 
-#mosaic_app .devicetray button {
+.mosaic-container .devicetray button {
     padding: 0.7em;
     width: 25px;
     height: 25px;
     display: inline-block;
 }
-#mosaic_app .devicetray svg {
+.mosaic-container .devicetray svg {
     width: 25px;
     height: 25px;
 }
-#mosaic_app .devicetray details {
+.mosaic-container .devicetray details {
     position: relative;
 }
-#mosaic_app .devicetray summary {
+.mosaic-container .devicetray summary {
     list-style-type: none;
     cursor: pointer;
 }
-#mosaic_app .devicetray details summary::after {
+.mosaic-container .devicetray details summary::after {
     /* Reset conflicting positioning from global rule */
     position: absolute;
     float: none;
@@ -560,14 +564,14 @@ body, html {
     transform: rotate(45deg); /* closed = down ▼ */
 }
 
-#mosaic_app .devicetray details[open] summary::after {
+.mosaic-container .devicetray details[open] summary::after {
     transform: rotate(-45deg); /* open = right ▶ */
 }
 
-#mosaic_app .devicetray details summary:has(button.active)::after {
+.mosaic-container .devicetray details summary:has(button.active)::after {
     border-color: white; /* white triangle when button is active */
 }
-#mosaic_app .devicetray details .tray {
+.mosaic-container .devicetray details .tray {
     position: absolute;
     top:0;
     left:120%;
@@ -579,7 +583,7 @@ body, html {
     border-radius: 5px;
     z-index: 0;
 }
-#mosaic_app .devicetray details .tray::before {
+.mosaic-container .devicetray details .tray::before {
     content: "";
     position: absolute;
     z-index: -1;
@@ -593,18 +597,18 @@ body, html {
     border-bottom: 0.5px solid #7070701f;
 }
 
-#mosaic_editor .properties {
+.mosaic-editor .properties {
   display: grid;
   grid-template-columns: [labels] auto [controls] 1fr;
   grid-auto-flow: row;
   grid-gap: .8em;
 }
-#mosaic_editor .properties label {
+.mosaic-editor .properties label {
   grid-column: labels;
   grid-row: auto;
 }
 
-#mosaic_editor .properties input {
+.mosaic-editor .properties input {
     grid-column: controls;
     grid-row: auto;
     box-sizing: border-box;
@@ -617,13 +621,13 @@ body, html {
 
 
 
-#mosaic_editor svg {
+.mosaic-editor svg {
   overflow: visible;
   stroke-linecap: round;
 }
 
-#mosaic_editor g.staging,
-#mosaic_editor g.toolstaging {
+.mosaic-editor g.staging,
+.mosaic-editor g.toolstaging {
     opacity: 0.5;
 }
 
@@ -931,7 +935,7 @@ rect.select {
 }
 
 /* Authentication page */
-#mosaic_auth {
+.mosaic-auth {
     background: #f9f9f9;
     width: 100%;
     height: 100vh;
@@ -939,8 +943,8 @@ rect.select {
     padding: 0;
 }
 
-#mosaic_auth .auth-container,
-#mosaic_auth .account-container {
+.mosaic-auth .auth-container,
+.mosaic-auth .account-container {
     display: flex;
     justify-content: center;
     align-items: center;
@@ -948,8 +952,8 @@ rect.select {
     padding: 20px;
 }
 
-#mosaic_auth .auth-card,
-#mosaic_auth .account-card {
+.mosaic-auth .auth-card,
+.mosaic-auth .account-card {
     background: white;
     box-shadow: 0px 0px 8px #00000008;
     border: 0.5px solid #7070701f;
@@ -959,11 +963,11 @@ rect.select {
     max-width: 400px;
 }
 
-#mosaic_auth .account-card {
+.mosaic-auth .account-card {
     max-width: 500px;
 }
 
-#mosaic_auth .auth-card h1 {
+.mosaic-auth .auth-card h1 {
     font: 500 25px/25px 'Roboto', sans-serif;
     letter-spacing: 0.85px;
     color: #222222;
@@ -971,42 +975,42 @@ rect.select {
     margin-bottom: 30px;
 }
 
-#mosaic_auth .form-group {
+.mosaic-auth .form-group {
     margin-bottom: 20px;
 }
 
-#mosaic_auth .form-group label {
+.mosaic-auth .form-group label {
     display: block;
     margin-bottom: 8px;
     color: #222222A5;
     font-weight: 500;
 }
 
-#mosaic_auth .form-group input {
+.mosaic-auth .form-group input {
     width: 100%;
     padding: 12px;
     box-sizing: border-box;
 }
 
-#mosaic_auth .form-group input:focus {
+.mosaic-auth .form-group input:focus {
     outline: none;
     border-color: #0E1A32;
 }
 
 /* Auth-specific button overrides */
-#mosaic_auth button.primary,
-#mosaic_auth input[type=submit] {
+.mosaic-auth button.primary,
+.mosaic-auth input[type=submit] {
     width: 100%;
     padding: 12px;
     margin: 20px 0;
 }
 
-#mosaic_auth button.primary:disabled {
+.mosaic-auth button.primary:disabled {
     background: #ccc;
     cursor: not-allowed;
 }
 
-#mosaic_auth button.secondary {
+.mosaic-auth button.secondary {
     display: inline-block;
     background: #f8f8f8;
     color: #222222A5;
@@ -1014,52 +1018,52 @@ rect.select {
     text-align: center;
 }
 
-#mosaic_auth button.secondary:hover {
+.mosaic-auth button.secondary:hover {
     background-color: lightgray;
 }
 
-#mosaic_auth button.danger {
+.mosaic-auth button.danger {
     background: #dc3545;
     color: white;
 }
 
-#mosaic_auth button.danger:hover {
+.mosaic-auth button.danger:hover {
     background: #c82333;
 }
 
-#mosaic_auth .auth-toggle {
+.mosaic-auth .auth-toggle {
     text-align: center;
     margin-top: 20px;
 }
 
-#mosaic_auth .auth-toggle p {
+.mosaic-auth .auth-toggle p {
     color: #222222A5;
     margin: 10px 0;
 }
 
-#mosaic_auth .auth-toggle a {
+.mosaic-auth .auth-toggle a {
     color: #0E1A32;
     text-decoration: none;
     font-weight: 500;
 }
 
-#mosaic_auth .auth-toggle a:hover {
+.mosaic-auth .auth-toggle a:hover {
     text-decoration: underline;
 }
 
-#mosaic_auth .local-option {
+.mosaic-auth .local-option {
     border-top: 1px solid #e7e7e7;
     margin-top: 30px;
     padding-top: 20px;
     text-align: center;
 }
 
-#mosaic_auth .local-option p {
+.mosaic-auth .local-option p {
     color: #222222A5;
     margin-bottom: 15px;
 }
 
-#mosaic_auth .error-message {
+.mosaic-auth .error-message {
     background: #f8d7da;
     color: #721c24;
     padding: 12px;
@@ -1068,20 +1072,20 @@ rect.select {
     border: 1px solid #f5c6cb;
 }
 
-#mosaic_auth .user-info {
+.mosaic-auth .user-info {
     margin: 20px 0;
 }
 
-#mosaic_auth .user-info p {
+.mosaic-auth .user-info p {
     margin: 10px 0;
     color: #222222A5;
 }
 
-#mosaic_auth .user-info strong {
+.mosaic-auth .user-info strong {
     color: #222222;
 }
 
-#mosaic_auth .user-info code {
+.mosaic-auth .user-info code {
     background: #00000008;
     padding: 4px 8px;
     border-radius: 5px;
@@ -1090,12 +1094,12 @@ rect.select {
     word-break: break-all;
 }
 
-#mosaic_auth .account-actions {
+.mosaic-auth .account-actions {
     display: flex;
     gap: 15px;
     margin-top: 30px;
 }
 
-#mosaic_auth .account-actions .button {
+.mosaic-auth .account-actions .button {
     flex: 1;
 }

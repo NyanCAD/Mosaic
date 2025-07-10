@@ -565,7 +565,7 @@
 
 
 (defn viewbox-coord [e]
-  (let [^js el (js/document.getElementById "mosaic_canvas")
+  (let [^js el (js/document.querySelector ".mosaic-canvas")
         m (.inverse (.getScreenCTM el))
         p (point (.-clientX e) (.-clientY e))
         tp (.matrixTransform p m)]
@@ -573,7 +573,7 @@
 
 (def last-coord (atom [0 0]))
 (defn viewbox-movement [e]
-  (let [^js el (js/document.getElementById "mosaic_canvas")
+  (let [^js el (js/document.querySelector ".mosaic-canvas")
         m (.inverse (.getScreenCTM el))
         _ (do (set! (.-e m) 0)
               (set! (.-f m) 0)) ; cancel translation
@@ -925,7 +925,7 @@
           :_attachments {"preview.svg" {:content_type "image/svg+xml"
                                         :data (b64encode (str
                                                           "<?xml-stylesheet type=\"text/css\" href=\"https://nyancad.github.io/Mosaic/app/css/style.css\" ?>"
-                                                          (.-outerHTML (js/document.getElementById "mosaic_canvas"))))}}}))
+                                                          (.-outerHTML (js/document.querySelector ".mosaic-canvas"))))}}}))
 
 (defn deviceprops [key]
   (let [props (r/cursor schematic [key :props])
@@ -1070,12 +1070,12 @@
          :target "libman"
          :title "Open library manager"}
      [cm/library]]
-    [:a {:href "/auth/"
-         :title "Authentication / Account"}
-     [cm/login]]
     [:a {:title "Save Snapshot"
          :on-click snapshot}
-     [cm/save]]]])
+     [cm/save]]
+    [:a {:href "/auth/"
+         :title "Login / Account"}
+     [cm/login]]]])
 
 
 (defn device-active [cell]
@@ -1262,7 +1262,7 @@
                        (map #(vector % (get schem %)) sel))]])))
 
 (defn schematic-ui []
-  [:div#mosaic_app {:class @theme}
+  [:div.mosaic-container {:class @theme}
    [:div.menu.chrome
     [menu-items]]
    [:div.content-wrapper
@@ -1273,7 +1273,7 @@
        [:div.sidebar
         (doall (for [key sel]
                  ^{:key key} [deviceprops key]))])
-     [:svg#mosaic_canvas {:xmlns "http://www.w3.org/2000/svg"
+     [:svg.mosaic-canvas {:xmlns "http://www.w3.org/2000/svg"
                           :height "100%"
                           :width "100%"
                           :class [@theme @tool] ; for export
@@ -1354,7 +1354,7 @@
   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (set! js/document.onkeydown (partial cm/keyboard-shortcuts immediate-shortcuts))
   (rd/render [schematic-ui]
-             (.getElementById js/document "mosaic_editor")))
+             (.querySelector js/document ".mosaic-app.mosaic-editor")))
 
 (defn ^:export init []
   (.setItem js/localStorage "schem" group)

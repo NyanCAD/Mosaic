@@ -261,11 +261,10 @@
 
 (defn ^:dev/after-load render []
   (rd/render [library-manager]
-             (.getElementById js/document "mosaic_libman")))
+             (.querySelector js/document ".mosaic-app.mosaic-libman")))
 
 (defn ^:export init []
 ;;   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (set! js/window.name "libman")
   (set! js/document.onclick #(cm/clear-context-menu))
-  (cm/alert "test")
   (render))
