@@ -9,16 +9,157 @@ body, html {
     margin: 0;
 }
 
-#mosaic_editor, #mosaic_libman {
+.mosaic-app {
     font: 400 16px/18px 'Roboto', sans-serif;
     color: #222222A5;
 }
 
-input, textarea {
+.mosaic-app input, .mosaic-app textarea {
     background: #00000008 0% 0% no-repeat padding-box;
     border: 2px solid #2222220D;
     border-radius: 5px;
     padding: 5px 10px;
+}
+
+/* Global button styling (libman style as default) */
+.mosaic-app button,
+.mosaic-app input[type=submit] {
+    background: #f8f8f8 0% 0% no-repeat padding-box;
+    box-shadow: 0px 1px 4px #00000033;
+    border-radius: 7px;
+    border: none;
+    padding: 10px 15px;
+    cursor: pointer;
+}
+
+.mosaic-app button:active {
+    box-shadow: 0px 0px 4px hsla(0, 0%, 0%, 0.2);
+}
+
+.mosaic-app button.primary,
+.mosaic-app input[type=submit] {
+    background-color: #0E1A32;
+    color: white;
+}
+
+/* Global buttongroup styling */
+.mosaic-app .buttongroup {
+    background: #f8f8f8 0% 0% no-repeat padding-box;
+    box-shadow: 0px 1px 4px #00000033;
+    border-radius: 7px;
+    border: none;
+    padding: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    position: relative;
+}
+
+.mosaic-app .buttongroup.primary {
+    background-color: #0E1A32;
+    color: white;
+}
+
+.mosaic-app .buttongroup.primary > button,
+.mosaic-app .buttongroup summary::after {
+    color: white;
+    border-color: white;
+}
+
+.mosaic-app .buttongroup.primary > button:disabled {
+    color: grey;
+}
+
+.mosaic-app .buttongroup summary {
+    padding: 10px 15px;
+    border-left: 1px solid rgb(224, 224, 224);
+}
+
+.mosaic-app .buttongroup summary::after {
+    transform: rotate(45deg);
+    top: -5px;
+    left: 0px;
+}
+
+.mosaic-app .buttongroup details > button {
+    position: absolute;
+    left: 0;
+    bottom: -100%;
+    width: 100%;
+}
+
+.mosaic-app .buttongroup > button {
+    background: none;
+    box-shadow: none;
+}
+
+/* Global details/summary triangle styling */
+.mosaic-app details summary {
+    list-style-type: none;
+    cursor: pointer;
+}
+
+.mosaic-app details summary::after {
+    content: "";
+    border: solid black;
+    border-width: 0 1px 1px 0;
+    padding: 3px;
+    transform: rotate(-45deg);
+    float: right;
+    position: relative;
+    top: 4px;
+    left: -4px;
+    transition: transform 100ms;
+}
+
+.mosaic-app details[open] summary::after {
+    transform: rotate(45deg);
+}
+
+/* Special cases for details triangles with different backgrounds */
+.mosaic-app .cellsel details[open] summary::after {
+    border-color: white;
+}
+
+/* Global modal and window styling */
+.mosaic-app .window {
+    background: white;
+    box-shadow: 0px 0px 10px #00000033;
+    border-radius: 7px;
+    border: 1px solid lightgray;
+    padding: 20px 20px;
+}
+
+.mosaic-app .window.hidden {
+    display: none;
+}
+
+.mosaic-app .modal {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1000;
+}
+
+.mosaic-app .modal input[type=text] {
+    display: block;
+    margin: 1em 0;
+}
+
+.mosaic-app .modal input[type=submit] {
+    margin-left: 1em;
+}
+
+.mosaic-app .contextmenu {
+    position: absolute;
+    z-index: 1000;
+}
+
+.mosaic-app .contextmenu ul {
+    padding: 0;
+    margin: 0;
+    list-style-type: none;
 }
 /* library manager */
 
@@ -102,64 +243,6 @@ input, textarea {
 }
 
 
-#mosaic_libman button,
-#mosaic_libman input[type=submit],
-#mosaic_libman .buttongroup {
-    background: #f8f8f8 0% 0% no-repeat padding-box;
-    box-shadow: 0px 1px 4px #00000033;
-    border-radius: 7px;
-    border: none;
-    padding: 10px 15px;
-}
-
-#mosaic_libman button:active {
-    box-shadow: 0px 0px 4px hsla(0, 0%, 0%, 0.2);
-}
-#mosaic_libman button.primary,
-#mosaic_libman input[type=submit],
-#mosaic_libman .buttongroup.primary {
-    background-color: #0E1A32;
-    color: white;
-}
-#mosaic_libman .buttongroup.primary > button,
-#mosaic_libman .buttongroup summary::after {
-    color: white;
-    border-color: white;
-}
-#mosaic_libman .buttongroup.primary > button:disabled {
-    color: grey;
-}
-
-#mosaic_libman .buttongroup {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    padding: 0;
-    position: relative;
-}
-
-#mosaic_libman .buttongroup summary {
-    padding: 10px 15px;
-    border-left: 1px solid rgb(224, 224, 224);
-}
-
-#mosaic_libman .buttongroup summary::after {
-    transform: rotate(45deg);
-    top:-5px;
-    left:0px;
-}
-
-#mosaic_libman .buttongroup details > button {
-    position: absolute;
-    left: 0;
-    bottom: -100%;
-    width: 100%;
-}
-
-#mosaic_libman .buttongroup > button {
-    background: none;
-    box-shadow: none;
-}
 
 #mosaic_libman .libraries {
     grid-area: libraries;
@@ -278,27 +361,6 @@ input, textarea {
     color:white;
 }
 
-#mosaic_libman details summary::after {
-    content: "";
-    border: solid black;
-    border-width: 0 1px 1px 0;
-    padding: 3px;
-    transform: rotate(-45deg);
-    float: right;
-    position: relative;
-    top:4px;
-    left:-4px;
-    transition: transform 100ms;
-}
-#mosaic_libman details[open] summary::after {
-    transform: rotate(45deg);
-    border: solid white;
-    border-width: 0 1px 1px 0;
-}
-#mosaic_libman .dbprops details[open] summary::after {
-    border: solid black;
-    border-width: 0 1px 1px 0;
-}
 
 #mosaic_libman {
     display: grid;
@@ -308,39 +370,6 @@ input, textarea {
     grid-template-columns: 1fr 2fr 2fr;
 }
 
-#mosaic_libman .window {
-    background: white;
-    box-shadow: 0px 0px 10px #00000033;
-    border-radius: 7px;
-    border: 1px solid lightgray;
-    padding: 20px 20px;
-}
-#mosaic_libman .window.hidden {
-    display: none;
-}
-
-#mosaic_libman .modal {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-}
-#mosaic_libman .modal input[type=text] {
-    display: block;
-    margin: 1em 0;
-}
-#mosaic_libman .modal input[type=submit] {
-    margin-left:1em;
-}
-
-#mosaic_libman .contextmenu {
-    position: absolute;
-}
-#mosaic_libman .contextmenu ul {
-    padding: 0;
-    margin: 0;
-    list-style-type: none;
-}
 
 #mosaic_libman .empty {
     margin: 1em 0;
@@ -515,15 +544,28 @@ input, textarea {
     list-style-type: none;
     cursor: pointer;
 }
-#mosaic_app .devicetray summary::after {
-    content: "";
+#mosaic_app .devicetray details summary::after {
+    /* Reset conflicting positioning from global rule */
     position: absolute;
-    bottom:0.7em;
-    right:0.7em;
-    border-color: transparent;
-    border-top-color: black;
-    border-style: solid;
-    border-width: 3px;
+    float: none;
+    top: auto;
+    left: auto;
+    
+    /* Position in bottom right */
+    bottom: 0.8em;
+    right: 0.7em;
+    
+    /* Override padding and rotation for devicetray */
+    padding: 2px;
+    transform: rotate(45deg); /* closed = down ▼ */
+}
+
+#mosaic_app .devicetray details[open] summary::after {
+    transform: rotate(-45deg); /* open = right ▶ */
+}
+
+#mosaic_app .devicetray details summary:has(button.active)::after {
+    border-color: white; /* white triangle when button is active */
 }
 #mosaic_app .devicetray details .tray {
     position: absolute;
@@ -869,22 +911,15 @@ rect.select {
     content: none; /* Remove default triangle */
 }
 
+/* Notebook triangle positioning - customize as needed */
 #mosaic_notebook summary::after {
-    content: "◀";
-    font-size: 14px;
-    transition: transform 0.2s ease;
-    margin-left: 8px;
+    top: 6px;
+    left: -2px;
 }
 
 #mosaic_notebook[open] summary::after {
-    transform: rotate(180deg);
-}
-
-/* Collapsed state - position arrow */
-#mosaic_notebook:not([open]) summary::after {
-    writing-mode: horizontal-tb;
-    margin-left: 0;
-    margin-top: 10px;
+    top: -2px;
+    left: 6px;
 }
 
 #mosaic_notebook iframe {
@@ -897,8 +932,6 @@ rect.select {
 
 /* Authentication page */
 #mosaic_auth {
-    font: 400 16px/18px 'Roboto', sans-serif;
-    color: #222222A5;
     background: #f9f9f9;
     width: 100%;
     height: 100vh;
@@ -960,25 +993,9 @@ rect.select {
     border-color: #0E1A32;
 }
 
-#mosaic_auth button,
-#mosaic_auth input[type=submit] {
-    background: #f8f8f8;
-    box-shadow: 0px 1px 4px #00000033;
-    border-radius: 7px;
-    border: none;
-    padding: 10px 15px;
-    cursor: pointer;
-    font: 400 16px/18px 'Roboto', sans-serif;
-}
-
-#mosaic_auth button:active {
-    box-shadow: 0px 0px 4px hsla(0, 0%, 0%, 0.2);
-}
-
+/* Auth-specific button overrides */
 #mosaic_auth button.primary,
 #mosaic_auth input[type=submit] {
-    background-color: #0E1A32;
-    color: white;
     width: 100%;
     padding: 12px;
     margin: 20px 0;
