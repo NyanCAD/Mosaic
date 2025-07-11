@@ -79,7 +79,7 @@ jobs:
         run: |
           scp public/wheels/nyancad_server-*.whl deploy@nyancad.com:/tmp/
           ssh deploy@nyancad.com "
-            /opt/nyancad-server/venv/bin/pip install --force-reinstall /tmp/nyancad_server-*.whl && \
+            /opt/nyancad-server/venv/bin/pip install --upgrade /tmp/nyancad_server-*.whl && \
             sudo /bin/systemctl reload nyancad-server && \
             rm /tmp/nyancad_server-*.whl
           "
