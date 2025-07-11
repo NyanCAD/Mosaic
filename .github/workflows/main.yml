@@ -75,9 +75,14 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H nyancad.com >> ~/.ssh/known_hosts
 
-      - name: Deploy to server via rsync 🚀
+      - name: Deploy to server 🚀
         run: |
-          rsync -avz --delete public/* deploy@nyancad.com:/var/www/nyancad.com/
+          scp public/wheels/nyancad_server-*.whl deploy@nyancad.com:/tmp/
+          ssh deploy@nyancad.com "
+            /opt/nyancad-server/venv/bin/pip install --force-reinstall /tmp/nyancad_server-*.whl && \
+            sudo /bin/systemctl reload nyancad-server && \
+            rm /tmp/nyancad_server-*.whl
+          "
 
   publish-nyancad-to-pypi:
     name: Publish nyancad 🐍 distribution 📦 to PyPI
