@@ -57,6 +57,23 @@ def rotate(shape, transform, devx, devy):
     return res
 
 
+def port_perimeter(ports):
+    width = 1 + max(len(ports.get('left', [])), len(ports.get('right', [])))
+    height = 1 + max(len(ports.get('top', [])), len(ports.get('bottom', [])))
+    return width, height
+
+def port_locations(ports):
+    width, height = port_perimeter(ports)
+    top = ports.get('top', [])
+    bottom = ports.get('bottom', [])
+    left = ports.get('left', [])
+    right = ports.get('right', [])
+    top_locs = [((i + 1), 0, n) for i, n in enumerate(top)]
+    bottom_locs = [((i + 1), height + 1, n) for i, n in enumerate(bottom)]
+    left_locs = [(0, (i + 1), n) for i, n in enumerate(left)]
+    right_locs = [(width + 1, (i + 1), n) for i, n in enumerate(right)]
+    return top_locs + bottom_locs + left_locs + right_locs
+
 def getports(doc, models):
     cell = doc['cell']
     x = doc['x']
@@ -78,7 +95,11 @@ def getports(doc, models):
     elif cell in {'resistor', 'capacitor', 'inductor', 'vsource', 'isource', 'diode'}:
         return rotate(twoport_shape, tr, x, y)
     else:
-        return rotate(models[cell]['conn'], tr, x, y)
+        model = models[cell]
+        if 'ports' in model:
+            return rotate(port_locations(model['ports']), tr, x, y)
+        else:
+            return rotate(model['conn'], tr, x, y)
 
 
 def port_index(docs, models):
@@ -220,7 +241,11 @@ def circuit_spice(docs, models, declarations, corner, sim):
             templ = "Q{name} {ports} {properties}"
         else:  # subcircuit
             m = models[cell]
-            ports = ' '.join(p(c[2]) for c in m['conn'])
+            conn = m.get('ports', {})
+            if conn:
+                ports = ' '.join(p(c[2]) for c in port_locations(conn))
+            else:
+                ports = ' '.join(p(c[2]) for c in m['conn'])
             templ = "X{name} {ports} {properties}"
 
         # a spice type model can overwrite its reference
@@ -247,7 +272,11 @@ def spice_netlist(name, schem, extra="", corner='tt', temp=None, sim="NgSpice", 
         if subname in {name, "models"}: continue
         _id = SchemId.from_string(subname)
         mod = models[_id.cell]
-        ports = ' '.join(c[2] for c in mod['conn'])
+        conn = mod.get('ports', {})
+        if conn:
+            ports = ' '.join(c[2] for c in port_locations(conn))
+        else:
+            ports = ' '.join(c[2] for c in mod['conn'])
         body = circuit_spice(docs, models, declarations, corner, sim)
         declarations.add(f".subckt {_id.model} {ports}\n{body}\n.ends {_id.model}") # parameters??
 

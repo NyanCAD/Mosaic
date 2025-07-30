@@ -179,6 +179,23 @@
       size
       1)))
 
+(defn port-perimeter [ports]
+  (let [height (max 1 (count (:left ports)) (count (:right ports)))
+        width (max 1 (count (:top ports)) (count (:bottom ports)))]
+    [width height]))
+
+(defn port-locations [ports]
+  (let [[width height] (port-perimeter ports)
+        top (:top ports)
+        bottom (:bottom ports)
+        left (:left ports)
+        right (:right ports)
+        top-locs (map-indexed (fn [i n] [(inc i) 0 n]) top)
+        bottom-locs (map-indexed (fn [i n] [(inc i) (inc height) n]) bottom)
+        left-locs (map-indexed (fn [i n] [0 (inc i) n]) left)
+        right-locs (map-indexed (fn [i n] [(inc width) (inc i) n]) right)]
+    [top-locs bottom-locs left-locs right-locs]))
+
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
 (def zoom-out (r/adapt-react-class icons/ZoomOut))

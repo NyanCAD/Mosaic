@@ -357,13 +357,16 @@
 
 (defn circuit-shape [k v]
   (let [model (:cell v)
-        size (get-in @modeldb [model :bg] [1 1])]
+        ports (get-in @modeldb [model :ports])
+        size (if ports (cm/port-perimeter ports) [1 1])]
     (draw-background size k v)))
 
 (defn circuit-conn [k v]
   (let [model (:cell v)
-        [width height] (get-in @modeldb [model :bg] [1 1])
-        pattern (get-in @modeldb [model :conn] [])]
+        ports (get-in @modeldb [model :ports])
+        [width height] (if ports (cm/port-perimeter ports) [1 1])
+        pattern (if ports (apply concat (cm/port-locations ports)) [])]
+    (println ports pattern)
     (draw-pattern (+ 2 (max width height)) pattern
                   port k v)))
 
@@ -372,23 +375,19 @@
 
 (defn circuit-sym [k v]
   (let [cell (:cell v)
-        model (get-in v [:props :model])
-        [width height] (get-in @modeldb [cell :bg] [1 1])
-        sym (get-in @modeldb [cell :sym])]
+        ports (get-in @modeldb [cell :ports])
+        [width height] (if ports (cm/port-perimeter ports) [1 1])
+        [top-locs bottom-locs left-locs right-locs] (cm/port-locations ports)]
     [device (+ 2 (max width height)) k v
-     (if sym
-       [:image {:href sym
-                :on-mouse-down #(.preventDefault %) ; prevent dragging the image
-                :on-double-click #(.assign js/window.location (ckt-url model))}]
-       [:<>
-        [lines (for [x (range 1.5 (+ 1.5 width))] [[x 0.5] [x 1.0]])]
-        [lines (for [y (range 1.5 (+ 1.5 height))] [[0.5 y] [1.0 y]])]
-        [lines (for [x (range 1.5 (+ 1.5 width))] [[x (+ height 1.5)] [x (+ height 1)]])]
-        [lines (for [y (range 1.5 (+ 1.5 height))] [[(+ width 1.5) y] [(+ width 1) y]])]
-        [:rect.outline
-         {:x grid-size :y grid-size
-          :width (* grid-size width)
-          :height (* grid-size height)}]])]))
+     [:<>
+      [lines (for [[x y _] top-locs] [[(+ x 0.5) (+ y 0.5)] [(+ x 0.5) (+ y 1)]])]
+      [lines (for [[x y _] bottom-locs] [[(+ x 0.5) (+ y 0)] [(+ x 0.5) (+ y 0.5)]])]
+      [lines (for [[x y _] right-locs] [[(+ x 0) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]
+      [lines (for [[x y _] left-locs] [[(+ x 1) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]
+      [:rect.outline
+       {:x grid-size :y grid-size
+        :width (* grid-size width)
+        :height (* grid-size height)}]]]))
 
 (def models {"pmos" {::bg cm/active-bg
                      ::conn mosfet-shape
@@ -497,8 +496,9 @@
 
 (defn circuit-locations [{:keys [:_id :x :y :cell :transform]}]
   (let [mod (get @modeldb cell)
-        conn (:conn mod)
-        [w h] (:bg mod)]
+        ports (:ports mod)
+        conn (if ports (apply concat (cm/port-locations ports)) [])
+        [w h] (if ports (cm/port-perimeter ports) [1 1])]
     [(rotate-shape conn transform x y)
      (rotate-shape (for [x (range w) y (range h)]
                      [(inc x) (inc y) "%"])

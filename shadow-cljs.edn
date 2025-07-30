@@ -24,4 +24,5 @@
              :anywidget {:exports {render nyancad.mosaic.anywidget/render} :depends-on #{:common}}
              :auth {:init-fn nyancad.mosaic.auth/init :depends-on #{:common}}}
    :compiler-options {:output-feature-set :es2018}
-   :build-hooks [(nyancad.mosaic.build-hooks/marimo-export-hook)]}}}
+   ;:build-hooks [(nyancad.mosaic.build-hooks/marimo-export-hook)]
+   }}}

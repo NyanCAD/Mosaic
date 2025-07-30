@@ -109,64 +109,23 @@
 
 
 
-(defn shape-selector [cell]
-  (let [[width height] (:bg @cell)
-        width (+ 2 width)
-        height (+ 2 height)]
-    [:table
-     [:tbody
-      (doall
-       (for [y (range height)]
-         [:tr {:key y}
-          (doall
-           (for [x  (range width)
-                 :let [handler (fn [^js e]
-                                 (if (.. e -target -checked)
-                                   (swap! cell update :conn cm/set-coord [x y "#"])
-                                   (swap! cell update :conn cm/remove-coord [x y "#"])))]]
-             [:td {:key x}
-              [:input {:type "checkbox"
-                       :checked (cm/has-coord (:conn @cell) [x y])
-                       :on-change handler}]]))]))]]))
-
-(defn background-selector [cell]
-  [:<>
-   [:label {:for "bgwidth" :title "Width of the background tile"} "Background width"]
-   [:input {:id "bgwidth"
-            :type "number"
-            :default-value (get (:bg @cell) 0 1)
-            :on-change (cm/debounce #(swap! cell update :bg (fnil assoc [0 0]) 0 (js/parseInt (.. % -target -value))))}]
-   [:label {:for "bgheight" :title "Width of the background tile"} "Background height"]
-   [:input {:id "bgheigt"
-            :type "number"
-            :default-value (get (:bg @cell) 1 1)
-            :on-change (cm/debounce #(swap! cell update :bg (fnil assoc [0 0]) 1 (js/parseInt (.. % -target -value))))}]])
-
-(defn port-namer [cell]
-  [:<>
-   (for [[x y name] (:conn @cell)
-         :let [handler (cm/debounce #(swap! cell update :conn cm/set-coord [x y (.. % -target -value)]))]]
-     [:<> {:key [x y]}
-      [:label {:for (str "port" x ":" y) :title "Port name"} x "/" y]
-      [:input {:id (str "port" x ":" y)
-               :type "text"
-               :default-value name
-               :on-change handler}]])])
+(defn port-editor [cell side]
+  (let [path [:ports side]]
+    [:<>
+     [:label {:for (name side)} (name side)]
+     [cm/dbfield :input {:id (name side), :type "text"} cell
+      #(clojure.string/join " " (get-in % path))
+      #(swap! %1 assoc-in path (clojure.string/split %2 #"[, ]+" -1))]]))
 
 (defn cell-properties [db]
   (let [cell @selcell
         sc (r/cursor db [cell])]
     (if cell
-      [:<>
-       [:div.properties
-        [background-selector sc]
-        [:label {:for "ports" :title "pattern for the device ports"} "ports"]
-        [shape-selector sc]
-        [port-namer sc]
-        [:label {:for "symurl" :title "image url for this component"} "url"]
-        [:input {:id "symurl" :type "text"
-                 :default-value (get-in @db [cell :sym])
-                 :on-blur #(swap! db assoc-in [cell :sym] (.. % -target -value))}]]]
+      [:div.properties
+       [port-editor sc :top]
+       [port-editor sc :bottom]
+       [port-editor sc :left]
+       [port-editor sc :right]]
       [:div.empty "Select an interface to edit its properties."])))
 
 (def dialect (r/atom "NgSpice"))
@@ -194,8 +153,8 @@
          #(swap! %1 assoc :decltempl %2)]
         [:label {:for "vectors" :title "Comma-seperated device outputs to save"} "Vectors"]
         [cm/dbfield :input {:id "vectors", :placeholder "id, gm"} mod
-         #(apply str (interpose ", " (:vectors %)))
-         #(swap! %1 assoc :vectors (clojure.string/split %2 #", " -1))]
+         #(clojure.string/join " " (:vectors %))
+         #(swap! %1 assoc :vectors (clojure.string/split %2 #"[, ]+" -1))]
         (when (clojure.string/starts-with? (clojure.string/lower-case (:reftempl @mod "")) "x")
           [:<>
            [:label {:for "vectorcomp" :title "For subcircuits, the name of the thing inside of which to save vectors"} "Main component"]
@@ -210,8 +169,8 @@
        [:<>
         [:label {:for "categories" :title "Comma-seperated device categories"} "Categories"]
         [cm/dbfield :input {:id "categories"} mod
-         #(apply str (interpose ", " (:categories %)))
-         #(swap! %1 assoc :categories (clojure.string/split %2 #", " -1))]]
+         #(clojure.string/join " " (:categories %))
+         #(swap! %1 assoc :categories (clojure.string/split %2 #"[, ]+" -1))]]
        [:div.empty "Select a schematic or SPICE model to edit its properties."])]))
 
 (defn cell-view []
