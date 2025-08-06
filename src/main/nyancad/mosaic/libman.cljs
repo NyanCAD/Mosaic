@@ -19,9 +19,11 @@
 
 ; used for ephermeal UI state
 (defonce selcat (r/atom []))
-(defonce selcell (r/atom nil))
-(defonce selmod (r/atom nil))
+(defonce selmodel (r/atom nil))
 (defonce syncactive (r/atom false))
+
+; computed seltype from last element of selcat
+(defonce seltype (r/track #(last @selcat)))
 
 
 (defn cell-context-menu [e db cellname]
@@ -33,46 +35,38 @@
 (defn vec-startswith [v prefix]
   (= (subvec v 0 (min (count v) (count prefix))) prefix))
 
-(defn cell-categories [cell]
-  (map #(conj (clojure.string/split % "/") (:_id cell))
-       (conj (mapcat :categories (vals (:models cell))) "Everything")))
-
-(defn category-trie [models]
-  (->> (vals models)
-       (mapcat cell-categories)
-       (reduce #(assoc-in %1 %2 {}) {})))
+(defn build-category-type-index 
+  "Build a hierarchical index of categories -> types from flattened model documents"
+  [models]
+  (reduce (fn [index [_id model]]
+            (let [category (or (:category model) [])
+                  type (:type model "uncategorized")]
+              (assoc-in index (conj category type) #{})))
+          {} models))
 
 (defn categories [base trie]
   [:<>
    (doall (for [[cat subtrie] trie
-                :when (and (seq cat) (seq subtrie)) ; branch
                 :let [path (conj base cat)]]
             [:details.tree {:key path
                             :class path
                             :open (vec-startswith @selcat path)
-                            :on-toggle #(when (.. % -target -open)
+                            :on-toggle #(do
                                           (.stopPropagation %)
-                                          (reset! selcell nil)
-                                          (reset! selmod nil)
-                                          (reset! selcat path))}
-             [:summary cat]
-             [:div.detailbody
-              [categories path subtrie]]]))
-   [cm/radiobuttons selcell
-    (doall (for [[cat subtrie] trie
-                 :when (empty? subtrie) ; leaf
-                 :let [cell (get @modeldb cat)
-                       cname (second (.split cat ":"))]]
-                                         ; inactive, active, key, title
-             [(get cell :name cname) [cm/renamable (r/cursor modeldb [cat :name])] cat cname]))
-    nil
-    (fn [key] #(cell-context-menu % modeldb key))]])
+                                          (if (.. % -target -open)
+                                            (reset! selcat path)
+                                            (when (vec-startswith @selcat path)
+                                              (reset! selcat (pop path)))))}
+            [:summary cat]
+             (when (seq subtrie)
+               [:div.detailbody
+                [categories path subtrie]])]))])
 
 (defn database-selector []
   [:div.cellsel
    (if (seq @modeldb)
-     [categories [] (category-trie @modeldb)]
-     [:div.empty "There aren't any interfaces yet. Open a different workspace or click \"Add interface\" to get started."])])
+     [categories [] (build-category-type-index @modeldb)]
+     [:div.empty "There aren't any models yet"])])
 
 (defn edit-url [mod]
     (doto (js/URL. ".." js/window.location)
@@ -85,27 +79,27 @@
                         [:li {:on-click #(js/window.open (edit-url (name key)), cellname)} "edit"]
                         [:li {:on-click #(swap! db update-in [cellname :models] dissoc key)} "delete"]]))
 
-(defn schematic-selector [db]
-  (let [cellname @selcell
-        cell (get @db cellname)]
+(defn model-list-selector 
+  "Show list of individual models for the selected category/type path"
+  [db]
+  (let [filtered-models (filter (fn [[_id model]]
+                                  (let [model-path (conj (or (:category model) []) (:type model))]
+                                    (vec-startswith model-path @selcat)))
+                                @db)]
     [:div.schematics
-     (if @selcell
-       [cm/radiobuttons selmod
-        (doall (for [[key mod] (:models cell)
-                     :when (or (= @selcat ["Everything"])
-                               (some (partial = (apply str (interpose "/" @selcat))) (:categories mod)))
-                     :let [schem? (= (get-in cell [:models key :type]) "schematic")
-                           icon (if schem? cm/schemmodel cm/codemodel)]]
-                 ; inactive, active, key, title
-                 [[:span [icon] " " (get mod :name key)]
-                  [:span [icon] " " [cm/renamable (r/cursor db [cellname :models key :name])]]
-                  key key]))
-        (fn [key]
-          (when (= (get-in cell [:models key :type]) "schematic")
-            #(js/window.open (edit-url (name key)), cellname)))
-        (fn [key]
-          #(schem-context-menu % db cellname key))]
-       [:div.empty "There are no implementations to show. Select an interface to edit its schematics and SPICE models."])]))
+     [cm/radiobuttons selmodel
+      (doall (for [[model-id model] filtered-models
+                   :let [schem? (= (:type model) "schematic")
+                         icon (if schem? cm/schemmodel cm/codemodel)]]
+               ; inactive, active, key, title
+               [[:span [icon] " " (get model :name model-id)]
+                [:span [icon] " " [cm/renamable (r/cursor db [model-id :name])]]
+                model-id (get model :name model-id)]))
+      (fn [model-id]
+        (when (= (get-in @db [model-id :type]) "schematic")
+          #(js/window.open (edit-url model-id))))
+      (fn [model-id]
+        #(cell-context-menu % db model-id))]]))
 
 
 
@@ -117,24 +111,34 @@
       #(clojure.string/join " " (get-in % path))
       #(swap! %1 assoc-in path (clojure.string/split %2 #"[, ]+" -1))]]))
 
-(defn cell-properties [db]
-  (let [cell @selcell
-        sc (r/cursor db [cell])]
-    (if cell
+(defn model-properties 
+  "Edit properties for the selected model"
+  [db]
+  (let [mod (r/cursor db [@selmodel])]
+    (if @selmodel
       [:div.properties
-       [port-editor sc :top]
-       [port-editor sc :bottom]
-       [port-editor sc :left]
-       [port-editor sc :right]]
-      [:div.empty "Select an interface to edit its properties."])))
+       [:label {:for "type"} "Type"]
+       [cm/dbfield :input {:id "type"} mod
+        :type
+        #(swap! %1 assoc :type %2)]
+       [:label {:for "categories" :title "Comma-seperated device categories"} "Categories"]
+       [cm/dbfield :input {:id "categories"} mod
+        #(clojure.string/join " " (or (:category %) []))
+        #(swap! %1 assoc :category (clojure.string/split %2 #"[, ]+" -1))]
+       [:h4 "Port Configuration"]
+       [port-editor mod :top]
+       [port-editor mod :bottom]
+       [port-editor mod :left]
+       [port-editor mod :right]]
+      [:div.empty "Select a model to edit its properties."])))
 
 (def dialect (r/atom "NgSpice"))
 
 (defn model-preview [db]
-  (let [mod (r/cursor db [@selcell :models (keyword @selmod) (keyword @dialect)])]
+  (let [mod (r/cursor db [@selmodel])]
     (prn @mod)
     [:div.properties
-     (if (= (get-in @db [@selcell :models (keyword @selmod) :type]) "spice")
+     (if (and @selmodel (= (:type @mod) "spice"))
        [:<>
         [:label {:for "dialect"} "Simulator"]
         [:select {:id "dialect"
@@ -161,47 +165,44 @@
            [cm/dbfield :input {:id "vectorcomp"} mod
             :component
             #(swap! %1 assoc :component %2)]])]
-       (when (and @selcell @selmod)
+       (when @selmodel
          [:<>
-          [:a {:href (edit-url (name @selmod))
-               :target @selcell} "Edit"]]))
-     (if (and @selcell @selmod)
-       [:<>
-        [:label {:for "categories" :title "Comma-seperated device categories"} "Categories"]
-        [cm/dbfield :input {:id "categories"} mod
-         #(clojure.string/join " " (:categories %))
-         #(swap! %1 assoc :categories (clojure.string/split %2 #"[, ]+" -1))]]
-       [:div.empty "Select a schematic or SPICE model to edit its properties."])]))
+          [:a {:href (edit-url @selmodel)
+               :target @selmodel} "Edit"]]))]))
 
 (defn cell-view []
-  (let [add-cell #(cm/prompt "Enter the name of the new interface"
-                             (fn [name] (swap! modeldb assoc (str "models" sep name) {:name name})))
+  (let [category-path (if @seltype 
+                        (vec (butlast @selcat))  ; remove type from path
+                        @selcat)                 ; use full path if no type selected
         add-schem #(cm/prompt "Enter the name of the new schematic"
-                              (fn [name] (swap! modeldb assoc-in [@selcell :models (keyword (cm/random-name))] {:name name, :type "schematic"})))
+                              (fn [name] 
+                                (let [model-id (str "models:" (cm/random-name))]
+                                  (swap! modeldb assoc model-id 
+                                         {:name name
+                                          :type "schematic"
+                                          :category category-path}))))
         add-spice #(cm/prompt "Enter the name of the new SPICE model"
-                              (fn [name] (swap! modeldb assoc-in [@selcell :models (keyword (cm/random-name))] {:name name :type "spice"})))]
+                              (fn [name] 
+                                (let [model-id (str "models:" (cm/random-name))]
+                                  (swap! modeldb assoc model-id 
+                                         {:name name
+                                          :type "spice"
+                                          :category category-path}))))]
     [:<>
      [:div.schsel
       [:div.addbuttons
-       
-       [:button {:on-click add-cell
-                 :disabled (nil? @selcat)}
-        [cm/add-cell] "Add interface"]
-       [:div.buttongroup.primary
-        [:button {:on-click add-schem
-                  :disabled (or (nil? @selcat) (nil? @selcell))}
+        [:button.primary {:on-click add-schem }
          [cm/add-model] "Add schematic"]
-        [:details
-         [:summary.button]
-         [:button {:on-click add-spice
-                   :disabled (or (nil? @selcat) (nil? @selcell))}
-          [cm/add-model] "Add SPICE model"]]]]
-      [:h2 "Interface " (when-let [cell @selcell] (second (.split cell ":")))]
-      [schematic-selector modeldb]]
+        [:button {:on-click add-spice }
+         [cm/add-model] "Add SPICE model"]]
+      [:h2 "Models: " (if (seq @selcat)
+                        (clojure.string/join "/" @selcat)
+                        "All models")]
+      [model-list-selector modeldb]]
      [:div.proppane
       [:div.preview [model-preview modeldb]]
-      [:h3 "Interface properties"]
-      [cell-properties modeldb]]]))
+      [:h3 "Model Properties"]
+      [model-properties modeldb]]]))
 
 (defn library-manager []
   [:<>

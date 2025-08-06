@@ -112,12 +112,12 @@ body, html {
     transition: transform 100ms;
 }
 
-.mosaic-app details[open] summary::after {
+.mosaic-app details[open] > summary::after {
     transform: rotate(45deg);
 }
 
 /* Special cases for details triangles with different backgrounds */
-.mosaic-app .cellsel details[open] summary::after {
+.mosaic-app .cellsel details[open] > summary::after {
     border-color: white;
 }
 
@@ -356,7 +356,7 @@ body, html {
     margin: 0 1em 1em 1em;
 }
 
-.mosaic-libman .cellsel details[open] summary {
+.mosaic-libman .cellsel details[open] > summary {
     background: #0E1A32 0% 0% no-repeat padding-box;
     color:white;
 }
