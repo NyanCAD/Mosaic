@@ -17,20 +17,50 @@
 (defonce snapshots (pouch-atom db "snapshots" (r/atom {})))
 (defonce watcher (watch-changes db modeldb snapshots))
 
+; Device types for SPICE models - corresponds to editor device types
+(def device-types #{"pmos" "nmos" "npn" "pnp" "resistor" "capacitor" 
+                    "inductor" "vsource" "isource" "diode"})
+
 ; used for ephermeal UI state
 (defonce selcat (r/atom []))
 (defonce selmodel (r/atom nil))
 (defonce syncactive (r/atom false))
 
-; computed seltype from last element of selcat
-(defonce seltype (r/track #(last @selcat)))
+; computed seltype from last element of selcat only if it's a device type
+(defonce seltype (r/track #(device-types (last @selcat))))
+
+(defn edit-url [mod]
+    (doto (js/URL. ".." js/window.location)
+      (.. -searchParams (append "schem" mod))))
+
+(defn spice-model-modal [cb]
+  (reset! cm/modal-content
+          [:form {:on-submit (fn [^js e]
+                               (.preventDefault e)
+                               (let [device-type (.. e -target -elements -devicetype -value)
+                                     model-name (.. e -target -elements -modelname -value)]
+                                 (when (and (seq model-name) (contains? device-types device-type))
+                                   (cb device-type model-name)))
+                               (reset! cm/modal-content nil))}
+           [:div "Enter the type and name of the new SPICE model"]
+           [:div
+            [:select {:name "devicetype" :id "device-type" :default-value "diode"}
+             (for [dtype (sort device-types)]
+               [:option {:key dtype :value dtype} dtype])]
+            [:input {:name "modelname" :id "model-name" :type "text" :auto-focus true :placeholder "Model name"}]]
+           [:div
+            [:button {:type "button" :on-click #(reset! cm/modal-content nil)} "Cancel"]
+            [:input {:type "submit" :value "Create"}]]]))
 
 
-(defn cell-context-menu [e db cellname]
+(defn model-context-menu [e db model-id]
   (.preventDefault e)
-  (cm/set-context-menu (.-clientX e) (.-clientY e)
-                       [:ul
-                        [:li {:on-click #(swap! db dissoc cellname)} "delete"]]))
+  (let [model (get @db model-id)]
+    (cm/set-context-menu (.-clientX e) (.-clientY e)
+                         [:ul
+                          (when (= (:type model) "ckt")
+                            [:li {:on-click #(js/window.open (edit-url model-id), model-id)} "edit"])
+                          [:li {:on-click #(swap! db dissoc model-id)} "delete"]])))
 
 (defn vec-startswith [v prefix]
   (= (subvec v 0 (min (count v) (count prefix))) prefix))
@@ -68,16 +98,6 @@
      [categories [] (build-category-type-index @modeldb)]
      [:div.empty "There aren't any models yet"])])
 
-(defn edit-url [mod]
-    (doto (js/URL. ".." js/window.location)
-      (.. -searchParams (append "schem" mod))))
-
-(defn schem-context-menu [e db cellname key]
-  (.preventDefault e)
-  (cm/set-context-menu (.-clientX e) (.-clientY e)
-                       [:ul
-                        [:li {:on-click #(js/window.open (edit-url (name key)), cellname)} "edit"]
-                        [:li {:on-click #(swap! db update-in [cellname :models] dissoc key)} "delete"]]))
 
 (defn model-list-selector 
   "Show list of individual models for the selected category/type path"
@@ -89,17 +109,17 @@
     [:div.schematics
      [cm/radiobuttons selmodel
       (doall (for [[model-id model] filtered-models
-                   :let [schem? (= (:type model) "schematic")
+                   :let [schem? (= (:type model) "ckt")
                          icon (if schem? cm/schemmodel cm/codemodel)]]
                ; inactive, active, key, title
                [[:span [icon] " " (get model :name model-id)]
                 [:span [icon] " " [cm/renamable (r/cursor db [model-id :name])]]
                 model-id (get model :name model-id)]))
       (fn [model-id]
-        (when (= (get-in @db [model-id :type]) "schematic")
+        (when (= (get-in @db [model-id :type]) "ckt")
           #(js/window.open (edit-url model-id))))
       (fn [model-id]
-        #(cell-context-menu % db model-id))]]))
+        #(model-context-menu % db model-id))]]))
 
 
 
@@ -117,10 +137,6 @@
   (let [mod (r/cursor db [@selmodel])]
     (if @selmodel
       [:div.properties
-       [:label {:for "type"} "Type"]
-       [cm/dbfield :input {:id "type"} mod
-        :type
-        #(swap! %1 assoc :type %2)]
        [:label {:for "categories" :title "Comma-seperated device categories"} "Categories"]
        [cm/dbfield :input {:id "categories"} mod
         #(clojure.string/join " " (or (:category %) []))
@@ -138,7 +154,7 @@
   (let [mod (r/cursor db [@selmodel])]
     (prn @mod)
     [:div.properties
-     (if (and @selmodel (= (:type @mod) "spice"))
+     (if (and @selmodel (contains? device-types (:type @mod)))
        [:<>
         [:label {:for "dialect"} "Simulator"]
         [:select {:id "dialect"
@@ -171,23 +187,23 @@
                :target @selmodel} "Edit"]]))]))
 
 (defn cell-view []
-  (let [category-path (if @seltype 
+  (let [category-path (if @seltype
                         (vec (butlast @selcat))  ; remove type from path
                         @selcat)                 ; use full path if no type selected
         add-schem #(cm/prompt "Enter the name of the new schematic"
-                              (fn [name] 
+                              (fn [name]
                                 (let [model-id (str "models:" (cm/random-name))]
-                                  (swap! modeldb assoc model-id 
+                                  (swap! modeldb assoc model-id
                                          {:name name
-                                          :type "schematic"
+                                          :type "ckt"
                                           :category category-path}))))
-        add-spice #(cm/prompt "Enter the name of the new SPICE model"
-                              (fn [name] 
-                                (let [model-id (str "models:" (cm/random-name))]
-                                  (swap! modeldb assoc model-id 
-                                         {:name name
-                                          :type "spice"
-                                          :category category-path}))))]
+        add-spice #(spice-model-modal
+                    (fn [device-type model-name]
+                      (let [model-id (str "models:" (cm/random-name))]
+                        (swap! modeldb assoc model-id
+                               {:name model-name
+                                :type device-type
+                                :category category-path}))))]
     [:<>
      [:div.schsel
       [:div.addbuttons

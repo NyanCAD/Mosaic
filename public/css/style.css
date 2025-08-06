@@ -14,7 +14,7 @@ body, html {
     color: #222222A5;
 }
 
-.mosaic-app input, .mosaic-app textarea {
+.mosaic-app input, .mosaic-app textarea, .mosaic-app select {
     background: #00000008 0% 0% no-repeat padding-box;
     border: 2px solid #2222220D;
     border-radius: 5px;
@@ -143,11 +143,10 @@ body, html {
 }
 
 .mosaic-app .modal input[type=text] {
-    display: block;
     margin: 1em 0;
 }
 
-.mosaic-app .modal input[type=submit] {
+.mosaic-app .modal input:not(:first-child) {
     margin-left: 1em;
 }
 
