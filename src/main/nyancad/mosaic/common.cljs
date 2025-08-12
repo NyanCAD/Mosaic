@@ -137,12 +137,12 @@
 (s/def ::right ::port-list)
 (s/def ::code string?)
 (s/def ::use-x boolean?)
-(s/def ::template (s/keys :req-un [::name ::code] :opt-un [::use-x]))
+(s/def ::template (s/keys :opt-un [::name ::code ::use-x]))
 (s/def ::template-list (s/coll-of ::template :kind vector?))
 (s/def ::templates (s/map-of keyword? ::template-list))
 
-(s/def ::model (s/keys :req-un [::name ::type]
-                       :opt-un [::category ::ports ::templates]))
+(s/def ::model (s/keys :req-un [::name ::type ::category]
+                       :opt-un [::ports ::templates]))
 (s/def ::modeldb (s/map-of string? ::model))
 
 ; https://clojure.atlassian.net/browse/CLJS-3207

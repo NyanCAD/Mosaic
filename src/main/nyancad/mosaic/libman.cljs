@@ -152,39 +152,59 @@
        [port-editor mod :right]]
       [:div.empty "Select a model to edit its properties."])))
 
-(def dialect (r/atom "NgSpice"))
+(def language (r/atom :spice))
+(def implementation (r/atom 0))
 
 (defn model-preview [db]
-  (let [mod (r/cursor db [@selmodel])]
+  (let [mod (r/cursor db [@selmodel])
+        template-cursor (r/cursor mod [:templates @language @implementation])]
     (prn @mod)
     [:div.properties
      (if (and @selmodel (contains? cm/device-types (:type @mod)))
        [:<>
-        [:label {:for "dialect"} "Simulator"]
-        [:select {:id "dialect"
+        [:label {:for "language"} "Language"]
+        [:select {:id "language"
                   :type "text"
-                  :value @dialect
-                  :on-change #(reset! dialect (.. % -target -value))}
-         [:option "NgSpice"]
-         [:option "Xyce"]]
-        [:label {:for "reftempl"} "Reference template"]
-        [cm/dbfield :textarea {:id "reftempl", :placeholder "X{name} {ports} {properties}"} mod
-         :reftempl
-         #(swap! %1 assoc :reftempl %2)]
-        [:label {:for "decltempl"} "Declaration template"]
-        [cm/dbfield :textarea {:id "decltempl"} mod
-         :decltempl
-         #(swap! %1 assoc :decltempl %2)]
-        [:label {:for "vectors" :title "Comma-seperated device outputs to save"} "Vectors"]
-        [cm/dbfield :input {:id "vectors", :placeholder "id, gm"} mod
-         #(clojure.string/join " " (:vectors %))
-         #(swap! %1 assoc :vectors (clojure.string/split %2 #"[, ]+" -1))]
-        (when (clojure.string/starts-with? (clojure.string/lower-case (:reftempl @mod "")) "x")
+                  :value (name @language)
+                  :on-change #(reset! language (keyword (.. % -target -value)))}
+         [:option {:value "spice"} "Spice"]
+         [:option {:value "spectre"} "Spectre"]
+         [:option {:value "verilog"} "Verilog"]
+         [:option {:value "vhdl"} "VHDL"]]
+        
+        [:label {:for "implementation"} "Implementation"]
+        [:select {:id "implementation"
+                  :type "text"
+                  :value @implementation
+                  :on-change #(reset! implementation (js/parseInt (.. % -target -value)))}
+         [:option {:value 0} "default"]
+         (let [templates (get-in @mod [:templates @language] [])]
+           [:<>
+            (doall (rest (map-indexed 
+                           (fn [i template]
+                             [:option {:key i :value i} (:name template "<nameless>")])
+                           templates)))
+            [:option {:value (count templates)} "<new>"]])]
+        
+        [:label {:for "template-name"} "Name"]
+        [cm/dbfield :input {:id "template-name"} template-cursor
+         #(if (= @implementation 0) 
+            (:name % "default")
+            (:name %))
+         #(swap! %1 assoc :name %2)]
+        
+        [:label {:for "template-code"} "Code"]
+        [cm/dbfield :textarea {:id "template-code" :rows 8} template-cursor
+         :code
+         #(swap! %1 assoc :code %2)]
+        
+        (when (= @language :spice)
           [:<>
-           [:label {:for "vectorcomp" :title "For subcircuits, the name of the thing inside of which to save vectors"} "Main component"]
-           [cm/dbfield :input {:id "vectorcomp"} mod
-            :component
-            #(swap! %1 assoc :component %2)]])]
+           [:label {:for "use-x" :title "Forces subcircuit instantiation even for other device types"} "Use X"]
+           [:input {:type "checkbox"
+                    :id "use-x"
+                    :checked (get @template-cursor :use-x false)
+                    :on-change #(swap! template-cursor assoc :use-x (.. % -target -checked))}]])]
        (when @selmodel
          [:<>
           [:a {:href (edit-url @selmodel)
@@ -207,7 +227,8 @@
                         (swap! modeldb assoc model-id
                                {:name model-name
                                 :type device-type
-                                :category category-path}))))]
+                                :category category-path
+                                :templates {:spice [] :spectre [] :verilog [] :vhdl []}}))))]
     [:<>
      [:div.schsel
       [:div.addbuttons
