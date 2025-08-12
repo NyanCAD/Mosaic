@@ -232,7 +232,12 @@ body, html {
     flex-direction: column;
     overflow: hidden;
 }
-.mosaic-libman .schsel h2 {
+
+.mosaic-libman .models-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
     padding: 0 20px;
 }
 

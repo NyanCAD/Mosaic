@@ -6,6 +6,7 @@
   (:require clojure.string
             [reagent.core :as r]
             [reagent.dom :as rd]
+            [clojure.spec.alpha :as s]
             [nyancad.hipflask :refer [pouch-atom pouchdb sep watch-changes]]
             [nyancad.mosaic.common :as cm]))
 
@@ -14,20 +15,19 @@
 (defonce db (pouchdb "schematics"))
 
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
+(set-validator! (.-cache modeldb)
+                #(or (s/valid? :nyancad.mosaic.common/modeldb %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/modeldb %))))
 (defonce snapshots (pouch-atom db "snapshots" (r/atom {})))
 (defonce watcher (watch-changes db modeldb snapshots))
-
-; Device types for SPICE models - corresponds to editor device types
-(def device-types #{"pmos" "nmos" "npn" "pnp" "resistor" "capacitor" 
-                    "inductor" "vsource" "isource" "diode"})
 
 ; used for ephermeal UI state
 (defonce selcat (r/atom []))
 (defonce selmodel (r/atom nil))
 (defonce syncactive (r/atom false))
+(defonce filter-text (r/atom ""))
 
 ; computed seltype from last element of selcat only if it's a device type
-(defonce seltype (r/track #(device-types (last @selcat))))
+(defonce seltype (r/track #(cm/device-types (last @selcat))))
 
 (defn edit-url [mod]
     (doto (js/URL. ".." js/window.location)
@@ -39,13 +39,13 @@
                                (.preventDefault e)
                                (let [device-type (.. e -target -elements -devicetype -value)
                                      model-name (.. e -target -elements -modelname -value)]
-                                 (when (and (seq model-name) (contains? device-types device-type))
+                                 (when (and (seq model-name) (contains? cm/device-types device-type))
                                    (cb device-type model-name)))
                                (reset! cm/modal-content nil))}
            [:div "Enter the type and name of the new SPICE model"]
            [:div
             [:select {:name "devicetype" :id "device-type" :default-value "diode"}
-             (for [dtype (sort device-types)]
+             (for [dtype (sort cm/device-types)]
                [:option {:key dtype :value dtype} dtype])]
             [:input {:name "modelname" :id "model-name" :type "text" :auto-focus true :placeholder "Model name"}]]
            [:div
@@ -102,9 +102,13 @@
 (defn model-list-selector 
   "Show list of individual models for the selected category/type path"
   [db]
-  (let [filtered-models (filter (fn [[_id model]]
-                                  (let [model-path (conj (or (:category model) []) (:type model))]
-                                    (vec-startswith model-path @selcat)))
+  (let [filtered-models (filter (fn [[model-id model]]
+                                  (let [model-path (conj (or (:category model) []) (:type model))
+                                        model-name (get model :name model-id)
+                                        filter-match (clojure.string/includes?
+                                                      (clojure.string/lower-case model-name)
+                                                      (clojure.string/lower-case @filter-text))]
+                                    (and (vec-startswith model-path @selcat) filter-match)))
                                 @db)]
     [:div.schematics
      [cm/radiobuttons selmodel
@@ -154,7 +158,7 @@
   (let [mod (r/cursor db [@selmodel])]
     (prn @mod)
     [:div.properties
-     (if (and @selmodel (contains? device-types (:type @mod)))
+     (if (and @selmodel (contains? cm/device-types (:type @mod)))
        [:<>
         [:label {:for "dialect"} "Simulator"]
         [:select {:id "dialect"
@@ -211,9 +215,12 @@
          [cm/add-model] "Add schematic"]
         [:button {:on-click add-spice }
          [cm/add-model] "Add SPICE model"]]
-      [:h2 "Models: " (if (seq @selcat)
+      [:div.models-header
+       [:h2 "Models: " (if (seq @selcat)
                         (clojure.string/join "/" @selcat)
                         "All models")]
+       [cm/dbfield :input {:type "text" :placeholder "Filter models..." :class "filter-input"}
+        filter-text identity reset!]]
       [model-list-selector modeldb]]
      [:div.proppane
       [:div.preview [model-preview modeldb]]

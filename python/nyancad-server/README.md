@@ -57,9 +57,9 @@ uvicorn.run(app, host="localhost", port=8080)
 
 ## Architecture
 
-The server creates a FastAPI application that:
+The server creates a Starlette ASGI application that:
 
-1. **Static Files**: Serves the entire `public/` folder contents at the root path using FastAPI's StaticFiles
+1. **Static Files**: Serves the entire `public/` folder contents at the root path using Starlette's StaticFiles
 2. **Marimo Integration**: Mounts a marimo ASGI app at `/notebook/` that hosts the NyanCAD notebook
 3. **Asset Bundling**: All static files and the notebook are bundled into the wheel during package build
 
@@ -73,7 +73,7 @@ The server includes fallback logic to work in development mode by looking for fi
 
 - Python 3.8+
 - marimo >= 0.13.0
-- fastapi >= 0.100.0  
+  
 - uvicorn[standard] >= 0.23.0
 - nyancad >= 0.1.0
 
