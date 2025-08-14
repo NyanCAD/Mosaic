@@ -178,7 +178,7 @@
          [:option {:value "vhdl"} "VHDL"]]
 
         [:label {:for "implementation"} "Implementation"]
-        [cm/combobox-field template-cursor implementation-cursor lang-cursor
+        [cm/combobox-field {:id "implementation"} template-cursor implementation-cursor lang-cursor
          #(conj (if (seq %) % [{:name "default"}]) {:name "<new>"})
          :name #(swap! %1 assoc :name %2)]
 

@@ -36,9 +36,9 @@
                                  (dbfn st val)
                                  (changefn int val))))])))
 
-(defn combobox-field [element-cursor index-cursor vector-cursor listfn valfn changefn]
+(defn combobox-field [props element-cursor index-cursor vector-cursor listfn valfn changefn]
   [:div.combobox-group
-   [dbfield :input {:class "combobox-input"} element-cursor valfn changefn]
+   [dbfield :input (merge {:class "combobox-input"} props) element-cursor valfn changefn]
    [:select {:class "combobox-select"
              :value @index-cursor
              :on-change #(reset! index-cursor (js/parseInt (.. % -target -value)))}
