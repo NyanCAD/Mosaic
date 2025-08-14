@@ -36,6 +36,17 @@
                                  (dbfn st val)
                                  (changefn int val))))])))
 
+(defn combobox-field [element-cursor index-cursor vector-cursor listfn valfn changefn]
+  [:div.combobox-group
+   [dbfield :input {:class "combobox-input"} element-cursor valfn changefn]
+   [:select {:class "combobox-select"
+             :value @index-cursor
+             :on-change #(reset! index-cursor (js/parseInt (.. % -target -value)))}
+    (doall (map-indexed 
+             (fn [i item]
+               [:option {:key i :value i} (valfn item)])
+             (listfn @vector-cursor)))]])
+
 (defn sign [n] (if (> n 0) 1 -1))
 
 ; like conj but coerces to set

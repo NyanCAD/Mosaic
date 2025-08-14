@@ -152,53 +152,42 @@
        [port-editor mod :right]]
       [:div.empty "Select a model to edit its properties."])))
 
-(def language (r/atom :spice))
-(def implementation (r/atom 0))
+(def selection (r/atom {}))
 
 (defn model-preview [db]
   (let [mod (r/cursor db [@selmodel])
-        template-cursor (r/cursor mod [:templates @language @implementation])]
-    (prn @mod)
+        model-selection (r/cursor selection [@selmodel])
+        language-cursor (r/cursor model-selection [:lang])
+        implementation-cursor (r/cursor model-selection [:impl])
+        lang-cursor (r/cursor mod [:templates @language-cursor])
+        template-cursor (r/cursor lang-cursor [@implementation-cursor])]
+    (when-not (seq @model-selection)
+      (reset! model-selection {:lang :spice :impl 0}))
+    (prn @template-cursor @implementation-cursor @lang-cursor)
     [:div.properties
      (if (and @selmodel (contains? cm/device-types (:type @mod)))
        [:<>
         [:label {:for "language"} "Language"]
         [:select {:id "language"
                   :type "text"
-                  :value (name @language)
-                  :on-change #(reset! language (keyword (.. % -target -value)))}
+                  :value (if-let [lang @language-cursor] (name lang) "spice")
+                  :on-change #(reset! language-cursor (keyword (.. % -target -value)))}
          [:option {:value "spice"} "Spice"]
          [:option {:value "spectre"} "Spectre"]
          [:option {:value "verilog"} "Verilog"]
          [:option {:value "vhdl"} "VHDL"]]
-        
+
         [:label {:for "implementation"} "Implementation"]
-        [:select {:id "implementation"
-                  :type "text"
-                  :value @implementation
-                  :on-change #(reset! implementation (js/parseInt (.. % -target -value)))}
-         [:option {:value 0} "default"]
-         (let [templates (get-in @mod [:templates @language] [])]
-           [:<>
-            (doall (rest (map-indexed 
-                           (fn [i template]
-                             [:option {:key i :value i} (:name template "<nameless>")])
-                           templates)))
-            [:option {:value (count templates)} "<new>"]])]
-        
-        [:label {:for "template-name"} "Name"]
-        [cm/dbfield :input {:id "template-name"} template-cursor
-         #(if (= @implementation 0) 
-            (:name % "default")
-            (:name %))
-         #(swap! %1 assoc :name %2)]
-        
+        [cm/combobox-field template-cursor implementation-cursor lang-cursor
+         #(conj (if (seq %) % [{:name "default"}]) {:name "<new>"})
+         :name #(swap! %1 assoc :name %2)]
+
         [:label {:for "template-code"} "Code"]
         [cm/dbfield :textarea {:id "template-code" :rows 8} template-cursor
          :code
          #(swap! %1 assoc :code %2)]
-        
-        (when (= @language :spice)
+
+        (when (= @language-cursor :spice)
           [:<>
            [:label {:for "use-x" :title "Forces subcircuit instantiation even for other device types"} "Use X"]
            [:input {:type "checkbox"

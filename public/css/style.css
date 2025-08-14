@@ -21,6 +21,44 @@ body, html {
     padding: 5px 10px;
 }
 
+/* Combobox styling - button-group appearance */
+.mosaic-app .combobox-group {
+    display: flex;
+    align-items: stretch;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.mosaic-app .combobox-group .combobox-input {
+    border-radius: 5px 0 0 5px;
+    border-right: none;
+    flex: 1;
+    margin: 0;
+}
+
+.mosaic-app .combobox-group .combobox-select {
+    border-radius: 0 5px 5px 0;
+    border-left: none;
+    margin: 0;
+    padding: 5px 8px;
+    width: 30px;
+    cursor: pointer;
+    border: 2px solid #2222220D;
+}
+
+/* Focus styling with system default blue */
+.mosaic-app .combobox-group .combobox-select:focus,
+.mosaic-app .combobox-group .combobox-input:focus {
+    outline: none;
+    border-color: SelectedItem;
+}
+
+/* When either element is focused, highlight both */
+.mosaic-app .combobox-group:focus-within .combobox-input,
+.mosaic-app .combobox-group:focus-within .combobox-select {
+    border-color: SelectedItem;
+}
+
 /* Global button styling (libman style as default) */
 .mosaic-app button,
 .mosaic-app input[type=submit] {
@@ -309,6 +347,11 @@ body, html {
     grid-row: auto;
     box-sizing: border-box;
     width: 100%;
+}
+
+.mosaic-libman .properties input[type=checkbox] {
+    width: auto;
+    justify-self: start; /* Left align checkbox within its grid cell */
 }
 
 .mosaic-libman input[type=radio] {
