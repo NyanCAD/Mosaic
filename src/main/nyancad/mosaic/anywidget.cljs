@@ -28,10 +28,10 @@
   (go-loop [devs (seq (vals @schematic-atom))]
     (when (seq devs)
       (let [dev (first devs)
-            cell (:cell dev)
-            model (get-in dev [:props :model])
-            typ (get-in @model-atom [cell :models (keyword model) :type])]
-        (if (and model (not (contains? @schematic-groups model)) (= typ "schematic"))
+            device-type (:type dev)
+            model (:model dev)
+            typ (get-in @model-atom [model :type])]
+        (if (and model (not (contains? @schematic-groups model)) (= typ "ckt"))
           (let [_ (swap! schematic-cache assoc model {})
                 subschem (pouch-atom db model (r/cursor schematic-cache [model]))]
             (add-watch-group schematic-groups subschem)

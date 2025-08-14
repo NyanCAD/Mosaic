@@ -31,7 +31,7 @@
 
 (defn edit-url [mod]
     (doto (js/URL. ".." js/window.location)
-      (.. -searchParams (append "schem" mod))))
+      (.. -searchParams (append "schem" (cm/bare-id mod)))))
 
 (defn spice-model-modal [cb]
   (reset! cm/modal-content
@@ -70,7 +70,7 @@
   [models]
   (reduce (fn [index [_id model]]
             (let [category (or (:category model) [])
-                  type (:type model "uncategorized")]
+                  type (:type model "ckt")]
               (assoc-in index (conj category type) #{})))
           {} models))
 
@@ -103,7 +103,7 @@
   "Show list of individual models for the selected category/type path"
   [db]
   (let [filtered-models (filter (fn [[model-id model]]
-                                  (let [model-path (conj (or (:category model) []) (:type model))
+                                  (let [model-path (conj (or (:category model) []) (:type model "ckt"))
                                         model-name (get model :name model-id)
                                         filter-match (clojure.string/includes?
                                                       (clojure.string/lower-case model-name)
@@ -113,7 +113,7 @@
     [:div.schematics
      [cm/radiobuttons selmodel
       (doall (for [[model-id model] filtered-models
-                   :let [schem? (= (:type model) "ckt")
+                   :let [schem? (= (:type model "ckt") "ckt")
                          icon (if schem? cm/schemmodel cm/codemodel)]]
                ; inactive, active, key, title
                [[:span [icon] " " (get model :name model-id)]
@@ -165,8 +165,14 @@
       (reset! model-selection {:lang :spice :impl 0}))
     (prn @template-cursor @implementation-cursor @lang-cursor)
     [:div.properties
-     (if (and @selmodel (contains? cm/device-types (:type @mod)))
+     (if (and @selmodel (not= (:type @mod "ckt") "ckt"))
        [:<>
+        [:label {:for "device-type" :title "Device type"} "Device Type"]
+        [:input {:id "device-type"
+                 :type "text"
+                 :disabled true
+                 :value (:type @mod)}]
+        
         [:label {:for "language"} "Language"]
         [:select {:id "language"
                   :type "text"

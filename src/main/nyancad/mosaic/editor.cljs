@@ -28,6 +28,8 @@
                 #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
 
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
+(set-validator! (.-cache modeldb)
+                #(or (s/valid? :nyancad.mosaic.common/modeldb %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/modeldb %))))
 (defonce snapshots (pouch-atom db "snapshots" (r/atom {})))
 (defonce simulations (pouch-atom db (str group "$result") (r/atom (sorted-map))))
 (defonce watcher (watch-changes db schematic modeldb snapshots simulations))
@@ -35,8 +37,8 @@
 (defonce local (pouch-atom ldb "local"))
 (defonce lwatcher (watch-changes ldb local))
 
-(defn initial [cell]
-  (case cell
+(defn initial [device-type]
+  (case device-type
     "resistor" "R"
     "inductor" "L"
     "capacitor" "C"
@@ -112,7 +114,7 @@
                     :style {:transform (.toString (.translate (transform (:transform v cm/IV)) (* (:x v) grid-size) (* (:y v) grid-size)))
                             :transform-origin (str (* (+ (:x v) (/ size 2)) grid-size) "px "
                                                    (* (+ (:y v) (/ size 2)) grid-size) "px")}
-                    :class [(:cell v) (:variant v) (when (contains? @selected k) :selected)]}]
+                    :class [(:type v) (:variant v) (when (contains? @selected k) :selected)]}]
         elements))
 
 (defn port [x y _ _]
@@ -189,7 +191,7 @@
 
 (defn device-template [dev width]
   (when-let [text (get dev :template
-                       (::template (get models (:cell dev))))]
+                       (::template (get models (:type dev))))]
     [:text.identifier
      {:transform (-> (:transform dev)
                      transform
@@ -249,7 +251,7 @@
     [device 3 k v
      [lines shape]
      [device-template v 3]
-     (if (= (:cell v) "nmos")
+     (if (= (:type v) "nmos")
        [arrow 1.3 1.5 0.12 0]
        [arrow 1.4 1.5 0.12 180])]))
 
@@ -267,7 +269,7 @@
     [device 3 k v
      [device-template v 3]
      [lines shape]
-     (if (= (:cell v) "npn")
+     (if (= (:type v) "npn")
        [arrow 1.4 1.81 0.12 -140]
        [arrow 1.25 1.68 0.12 40])]))
 
@@ -356,14 +358,14 @@
      [arrow 1.5 1.6 0.2 270]]))
 
 (defn circuit-shape [k v]
-  (let [model (:cell v)
-        ports (get-in @modeldb [model :ports])
+  (let [model (:model v)
+        ports (get-in @modeldb [(cm/model-key model) :ports])
         size (if ports (cm/port-perimeter ports) [1 1])]
     (draw-background size k v)))
 
 (defn circuit-conn [k v]
-  (let [model (:cell v)
-        ports (get-in @modeldb [model :ports])
+  (let [model (:model v)
+        ports (get-in @modeldb [(cm/model-key model) :ports])
         [width height] (if ports (cm/port-perimeter ports) [1 1])
         pattern (if ports (apply concat (cm/port-locations ports)) [])]
     (println ports pattern)
@@ -374,8 +376,8 @@
   (str "?" (.toString (js/URLSearchParams. #js{:schem model}))))
 
 (defn circuit-sym [k v]
-  (let [cell (:cell v)
-        ports (get-in @modeldb [cell :ports])
+  (let [model (:model v)
+        ports (get-in @modeldb [(cm/model-key model) :ports])
         [width height] (if ports (cm/port-perimeter ports) [1 1])
         [top-locs bottom-locs left-locs right-locs] (cm/port-locations ports)]
     [device (+ 2 (max width height)) k v
@@ -485,8 +487,8 @@
      (= ry 0) (map #(vector % y) (exrange x rx))
      :else [])])
 
-(defn builtin-locations [{:keys [:_id :x :y :cell :transform]}]
-  (let [mod (get models cell)
+(defn builtin-locations [{:keys [:_id :x :y :type :transform]}]
+  (let [mod (get models type)
         conn (::conn mod)
         [w h] (::bg mod)]
     [(rotate-shape conn transform x y)
@@ -494,8 +496,8 @@
                      [(inc x) (inc y) "%"])
                    transform x y)]))
 
-(defn circuit-locations [{:keys [:_id :x :y :cell :transform]}]
-  (let [mod (get @modeldb cell)
+(defn circuit-locations [{:keys [:_id :x :y :model :transform]}]
+  (let [mod (get @modeldb (cm/model-key model))
         ports (:ports mod)
         conn (if ports (apply concat (cm/port-locations ports)) [])
         [w h] (if ports (cm/port-perimeter ports) [1 1])]
@@ -505,7 +507,7 @@
                    transform x y)]))
 
 (defn device-locations [dev]
-  (let [cell (:cell dev)]
+  (let [cell (:type dev)]
     (cond
       (= cell "wire") (wire-locations dev)
       (= cell "text") []
@@ -528,7 +530,7 @@
   (reduce (fn [result [key val]]
             (if (contains? connidx key)
               (->> val
-                   (filter #(= "wire" (get-in @schematic [% :cell])))
+                   (filter #(= "wire" (get-in @schematic [% :type])))
                    (reduce #(update %1 %2 cm/ssconj key) result))
               result))
           {} bodyidx))
@@ -547,7 +549,7 @@
                         ;; if the start and end point cover the same device, skip
                          (if (empty? (clojure.set/intersection (get widx [x1 y1]) (get widx [x2 y2])))
                            (assoc schem w
-                                  {:cell "wire" :transform cm/IV
+                                  {:type "wire" :transform cm/IV
                                    :x x1 :y y1 :rx (- x2 x1) :ry (- y2 y1)})
                            schem))
                   schem))]
@@ -610,7 +612,7 @@
                     (+ y (/ h 2)))))
 
 (defn commit-staged [dev]
-  (let [id (make-name (:cell dev))
+  (let [id (make-name (:type dev))
         name (last (clojure.string/split id sep))]
     (swap! schematic assoc id
            (if (:name dev)
@@ -658,7 +660,7 @@
 
 (defn drag-staged-device [e]
   (let [[x y] (viewbox-coord e)
-        [width height] (get-in models [(:cell @staging) ::bg])
+        [width height] (get-in models [(:type @staging) ::bg])
         xm (js/Math.round (- x width 0.5))
         ym (js/Math.round (- y height 0.5))]
     (swap! staging assoc :x xm :y ym)))
@@ -701,7 +703,7 @@
 
 (defn add-wire-segment [[x y]]
   (swap! ui assoc
-         ::staging {:cell "wire"
+         ::staging {:type "wire"
                     :x (js/Math.floor x)
                     :y (js/Math.floor y)
                     :rx 0 :ry 0}
@@ -734,9 +736,9 @@
   (let [schem @schematic
         wire (some schem @selected)
         wire? (fn [wirename] (let [wire (get schem wirename)]
-                               (and (= (:cell wire) "wire") wire)))
+                               (and (= (:type wire) "wire") wire)))
         wire-ports (fn [init wire]
-                     (if (= (:cell wire) "wire")
+                     (if (= (:type wire) "wire")
                        (conj init [(:x wire) (:y wire)]
                              [(+ (:x wire) (:rx wire)) (+ (:y wire) (:ry wire))])
                        init))]
@@ -831,7 +833,7 @@
 
 (defn get-model [layer model k v]
   (let [m (-> models
-              (get (:cell model)
+              (get (:type model)
                    {::bg #'circuit-shape
                     ::conn #'circuit-conn
                     ::sym #'circuit-sym})
@@ -903,7 +905,7 @@
         mx (js/Math.round (- x (/ width 2) 1))
         my (js/Math.round (- y (/ height 2) 1))]
     (swap! ui assoc
-           ::staging (into {:transform cm/IV, :cell cell :x mx :y my} kwargs)
+           ::staging (into {:transform cm/IV, :type cell :x mx :y my} kwargs)
            ::tool ::device)))
 
 (defn save-url []
@@ -929,23 +931,15 @@
 
 (defn deviceprops [key]
   (let [props (r/cursor schematic [key :props])
-        cell (r/cursor schematic [key :cell])
+        device-type (r/cursor schematic [key :type])
+        model (r/cursor schematic [key :model])
         name (r/cursor schematic [key :name])]
     (fn [key]
       [:<>
-       [:h1 (get-in @modeldb [@cell :name]) ": " (or @name key)]
+       [:h1 (or @name key)]
        [:div.properties
-        (when-not (contains? models @cell)
-          [:<>
-           [:a {:href (ckt-url (:model @props))} "Edit"]
-           [:label {:for "cell" :title "cell name"} "cell"]
-           [:select {:id "cell"
-                     :type "text"
-                     :default-value @cell
-                     :on-change #(reset! cell (.. % -target -value))}
-            [:option]
-            (for [[k m] @modeldb]
-              [:option {:key k :value k} (:name m)])]])
+        (when @model
+          [:a {:href (ckt-url @model)} "Edit"])
         [:label {:for "name" :title "Instance name"} "name"]
         [:input {:id "name"
                  :type "text"
@@ -954,12 +948,12 @@
         [:label {:for "model" :title "Device model"} "model"]
         [:select {:id "model"
                   :type "text"
-                  :default-value (:model @props)
-                  :on-change #(swap! props assoc :model (.. % -target -value))}
-         [:option {:value ""} "Ideal"]
-         (for [[k v] (get-in  @modeldb [@cell :models])]
-           [:option {:key k :value k} (:name v)])]
-        (doall (for [[prop meta] (::props (get models @cell))]
+                  :default-value @model
+                  :on-change #(reset! model (.. % -target -value))}
+         (doall (for [[k v] @modeldb
+                      :when (= (:type v "ckt") @device-type)]
+                  [:option {:key k :value (cm/bare-id k)} (:name v)]))]
+        (doall (for [[prop meta] (::props (get models @device-type))]
                  [:<> {:key prop}
                   [:label {:for prop :title (:tooltip meta)} prop]
                   [:input {:id prop
@@ -968,7 +962,7 @@
                            :on-change (debounce #(swap! props assoc prop (.. % -target -value)))}]]))
         [:label {:for "template" :title "Template to display"} "Text"]
         [:textarea {:id "template"
-                    :default-value (get-in @schematic [key :template] (::template (get models @cell)))
+                    :default-value (get-in @schematic [key :template] (::template (get models @device-type)))
                     :on-change (debounce #(swap! schematic assoc-in [key :template] (.. % -target -value)))}]]])))
 
 (defn copy []
@@ -983,7 +977,7 @@
 
 (defn paste []
   (let [devs (get-in @local [(str "local" sep "clipboard") :data])
-        xf (map (fn [d] [(name (gensym (make-name (:cell d))))
+        xf (map (fn [d] [(name (gensym (make-name (:type d))))
                          (update d :name gensym)]))
         devmap (into {} xf devs)]
     (swap! schematic into devmap)
@@ -995,7 +989,6 @@
   (let [url-params (js/URLSearchParams. #js{:schem group})]
     (str "notebook/?" (.toString url-params))))
 
-(def cell-index (r/track #(cm/build-cell-index @modeldb)))
 
 (defn menu-items []
   [:<>
@@ -1046,21 +1039,7 @@
          :on-click redo-schematic}
      [cm/redoi]]]
    [:div.status
-    [:select {:id "cell" ;; TODO change with text input with autocomplete
-              :type "text"
-              :value (get @cell-index (keyword group) "models:top")
-              :on-change (fn [e]
-                           (let [oldcell (get @cell-index (keyword group) "models:top")
-                                 newcell (.. e -target -value)
-                                 model (get-in @modeldb [oldcell :models (keyword group)])]
-                             (swap! modeldb update-in [oldcell :models] dissoc (keyword group))
-                             (swap! modeldb update-in [newcell :models] assoc (keyword group) model)))}
-     [:option {:value "models:top"} "top"]
-     (for [[k m] @modeldb
-           :when (not= k "models:top")]
-       [:option {:key k :value k} (:name m)])]
-    "/"
-    (cm/renamable (r/cursor modeldb [(get @cell-index (keyword group) "models:top") :models (keyword group) :name]) "new schematic")
+    [cm/renamable (r/cursor modeldb [(cm/model-key group) :name]) "Untitled"]
     (if @syncactive
       [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
       [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
@@ -1079,7 +1058,7 @@
 
 
 (defn device-active [cell]
-  (when (= cell (:cell @staging))
+  (when (= cell (:type @staging))
     "active"))
 
 (defn icon-image [name]
@@ -1215,10 +1194,10 @@
 (defn schematic-elements [schem]
   [:<>
    (for [[k v] schem
-         :when (= "wire" (:cell v))]
+         :when (= "wire" (:type v))]
      (get-model ::bg v k v))
    (for [[k v] schem
-         :when (not= "wire" (:cell v))]
+         :when (not= "wire" (:type v))]
      (get-model ::bg v k v))
    (for [[k v] schem]
      (get-model ::sym v k v))

@@ -122,23 +122,26 @@
 (s/def ::y number?)
 (s/def ::name string?)
 (s/def ::transform (s/coll-of number? :count 6))
-(s/def ::cell string?)
-(s/def ::coord (s/tuple number? number?))
-(s/def ::wires (s/and set? (s/coll-of ::coord)))
+(s/def ::model (s/nilable string?))
 
-(defmulti cell-type :cell)
-(defmethod cell-type "wire" [_]
-  (s/keys :req-un [::rx ::ry ::cell ::x ::y]))
-(defmethod cell-type :default [_]
-  (s/keys :req-un [::cell ::transform ::x ::y]))
-(s/def ::device (s/multi-spec cell-type ::cell))
+; Device type specs
+(def device-types #{"pmos" "nmos" "npn" "pnp" "resistor" "capacitor"
+                    "inductor" "vsource" "isource" "diode" "ckt"})
+
+(def schematic-only-types #{"wire" "port" "text"})
+
+(s/def ::type (clojure.set/union device-types schematic-only-types))
+
+(defmulti device-spec :type)
+(defmethod device-spec "wire" [_]
+  (s/keys :req-un [::rx ::ry ::type ::x ::y]))
+(defmethod device-spec :default [_]
+  (s/keys :req-un [::type ::transform ::x ::y]
+          :opt-un [::model]))
+(s/def ::device (s/multi-spec device-spec ::type))
 (s/def ::schematic (s/map-of string? ::device))
 
-; Device model specs
-(def device-types #{"pmos" "nmos" "npn" "pnp" "resistor" "capacitor"
-                    "inductor" "vsource" "isource" "diode"})
-
-(s/def ::type (s/or :device device-types :circuit #{"ckt"}))
+; Model specs for modeldb
 (s/def ::category (s/coll-of string? :kind vector?))
 (s/def ::port-list (s/coll-of string? :kind vector?))
 (s/def ::ports (s/keys :opt-un [::top ::bottom ::left ::right]))
@@ -152,9 +155,9 @@
 (s/def ::template-list (s/coll-of ::template :kind vector?))
 (s/def ::templates (s/map-of keyword? ::template-list))
 
-(s/def ::model (s/keys :req-un [::name ::type ::category]
-                       :opt-un [::ports ::templates]))
-(s/def ::modeldb (s/map-of string? ::model))
+(s/def ::model-def (s/keys :req-un [::name]
+                           :opt-un [::type ::category ::ports ::templates]))
+(s/def ::modeldb (s/map-of string? ::model-def))
 
 ; https://clojure.atlassian.net/browse/CLJS-3207
 (s/assert ::x 0)
@@ -348,16 +351,30 @@
                  (pprint-str result)
                  (or result "?"))))
            (catch js/Error e
-             (js/console.error "Error formatting" s e)
+             (js/console.warn "Warning formatting" s e)
              "?"))))
       (clojure.string/replace #"\{\{|\}\}" first)))
 
 (defn random-name [] (str (random-uuid)))
 
-(defn build-cell-index [modeldb]
-  (into {} (for [[key cell] modeldb
-                 mod (keys (:models cell))]
-             [mod key])))
+;; Model ID utilities
+(defn model-key 
+  "Convert a bare model ID to a database key with 'models:' prefix.
+   Returns nil if input is nil. Asserts that non-nil input is not already prefixed."
+  [bare-id]
+  (when bare-id
+    (assert (not (clojure.string/starts-with? bare-id "models:"))
+            (str "model-key expects bare ID, got prefixed: " bare-id))
+    (str "models:" bare-id)))
+
+(defn bare-id
+  "Extract bare ID from a model database key, removing 'models:' prefix.
+   Returns nil if input is nil. Asserts that non-nil input is prefixed."
+  [model-key]
+  (when model-key
+    (assert (clojure.string/starts-with? model-key "models:")
+            (str "bare-id expects prefixed model key, got bare ID: " model-key))
+    (subs model-key 7)))
 
 ;; Authentication utilities
 (def couchdb-url "https://api.nyancad.com/")
