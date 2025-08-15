@@ -8,6 +8,8 @@ This module communicates with CouchDB to fetch schematics, and generate SPICE ne
 
 from collections import deque, namedtuple
 from InSpice.Spice.Netlist import Circuit, SubCircuit
+from InSpice.Spice.Parser.HighLevelParser import SpiceSource
+from InSpice.Spice.Parser.Translator import Builder
 
 
 def model_key(bare_id):
@@ -310,8 +312,7 @@ class NyanCircuit(NyanCADMixin, Circuit):
         
         models = schem["models"]
         
-        # Process models: create subcircuits for schematic models, extract SPICE for others
-        spice_models = []
+        # Process models: create subcircuits for schematic models, add SPICE for others
         for model_key_str, model_def in models.items():
             # Extract bare model ID for schematic lookup (models dict keys always have "models:" prefix)
             model_id = bare_id(model_key_str)
@@ -326,7 +327,7 @@ class NyanCircuit(NyanCADMixin, Circuit):
                     subcircuit = NyanSubCircuit(model_id, nodes, docs, models, corner, sim)
                     self.subcircuit(subcircuit)
                 elif model_type != 'ckt':
-                    # Extract SPICE code for models that are not circuit models
+                    # Add SPICE code for models that are not circuit models
                     templates = model_def.get('templates', {})
                     spice_templates = templates.get('spice', [])
                     if spice_templates:
@@ -341,14 +342,30 @@ class NyanCircuit(NyanCADMixin, Circuit):
                         
                         code = selected_template.get('code', '').strip()
                         if code:
-                            spice_models.append(code)
-        
-        # Add raw SPICE models to the circuit
-        if spice_models:
-            self.raw_spice = '\n'.join(spice_models) + '\n'
+                            self.add_spice_code(code)
         
         # Populate main circuit elements
         self.populate_from_nyancad(schem[name], models, corner, sim)
+    
+    def add_spice_code(self, spice_code: str):
+        """Add SPICE code to circuit. Try structured parsing first, fallback to raw injection.
+        
+        Args:
+            spice_code: Raw SPICE code (models, subcircuits, etc.)
+        """
+        try:
+            # Parse SPICE code
+            spice_source = SpiceSource(spice_code, title_line=False)
+            builder = Builder()
+            parsed_circuit = builder.translate(spice_source)
+            # Copy all content to self (models, subcircuits, elements)
+            parsed_circuit.copy_to(self)
+        except Exception as e:
+            print(f"SPICE parsing failed: {e}")
+            print("Falling back to raw SPICE injection")
+            raise e
+            # Append to raw_spice
+            self.raw_spice += '\n' + spice_code.strip() + '\n'
 
 
 class NyanSubCircuit(NyanCADMixin, SubCircuit):
