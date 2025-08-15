@@ -310,15 +310,42 @@ class NyanCircuit(NyanCADMixin, Circuit):
         
         models = schem["models"]
         
-        # Create subcircuits for user-defined models that have schematic implementations
+        # Process models: create subcircuits for schematic models, extract SPICE for others
+        spice_models = []
         for model_key_str, model_def in models.items():
             # Extract bare model ID for schematic lookup (models dict keys always have "models:" prefix)
             model_id = bare_id(model_key_str)
-            if model_id in schem and model_id != name:
-                docs = schem[model_id]
-                nodes = [c[2] for c in port_locations(model_def['ports'])]
-                subcircuit = NyanSubCircuit(model_id, nodes, docs, models, corner, sim)
-                self.subcircuit(subcircuit)
+            # Skip the top-level circuit itself
+            if model_id != name:
+                model_type = model_def.get('type', 'ckt')
+                # Only create subcircuits for circuit models ("ckt" type or empty which defaults to "ckt")
+                if model_id in schem:
+                    # Create subcircuit for models with schematic implementations
+                    docs = schem[model_id]
+                    nodes = [c[2] for c in port_locations(model_def['ports'])]
+                    subcircuit = NyanSubCircuit(model_id, nodes, docs, models, corner, sim)
+                    self.subcircuit(subcircuit)
+                elif model_type != 'ckt':
+                    # Extract SPICE code for models that are not circuit models
+                    templates = model_def.get('templates', {})
+                    spice_templates = templates.get('spice', [])
+                    if spice_templates:
+                        # Look for implementation matching sim parameter, fallback to first (default)
+                        selected_template = None
+                        for template in spice_templates:
+                            if template.get('name', '').lower() == sim.lower():
+                                selected_template = template
+                                break
+                        if not selected_template:
+                            selected_template = spice_templates[0]  # Use first as default
+                        
+                        code = selected_template.get('code', '').strip()
+                        if code:
+                            spice_models.append(code)
+        
+        # Add raw SPICE models to the circuit
+        if spice_models:
+            self.raw_spice = '\n'.join(spice_models) + '\n'
         
         # Populate main circuit elements
         self.populate_from_nyancad(schem[name], models, corner, sim)
