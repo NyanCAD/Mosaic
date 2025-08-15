@@ -17,10 +17,7 @@ from starlette.requests import Request
 # CouchDB configuration from environment
 COUCHDB_URL = os.getenv("COUCHDB_URL", "https://api.nyancad.com/").rstrip('/')
 COUCHDB_ADMIN_USER = os.getenv("COUCHDB_ADMIN_USER", "admin")
-COUCHDB_ADMIN_PASS = os.getenv("COUCHDB_ADMIN_PASS")
-
-if not COUCHDB_ADMIN_PASS:
-    raise ValueError("COUCHDB_ADMIN_PASS environment variable must be set")
+COUCHDB_ADMIN_PASS = os.getenv("COUCHDB_ADMIN_PASS", "")
 
 # Marimo server components (mirroring start.py)
 import marimo._server.api.lifespans as lifespans

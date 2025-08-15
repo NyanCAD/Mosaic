@@ -938,7 +938,7 @@
       [:<>
        [:h1 (or @name key)]
        [:div.properties
-        (when @model
+        (when (and (seq @model) (= (get-in @modeldb [(cm/model-key @model) :type] "ckt") "ckt"))
           [:a {:href (ckt-url @model)} "Edit"])
         [:label {:for "name" :title "Instance name"} "name"]
         [:input {:id "name"
@@ -950,6 +950,7 @@
                   :type "text"
                   :default-value @model
                   :on-change #(reset! model (.. % -target -value))}
+         [:option {:value ""} "Ideal"]
          (doall (for [[k v] @modeldb
                       :when (= (:type v "ckt") @device-type)]
                   [:option {:key k :value (cm/bare-id k)} (:name v)]))]

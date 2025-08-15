@@ -186,7 +186,8 @@
         [:label {:for "implementation"} "Implementation"]
         [cm/combobox-field {:id "implementation"} template-cursor implementation-cursor lang-cursor
          #(conj (if (seq %) % [{:name "default"}]) {:name "<new>"})
-         :name #(swap! %1 assoc :name %2)]
+         #(:name % "default")
+         #(swap! %1 assoc :name %2)]
 
         [:label {:for "template-code"} "Code"]
         [cm/dbfield :textarea {:id "template-code" :rows 8} template-cursor

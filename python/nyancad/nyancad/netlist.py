@@ -9,6 +9,34 @@ This module communicates with CouchDB to fetch schematics, and generate SPICE ne
 from collections import deque, namedtuple
 from InSpice.Spice.Netlist import Circuit, SubCircuit
 
+
+def model_key(bare_id):
+    """
+    Convert a bare model ID to a database key with 'models:' prefix.
+    Returns None if input is None. Asserts that non-None input is not already prefixed.
+    """
+    if bare_id is None:
+        return None
+    
+    assert not bare_id.startswith("models:"), \
+        f"model_key expects bare ID, got prefixed: {bare_id}"
+    
+    return f"models:{bare_id}"
+
+
+def bare_id(model_key_str):
+    """
+    Extract bare ID from a model database key, removing 'models:' prefix.
+    Returns None if input is None. Asserts that non-None input is prefixed.
+    """
+    if model_key_str is None:
+        return None
+    
+    assert model_key_str.startswith("models:"), \
+        f"bare_id expects prefixed model key, got bare ID: {model_key_str}"
+    
+    return model_key_str[7:]  # Remove 'models:' prefix (7 characters)
+
 class SchemId(namedtuple("SchemId", ["schem", "device"])):
     @classmethod
     def from_string(cls, id):
@@ -75,45 +103,46 @@ def port_locations(ports):
     return top_locs + bottom_locs + left_locs + right_locs
 
 def getports(doc, models):
-    cell = doc['cell']
+    device_type = doc['type']
     x = doc['x']
     y = doc['y']
     tr = doc.get('transform', [1, 0, 0, 1, 0, 0])
-    if cell == 'wire':
+    if device_type == 'wire':
         rx = doc['rx']
         ry = doc['ry']
         return {(x, y): None,
                 (x+rx, y+ry): None}
-    elif cell == 'text':
+    elif device_type == 'text':
         return {}
-    elif cell == 'port':
+    elif device_type == 'port':
         return {(x, y): doc['name']}
-    elif cell in {'nmos', 'pmos'}:
+    elif device_type in {'nmos', 'pmos'}:
         return rotate(mosfet_shape, tr, x, y)
-    elif cell in {'npn', 'pnp'}:
+    elif device_type in {'npn', 'pnp'}:
         return rotate(bjt_shape, tr, x, y)
-    elif cell in {'resistor', 'capacitor', 'inductor', 'vsource', 'isource', 'diode'}:
+    elif device_type in {'resistor', 'capacitor', 'inductor', 'vsource', 'isource', 'diode'}:
         return rotate(twoport_shape, tr, x, y)
     else:
-        model = models[cell]
-        if 'ports' in model:
+        # For user-defined circuit models, use the model field
+        model_id = model_key(doc.get('model'))
+        if model_id and model_id in models:
+            model = models[model_id]
             return rotate(port_locations(model['ports']), tr, x, y)
-        else:
-            return rotate(model['conn'], tr, x, y)
+        return {}
 
 
 def port_index(docs, models):
     wire_index = {}
     device_index = {}
     for doc in docs.values():
-        cell = doc['cell']
+        device_type = doc['type']
         for (x, y), p in getports(doc, models).items():
-            if cell in {'wire', 'port'}:
+            if device_type in {'wire', 'port'}:
                 wire_index.setdefault((x, y), []).append(doc)
             else:
                 device_index.setdefault((x, y), []).append((p, doc))
                 # add a dummy net so two devices can connect directly
-                wire_index.setdefault((x, y), []).append({"cell": "wire", "x": x, "y": y, "rx": 0, "ry": 0})
+                wire_index.setdefault((x, y), []).append({"type": "wire", "x": x, "y": y, "rx": 0, "ry": 0})
     return device_index, wire_index
 
 
@@ -123,8 +152,8 @@ def wire_net(wireid, docs, models):
     net = deque([docs[wireid]]) # all the wires on this net
     while net:
         doc = net.popleft() # take a wire from the net
-        cell = doc['cell']
-        if cell == 'wire':
+        device_type = doc['type']
+        if device_type == 'wire':
             wirename = doc.get('name')
             if netname == None and wirename != None:
                 netname = wirename
@@ -133,10 +162,10 @@ def wire_net(wireid, docs, models):
                 # that we have not seen, add it to the net
                 if ploc in wire_index:
                     net.extend(wire_index.pop(ploc))
-        elif cell == 'port':
+        elif device_type == 'port':
             netname = doc.get('name')
         else:
-            raise ValueError(cell)
+            raise ValueError(device_type)
     return netname
 
 def netlist(docs, models):
@@ -161,8 +190,8 @@ def netlist(docs, models):
         netdevs = {} # all the devices on this net
         while net:
             doc = net.popleft() # take a wire from the net
-            cell = doc['cell']
-            if cell == 'wire':
+            device_type = doc['type']
+            if device_type == 'wire':
                 wirename = doc.get('name')
                 if netname == None and wirename != None:
                     netname = wirename
@@ -175,10 +204,10 @@ def netlist(docs, models):
                     if ploc in device_index:
                         for p, dev in device_index[ploc]:
                             netdevs.setdefault(dev['_id'], []).append(p)
-            elif cell == 'port':
+            elif device_type == 'port':
                 netname = doc.get('name')
             else:
-                raise ValueError(cell)
+                raise ValueError(device_type)
         if netname == None:
             netname = f"net{netnum}"
             netnum += 1
@@ -190,172 +219,6 @@ def netlist(docs, models):
             for port in pts:
                 inl.setdefault(dev, {})[port] = net
     return inl
-
-
-def print_props(props):
-    prs = []
-    for k, v in props.items():
-        if k == "model":
-            prs.insert(0, v)
-        elif k == "spice":
-            prs.append(v)
-        else:
-            prs.append(f"{k}={v}")
-    return " ".join(prs)
-
-
-def circuit_spice(docs, models, declarations, corner, sim):
-    nl = netlist(docs, models)
-    cir = []
-    for id, ports in nl.items():
-        dev = docs[id]
-        cell = dev['cell']
-        mname = dev.get('props', {}).get('model', '')
-        name = dev.get('name') or id
-        # print(ports)
-        def p(p): return ports[p]
-        propstr = print_props(dev.get('props', {}))
-        if cell == "resistor":
-            ports = ' '.join(p(c) for c in ['P', 'N'])
-            templ = "R{name} {ports} {properties}"
-        elif cell == "capacitor":
-            ports = ' '.join(p(c) for c in ['P', 'N'])
-            templ = "C{name} {ports} {properties}"
-        elif cell == "inductor":
-            ports = ' '.join(p(c) for c in ['P', 'N'])
-            templ = "L{name} {ports} {properties}"
-        elif cell == "diode":
-            ports = ' '.join(p(c) for c in ['P', 'N'])
-            templ = "D{name} {ports} {properties}"
-        elif cell == "vsource":
-            ports = ' '.join(p(c) for c in ['P', 'N'])
-            templ = "V{name} {ports} {properties}"
-        elif cell == "isource":
-            ports = ' '.join(p(c) for c in ['P', 'N'])
-            templ = "I{name} {ports} {properties}"
-        elif cell in {"pmos", "nmos"}:
-            ports = ' '.join(p(c) for c in ['D', 'G', 'S', 'B'])
-            templ = "M{name} {ports} {properties}"
-        elif cell in {"npn", "pnp"}:
-            ports = ' '.join(p(c) for c in ['C', 'B', 'E'])
-            templ = "Q{name} {ports} {properties}"
-        else:  # subcircuit
-            m = models[cell]
-            conn = m.get('ports', {})
-            if conn:
-                ports = ' '.join(p(c[2]) for c in port_locations(conn))
-            else:
-                ports = ' '.join(p(c[2]) for c in m['conn'])
-            templ = "X{name} {ports} {properties}"
-
-        # a spice type model can overwrite its reference
-        # for example if the mosfet is really a subcircuit
-        try:
-            m = models[cell]["models"][mname][sim]
-            templ = m['reftempl']
-            declarations.add(m['decltempl'].format(corner=corner))
-        except KeyError:
-            pass
-
-        cir.append(templ.format(name=name, ports=ports, properties=propstr))
-    return '\n'.join(cir)
-
-
-def spice_netlist(name, schem, extra="", corner='tt', temp=None, sim="NgSpice", **params):
-    """
-    Generate a spice netlist, taking a dictionary of schematic documents, and the name of the top level schematic.
-    It is possible to pass extra SPICE code and specify the simulation corner.
-    """
-    models = schem["models"]
-    declarations = set()
-    for subname, docs in schem.items():
-        if subname in {name, "models"}: continue
-        _id = SchemId.from_string(subname)
-        mod = models[_id.cell]
-        conn = mod.get('ports', {})
-        if conn:
-            ports = ' '.join(c[2] for c in port_locations(conn))
-        else:
-            ports = ' '.join(c[2] for c in mod['conn'])
-        body = circuit_spice(docs, models, declarations, corner, sim)
-        declarations.add(f".subckt {_id.model} {ports}\n{body}\n.ends {_id.model}") # parameters??
-
-    body = circuit_spice(schem[name], models, declarations, corner, sim)
-    ckt = []
-    ckt.append(f"* {name}")
-    ckt.extend(declarations)
-    ckt.append(body)
-    ckt.append(extra)
-    ckt.append(".end\n")
-
-    return "\n".join(ckt)
-
-default_device_vectors = {
-    'resistor': ['i'],
-    'capacitor': ['i'],
-    'inductor': ['i'],
-    'vsource': ['i'],
-    'isource': [],
-    'diode': [],
-    'nmos': ['gm', 'id', 'vdsat'],
-    'pmos': ['gm', 'id', 'vdsat'],
-    'npn': ['gm', 'ic', 'ib'],
-    'pnp': ['gm', 'ic', 'ib'],
-
-}
-device_prefix = {
-    'resistor': 'r',
-    'capacitor': 'c',
-    'inductor': 'l',
-    'vsource': 'v',
-    'isource': 'i',
-    'diode': 'd',
-    'nmos': 'm',
-    'pmos': 'm',
-    'npn': 'q',
-    'pnp': 'q',
-
-}
-# @m.xx1.xmc1.msky130_fd_pr__nfet_01v8[gm]
-def ngspice_vectors(name, schem, path=()):
-    """
-    Extract all the relevant vectors from the schematic,
-    and format them in NgSpice syntax.
-    Saves label/port net names, and vectors indicated on spice models.
-    """
-    models = schem["models"]
-    vectors = []
-    for id, elem in schem[name].items():
-        if elem['cell'] == 'port' and elem['name'].lower() != 'gnd':
-            vectors.append(('.'.join(path + (elem['name'],))).lower())
-            continue
-        m = models.get(elem['cell'], {})
-        n = m.get('models', {}).get(elem.get('props', {}).get('model'), {})
-        if n.get('type') == 'spice':
-            vex = n.get('NgSpice', {}).get('vectors', [])
-            comp = n.get('NgSpice', {}).get('component')
-            reftempl = n.get('NgSpice', {}).get('reftempl')
-            typ = (comp or reftempl or 'X')[0]
-            dtyp = (reftempl or 'X')[0]
-            if comp:
-                full = typ + '.' + '.'.join(path + (dtyp+elem['name'], comp))
-            elif path:
-                full = typ + '.' + '.'.join(path + (dtyp+elem['name'],))
-            else:
-                full = typ+elem['name']
-            vectors.extend(f"@{full}[{v}]".lower() for v in vex)
-        elif n.get('type') == 'schematic':
-            name = elem['cell']+"$"+elem['props']['model']
-            vectors.extend(ngspice_vectors(name, schem, path+("X"+elem['name'],)))
-        elif elem['cell'] in default_device_vectors: # no model specified
-            vex = default_device_vectors[elem['cell']]
-            typ = device_prefix.get(elem['cell'], 'x')
-            if path:
-                full = typ + '.' + '.'.join(path + (typ+elem['name'],))
-            else:
-                full = typ+elem['name']
-            vectors.extend(f"@{full}[{v}]".lower() for v in vex)
-    return vectors
 
 
 class NyanCADMixin:
@@ -371,17 +234,13 @@ class NyanCADMixin:
     
     def _add_nyancad_element(self, dev_id, dev, ports, models, corner, sim):
         """Add a single NyanCAD element to this netlist."""
-        cell = dev['cell']
+        device_type = dev['type']
         name = dev.get('name') or dev_id.replace(':', '_')  # InSpice names can't have colons
-        props = dev.get('props', {})
-        mname = props.get('model', '')
-        
-        # Parameter name mapping from NyanCAD to InSpice
-        param_mapping = {
-            'W': 'width',
-            'L': 'length', 
-            'nf': 'nfin',
-        }
+        props = dev.get('props', {}).copy()
+
+        model_id = model_key(dev.get('model'))
+        if model_id and model_id in models:
+            props['model'] = models[model_id]['name']
         
         # Helper to get port by name
         def p(port_name):
@@ -389,47 +248,48 @@ class NyanCADMixin:
         
         
         # Map device types to InSpice API methods
-        if cell == "resistor":
+        if device_type == "resistor":
             resistance = props.get('resistance')
             self.R(name, p('P'), p('N'), resistance)
             
-        elif cell == "capacitor":
+        elif device_type == "capacitor":
             capacitance = props.get('capacitance')
             self.C(name, p('P'), p('N'), capacitance)
             
-        elif cell == "inductor":
+        elif device_type == "inductor":
             inductance = props.get('inductance')
             self.L(name, p('P'), p('N'), inductance)
             
-        elif cell == "diode":
+        elif device_type == "diode":
             self.D(name, p('P'), p('N'), **props)
             
-        elif cell == "vsource":
+        elif device_type == "vsource":
             dc = props.get('dc')
             ac = props.get('ac')
             tran = props.get('tran')
             self.V(name, p('P'), p('N'), dc, ac, tran)
             
-        elif cell == "isource":
+        elif device_type == "isource":
             dc = props.get('dc')
             ac = props.get('ac')
             tran = props.get('tran')
             self.I(name, p('P'), p('N'), dc, ac, tran)
             
-        elif cell in {"pmos", "nmos"}:
+        elif device_type in {"pmos", "nmos"}:
             bulk_node = p('B') if 'B' in ports else self.gnd
             # Map parameter names and copy dict to avoid mutation
             self.M(name, p('D'), p('G'), p('S'), bulk_node, **props)
             
-        elif cell in {"npn", "pnp"}:
+        elif device_type in {"npn", "pnp"}:
             self.Q(name, p('C'), p('B'), p('E'), **props)
             
         else:  # subcircuit
-            if cell in models:
-                m = models[cell]
-                port_list = [p(c[2]) for c in m['conn']]
+            if model_id in models:
+                m = models[model_id]
+                port_locs = port_locations(m['ports'])
+                port_list = [p(c[2]) for c in port_locs]
                 params = props.copy()
-                model_name = params.pop('model')
+                model_name = params.pop('model', model_id)
                 self.X(name, model_name, *port_list, **params)
         
 
@@ -450,17 +310,15 @@ class NyanCircuit(NyanCADMixin, Circuit):
         
         models = schem["models"]
         
-        # Inverted loop: iterate over models and their implementations, 
-        # then check if they exist in the schematic
-        for cell_name, model_def in models.items():
-            model_implementations = model_def.get('models', {})
-            for model_name in model_implementations.keys():
-                # model_name is the full subcircuit_key
-                if model_name in schem and model_name != name:
-                    docs = schem[model_name]
-                    nodes = [c[2] for c in model_def.get('conn', [])]
-                    subcircuit = NyanSubCircuit(model_name, nodes, docs, models, corner, sim)
-                    self.subcircuit(subcircuit)
+        # Create subcircuits for user-defined models that have schematic implementations
+        for model_key_str, model_def in models.items():
+            # Extract bare model ID for schematic lookup (models dict keys always have "models:" prefix)
+            model_id = bare_id(model_key_str)
+            if model_id in schem and model_id != name:
+                docs = schem[model_id]
+                nodes = [c[2] for c in port_locations(model_def['ports'])]
+                subcircuit = NyanSubCircuit(model_id, nodes, docs, models, corner, sim)
+                self.subcircuit(subcircuit)
         
         # Populate main circuit elements
         self.populate_from_nyancad(schem[name], models, corner, sim)
