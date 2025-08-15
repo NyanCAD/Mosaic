@@ -363,7 +363,6 @@ class NyanCircuit(NyanCADMixin, Circuit):
         except Exception as e:
             print(f"SPICE parsing failed: {e}")
             print("Falling back to raw SPICE injection")
-            raise e
             # Append to raw_spice
             self.raw_spice += '\n' + spice_code.strip() + '\n'
 
