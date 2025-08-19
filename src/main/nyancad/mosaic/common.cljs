@@ -266,12 +266,13 @@
 (def sync-done (r/adapt-react-class icons/Check))
 (def text (r/adapt-react-class icons/Paragraph))
 (def namei (r/adapt-react-class icons/Fonts))
+(def edit (r/adapt-react-class icons/PencilSquare))
 
 (defn radiobuttons
 ([cursor m] (radiobuttons cursor m nil nil))
 ([cursor m dblclk ctxclk]
  [:<>
-  (doall (for [[label active-label name disp] m]
+  (doall (for [[label name disp] m]
            [:<> {:key name}
             [:input {:type "radio"
                      :id name
@@ -282,17 +283,14 @@
                      :title disp
                      :on-double-click (when dblclk (dblclk name))
                      :on-context-menu (when ctxclk (ctxclk name))}
-             (if (= name @cursor) active-label label)]]))]))
+             label]]))]))
 
 (defn renamable
   ([cursor] (renamable cursor nil))
   ([cursor default]
-   (r/with-let [active (r/atom false)
-                to (atom nil)
-                edit #(reset! active true)]
+   (r/with-let [active (r/atom false)]
      (if (or @active (and (empty? @cursor) (not default)))
        [:form {:on-submit (fn [^js e]
-                            (js/console.log e)
                             (.preventDefault e)
                             (reset! cursor (.. e -target -elements -namefield -value))
                             (reset! active false))}
@@ -303,10 +301,9 @@
                  :on-blur (fn [e]
                             (reset! cursor (.. e -target -value))
                             (reset! active false))}]]
-       [:span {:on-click #(if (= (.-detail %) 1)
-                            (reset! to (js/window.setTimeout edit 1000))
-                            (js/window.clearTimeout @to))}
-        (or @cursor default)]))))
+       [:span {:on-click #(reset! active true)}
+        (or @cursor default)
+        " " [edit]]))))
 
 (defn keyset [e]
   (letfn [(conj-when [s e c] (if c (conj s e) s))]

@@ -9,8 +9,7 @@
   "src/test"]
 
  :dependencies
- [[reagent "1.3.0"]
-  [org.clojars.pepijndevos/hipflask "0.10.5"]]
+ [[reagent "1.3.0"]]
 
  :dev-http {8080 "public"}
  :builds

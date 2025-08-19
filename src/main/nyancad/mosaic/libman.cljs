@@ -7,7 +7,8 @@
             [reagent.core :as r]
             [reagent.dom :as rd]
             [clojure.spec.alpha :as s]
-            [nyancad.hipflask :refer [pouch-atom pouchdb sep watch-changes]]
+            [nyancad.hipflask :refer [pouch-atom pouchdb sep watch-changes get-group]]
+            [cljs.core.async :refer [go <!]]
             [nyancad.mosaic.common :as cm]))
 
 ; initialise the model database
@@ -25,6 +26,7 @@
 (defonce selmodel (r/atom nil))
 (defonce syncactive (r/atom false))
 (defonce filter-text (r/atom ""))
+(defonce selection (r/atom {}))
 
 ; computed seltype from last element of selcat only if it's a device type
 (defonce seltype (r/track #(cm/device-types (last @selcat))))
@@ -32,6 +34,39 @@
 (defn edit-url [mod]
     (doto (js/URL. ".." js/window.location)
       (.. -searchParams (append "schem" (cm/bare-id mod)))))
+
+(defn transform-direction 
+  "Determine cardinal direction from transformation matrix with initial rotation offset.
+  Returns one of: :left, :right, :top, :bottom based on the final orientation."
+  [{:keys [transform]}]
+  (let [; Rotate the transform by the initial rotation offset
+        matrix (cm/transform transform)
+        ; Transform unit vector (1,0) to see where it points
+        point (.transformPoint matrix (cm/point 1 0))
+        x (.-x point)
+        y (.-y point)
+        ; Determine closest cardinal direction
+        abs-x (js/Math.abs x)
+        abs-y (js/Math.abs y)]
+    (if (> abs-x abs-y)
+      (if (< x 0) :right :left)
+      (if (< y 0) :bottom :top))))
+
+
+(defn import-ports-from-schematic
+  "Import port definitions from the selected model's schematic using get-group"
+  [model-id mod]
+  (go
+    (let [schematic-docs (<! (get-group db (cm/bare-id model-id)))
+          port-xf (comp
+                   (filter #(= (:type %) "port"))
+                   (remove #(= (:variant %) "text"))
+                   (map (juxt transform-direction :name)))]
+      (swap! mod update :ports 
+             #(transduce port-xf
+                         (fn [acc [side name]] (update acc side conj name))
+                         {:top [] :bottom [] :left [] :right []}
+                         (vals schematic-docs))))))
 
 (defn spice-model-modal [cb]
   (reset! cm/modal-content
@@ -115,9 +150,8 @@
       (doall (for [[model-id model] filtered-models
                    :let [schem? (= (:type model "ckt") "ckt")
                          icon (if schem? cm/schemmodel cm/codemodel)]]
-               ; inactive, active, key, title
+               ; label, key, title
                [[:span [icon] " " (get model :name model-id)]
-                [:span [icon] " " [cm/renamable (r/cursor db [model-id :name])]]
                 model-id (get model :name model-id)]))
       (fn [model-id]
         (when (= (get-in @db [model-id :type]) "ckt")
@@ -138,23 +172,6 @@
 (defn model-properties 
   "Edit properties for the selected model"
   [db]
-  (let [mod (r/cursor db [@selmodel])]
-    (if @selmodel
-      [:div.properties
-       [:label {:for "categories" :title "Comma-seperated device categories"} "Categories"]
-       [cm/dbfield :input {:id "categories"} mod
-        #(clojure.string/join " " (or (:category %) []))
-        #(swap! %1 assoc :category (clojure.string/split %2 #"[, ]+" -1))]
-       [:h4 "Port Configuration"]
-       [port-editor mod :top]
-       [port-editor mod :bottom]
-       [port-editor mod :left]
-       [port-editor mod :right]]
-      [:div.empty "Select a model to edit its properties."])))
-
-(def selection (r/atom {}))
-
-(defn model-preview [db]
   (let [mod (r/cursor db [@selmodel])
         model-selection (r/cursor selection [@selmodel])
         language-cursor (r/cursor model-selection [:lang])
@@ -163,48 +180,73 @@
         template-cursor (r/cursor lang-cursor [@implementation-cursor])]
     (when-not (seq @model-selection)
       (reset! model-selection {:lang :spice :impl 0}))
-    (prn @template-cursor @implementation-cursor @lang-cursor)
-    [:div.properties
-     (if (and @selmodel (not= (:type @mod "ckt") "ckt"))
-       [:<>
-        [:label {:for "device-type" :title "Device type"} "Device Type"]
-        [:input {:id "device-type"
-                 :type "text"
-                 :disabled true
-                 :value (:type @mod)}]
-        
-        [:label {:for "language"} "Language"]
-        [:select {:id "language"
-                  :type "text"
-                  :value (if-let [lang @language-cursor] (name lang) "spice")
-                  :on-change #(reset! language-cursor (keyword (.. % -target -value)))}
-         [:option {:value "spice"} "Spice"]
-         [:option {:value "spectre"} "Spectre"]
-         [:option {:value "verilog"} "Verilog"]
-         [:option {:value "vhdl"} "VHDL"]]
-
-        [:label {:for "implementation"} "Implementation"]
-        [cm/combobox-field {:id "implementation"} template-cursor implementation-cursor lang-cursor
-         #(conj (if (seq %) % [{:name "default"}]) {:name "<new>"})
-         #(:name % "default")
-         #(swap! %1 assoc :name %2)]
-
-        [:label {:for "template-code"} "Code"]
-        [cm/dbfield :textarea {:id "template-code" :rows 8} template-cursor
-         :code
-         #(swap! %1 assoc :code %2)]
-
-        (when (= @language-cursor :spice)
-          [:<>
-           [:label {:for "use-x" :title "Forces subcircuit instantiation even for other device types"} "Use X"]
-           [:input {:type "checkbox"
-                    :id "use-x"
-                    :checked (get @template-cursor :use-x false)
-                    :on-change #(swap! template-cursor assoc :use-x (.. % -target -checked))}]])]
-       (when @selmodel
+    (if @selmodel
+      [:div.properties
+       [:label {:for "model-name"} "Name"]
+       [cm/dbfield :input {:id "model-name"} mod
+        :name
+        #(swap! %1 assoc :name %2)]
+       
+       [:label {:for "categories" :title "Comma-seperated device categories"} "Categories"]
+       [cm/dbfield :input {:id "categories"} mod
+        #(clojure.string/join " " (or (:category %) []))
+        #(swap! %1 assoc :category (clojure.string/split %2 #"[, ]+" -1))]
+       
+       (if (= (:type @mod "ckt") "ckt")
          [:<>
-          [:a {:href (edit-url @selmodel)
-               :target @selmodel} "Edit"]]))]))
+          [:h4 "Port Configuration"]
+          [:button {:on-click #(import-ports-from-schematic @selmodel mod)}
+           "Import from schematic"]
+          [port-editor mod :top]
+          [port-editor mod :bottom]
+          [port-editor mod :left]
+          [port-editor mod :right]]
+         [:<>
+          [:label {:for "device-type" :title "Device type"} "Device Type"]
+          [:input {:id "device-type"
+                   :type "text"
+                   :disabled true
+                   :value (:type @mod)}]
+          
+          [:label {:for "language"} "Language"]
+          [:select {:id "language"
+                    :type "text"
+                    :value (if-let [lang @language-cursor] (name lang) "spice")
+                    :on-change #(reset! language-cursor (keyword (.. % -target -value)))}
+           [:option {:value "spice"} "Spice"]
+           [:option {:value "spectre"} "Spectre"]
+           [:option {:value "verilog"} "Verilog"]
+           [:option {:value "vhdl"} "VHDL"]]
+
+          [:label {:for "implementation"} "Implementation"]
+          [cm/combobox-field {:id "implementation"} template-cursor implementation-cursor lang-cursor
+           #(conj (if (seq %) % [{:name "default"}]) {:name "<new>"})
+           #(:name % "default")
+           #(swap! %1 assoc :name %2)]
+
+          [:label {:for "template-code"} "Code"]
+          [cm/dbfield :textarea {:id "template-code" :rows 8} template-cursor
+           :code
+           #(swap! %1 assoc :code %2)]
+
+          (when (= @language-cursor :spice)
+            [:<>
+             [:label {:for "use-x" :title "Forces subcircuit instantiation even for other device types"} "Use X"]
+             [:input {:type "checkbox"
+                      :id "use-x"
+                      :checked (get @template-cursor :use-x false)
+                      :on-change #(swap! template-cursor assoc :use-x (.. % -target -checked))}]])])]
+      [:div.empty "Select a model to edit its properties."])))
+
+(defn model-preview [db]
+  (let [mod (r/cursor db [@selmodel])]
+    [:div.preview
+     (if @selmodel
+       (if (= (:type @mod "ckt") "ckt")
+         [:a {:href (edit-url @selmodel)
+              :target @selmodel} "Edit"]
+         [:div.empty "SPICE preview TBD"])
+       [:div.empty "Select a model to preview."])]))
 
 (defn cell-view []
   (let [category-path (if @seltype
@@ -240,7 +282,7 @@
         filter-text identity reset!]]
       [model-list-selector modeldb]]
      [:div.proppane
-      [:div.preview [model-preview modeldb]]
+      [model-preview modeldb]
       [:h3 "Model Properties"]
       [model-properties modeldb]]]))
 

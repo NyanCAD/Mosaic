@@ -995,12 +995,12 @@
   [:<>
    [:div.primary
     [cm/radiobuttons tool
-   ; inactive, active, key, title
-     [[[cm/cursor] [cm/cursor] ::cursor "Cursor [esc]"]
-      [[cm/wire] [cm/wire] ::wire "Wire [w]"]
-      [[cm/eraser] [cm/eraser] ::eraser "Eraser [e]"]
-      [[cm/move] [cm/move] ::pan "Pan [space]"]
-      [[cm/probe] [cm/probe] ::probe "Probe nodes in a connected simulator"]]]
+   ; label, key, title
+     [[[cm/cursor] ::cursor "Cursor [esc]"]
+      [[cm/wire] ::wire "Wire [w]"]
+      [[cm/eraser] ::eraser "Eraser [e]"]
+      [[cm/move] ::pan "Pan [space]"]
+      [[cm/probe] ::probe "Probe nodes in a connected simulator"]]]
     [:span.sep]
     [:a {:title "Rotate selected clockwise [s]"
          :on-click (fn [_] (transform-selected #(.rotate % 90)))}
