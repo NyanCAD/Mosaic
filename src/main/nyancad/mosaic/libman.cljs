@@ -7,8 +7,9 @@
             [reagent.core :as r]
             [reagent.dom :as rd]
             [clojure.spec.alpha :as s]
-            [nyancad.hipflask :refer [pouch-atom pouchdb sep watch-changes get-group]]
+            [nyancad.hipflask :refer [pouch-atom pouchdb sep watch-changes get-group alldocs]]
             [cljs.core.async :refer [go <!]]
+            [cljs.core.async.interop :refer-macros [<p!]]
             [nyancad.mosaic.common :as cm]))
 
 ; initialise the model database
@@ -18,8 +19,7 @@
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
 (set-validator! (.-cache modeldb)
                 #(or (s/valid? :nyancad.mosaic.common/modeldb %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/modeldb %))))
-(defonce snapshots (pouch-atom db "snapshots" (r/atom {})))
-(defonce watcher (watch-changes db modeldb snapshots))
+(defonce watcher (watch-changes db modeldb))
 
 ; used for ephermeal UI state
 (defonce selcat (r/atom []))
@@ -27,9 +27,33 @@
 (defonce syncactive (r/atom false))
 (defonce filter-text (r/atom ""))
 (defonce selection (r/atom {}))
+(defonce preview-url (r/atom nil))
 
 ; computed seltype from last element of selcat only if it's a device type
 (defonce seltype (r/track #(cm/device-types (last @selcat))))
+
+(defn get-preview 
+  "Watch function that loads preview for circuit models"
+  [_ _ _ new-model]
+  (if new-model
+    (go 
+      (let [schematic-id (cm/bare-id new-model)
+            snapshot-group (str schematic-id "$snapshots")
+            docs (<p! (alldocs db #js{:include_docs true
+                                      :attachments true
+                                      :binary true
+                                      :endkey (str snapshot-group sep)
+                                      :startkey (str snapshot-group sep "\ufff0")
+                                      :descending true
+                                      :limit 1}))
+            rows (js->clj (.-rows docs) :keywordize-keys true)]
+        (if-let [preview-attachment (get-in rows [0 :doc :_attachments :preview.svg :data])]
+          (reset! preview-url (js/URL.createObjectURL preview-attachment))
+          (reset! preview-url nil))))
+    (reset! preview-url nil)))
+
+; Watch selmodel and load preview asynchronously  
+(add-watch selmodel ::preview-loader get-preview)
 
 (defn edit-url [mod]
     (doto (js/URL. ".." js/window.location)
@@ -53,7 +77,7 @@
       (if (< y 0) :bottom :top))))
 
 
-(defn import-ports-from-schematic
+(defn import-ports
   "Import port definitions from the selected model's schematic using get-group"
   [model-id mod]
   (go
@@ -195,7 +219,7 @@
        (if (= (:type @mod "ckt") "ckt")
          [:<>
           [:h4 "Port Configuration"]
-          [:button {:on-click #(import-ports-from-schematic @selmodel mod)}
+          [:button {:on-click #(import-ports @selmodel mod)}
            "Import from schematic"]
           [port-editor mod :top]
           [port-editor mod :bottom]
@@ -243,9 +267,16 @@
     [:div.preview
      (if @selmodel
        (if (= (:type @mod "ckt") "ckt")
-         [:a {:href (edit-url @selmodel)
-              :target @selmodel} "Edit"]
-         [:div.empty "SPICE preview TBD"])
+         [:<>
+          [:button.primary {:on-click #(js/window.open (edit-url @selmodel) @selmodel)
+                                        :title "Edit"} [cm/edit] " Edit"]
+          (if @preview-url
+            [:object {:data @preview-url 
+                      :type "image/svg+xml"}
+             "Schematic preview"]
+            [:div.empty
+             "No preview available. Use the snapshot button in the schematic editor to create one."])]
+         [:div.empty "N/A"])
        [:div.empty "Select a model to preview."])]))
 
 (defn cell-view []

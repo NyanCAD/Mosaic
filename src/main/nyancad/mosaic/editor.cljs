@@ -30,7 +30,7 @@
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
 (set-validator! (.-cache modeldb)
                 #(or (s/valid? :nyancad.mosaic.common/modeldb %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/modeldb %))))
-(defonce snapshots (pouch-atom db "snapshots" (r/atom {})))
+(defonce snapshots (pouch-atom db (str group "$snapshots") (r/atom {})))
 (defonce simulations (pouch-atom db (str group "$result") (r/atom (sorted-map))))
 (defonce watcher (watch-changes db schematic modeldb snapshots simulations))
 (def ldb (pouchdb "local"))
@@ -922,7 +922,7 @@
       js/btoa))
 
 (defn snapshot []
-  (swap! snapshots assoc (str "snapshots" sep group "#" (.toISOString (js/Date.)))
+  (swap! snapshots assoc (str group "$snapshots" sep (.toISOString (js/Date.)))
          {:schematic @schematic
           :_attachments {"preview.svg" {:content_type "image/svg+xml"
                                         :data (b64encode (str
