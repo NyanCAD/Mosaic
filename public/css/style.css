@@ -321,6 +321,7 @@ body, html {
   grid-area: properties;
   border-left: 1px solid #e7e7e7;
   padding: 20px;
+  overflow: auto;
 }
 
 .mosaic-libman .proppane .preview {
