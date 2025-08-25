@@ -223,6 +223,8 @@ def create_app(use_wasm: bool = False) -> Starlette:
     
     # Set session manager on main app so signal handler can clean it up
     app.state.session_manager = session_manager
+    app.state.config_manager = config_manager
+    app.state.remote_url = None
     
     if not use_wasm:
         # Mount marimo at /notebook
@@ -301,6 +303,8 @@ def main():
         
         # Set server on app state (required by marimo signal handler)
         app.state.server = server
+        app.state.host = args.host
+        app.state.port = args.port
         
         # Initialize asyncio last, then start server (marimo pattern)
         initialize_asyncio()
