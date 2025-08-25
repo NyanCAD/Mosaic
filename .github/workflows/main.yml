@@ -35,9 +35,13 @@ jobs:
           pip install build marimo
 
       - name: Build JS (required for Python packages)
+        env:
+          COUCHDB_URL: https://api.nyancad.com
+          COUCHDB_ADMIN_USER: ${{ secrets.COUCHDB_ADMIN_USER }}
+          COUCHDB_ADMIN_PASS: ${{ secrets.COUCHDB_ADMIN_PASS }}
         run: |
           npm install
-          npx shadow-cljs release frontend
+          npx shadow-cljs clj-run nyancad.mosaic.build/release
 
       - name: Build Python packages
         run: |

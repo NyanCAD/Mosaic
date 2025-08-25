@@ -1,0 +1,9 @@
+{
+  "_id": "_design/models",
+  "views": {
+    "model_view": {
+      "map": "function (doc) {\n  require('views/lib/cljs').model_view(doc);\n}"
+    }
+  },
+  "language": "javascript"
+}

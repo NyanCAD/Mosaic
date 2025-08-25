@@ -22,6 +22,8 @@
              :filestore {:init-fn nyancad.mosaic.filestore/init :depends-on #{:common}}
              :anywidget {:exports {render nyancad.mosaic.anywidget/render} :depends-on #{:common}}
              :auth {:init-fn nyancad.mosaic.auth/init :depends-on #{:common}}}
-   :compiler-options {:output-feature-set :es2018}
-   :build-hooks [(nyancad.mosaic.build-hooks/marimo-export-hook)]
-   }}}
+   :compiler-options {:output-feature-set :es2018}}
+  :couchdb
+  {:target    :node-library
+   :output-to "public/js/view.js"
+   :exports   {:model-view nyancad.mosaic.couchdb/model-view}}}}

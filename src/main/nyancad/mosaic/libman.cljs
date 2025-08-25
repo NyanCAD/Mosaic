@@ -8,13 +8,13 @@
             [reagent.dom :as rd]
             [clojure.spec.alpha :as s]
             [nyancad.hipflask :refer [pouch-atom pouchdb sep watch-changes get-group alldocs]]
-            [cljs.core.async :refer [go <!]]
+            [cljs.core.async :refer [go <! timeout]]
             [cljs.core.async.interop :refer-macros [<p!]]
             [nyancad.mosaic.common :as cm]))
 
 ; initialise the model database
-(def sync (cm/get-sync-url))
 (defonce db (pouchdb "schematics"))
+(defonce remotedb (pouchdb (str cm/couchdb-url "models")))
 
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
 (set-validator! (.-cache modeldb)
@@ -28,6 +28,10 @@
 (defonce filter-text (r/atom ""))
 (defonce selection (r/atom {}))
 (defonce preview-url (r/atom nil))
+
+; remote model search state
+(defonce remotemodeldb (r/atom {}))
+(defonce remote-search-loading (r/atom false))
 
 ; computed seltype from last element of selcat only if it's a device type
 (defonce seltype (r/track #(cm/device-types (last @selcat))))
@@ -54,6 +58,54 @@
 
 ; Watch selmodel and load preview asynchronously  
 (add-watch selmodel ::preview-loader get-preview)
+
+(defn search-remote-models
+  "Search remote CouchDB for models matching filter and category"
+  [_filter-text _selected-category]
+  (go
+    (reset! remote-search-loading true)
+    (try
+      ; TODO: Implement actual CouchDB Mango query
+      ; For now, stub with dummy models for testing
+      (<! (timeout 1000))
+      (reset! remotemodeldb {"models:remote-resistor-1" {:name "High Precision Resistor"
+                                                          :type "resistor" 
+                                                          :category ["passive" "resistor"]
+                                                          :templates {:spice [{:name "default" :code "R{name} {ports} {R}"}]
+                                                                     :spectre []
+                                                                     :verilog []
+                                                                     :vhdl []}}
+                             "models:remote-opamp-1" {:name "LM741 OpAmp"
+                                                       :type "ckt"
+                                                       :category ["analog" "amplifier"]
+                                                       :ports {:left ["in-" "in+"]
+                                                              :right ["out"]
+                                                              :top ["vdd"]
+                                                              :bottom ["vss"]}}
+                             "models:remote-cap-1" {:name "Ceramic Capacitor"
+                                                     :type "capacitor"
+                                                     :category ["passive" "capacitor"] 
+                                                     :templates {:spice [{:name "default" :code "C{name} {ports} {C}"}]
+                                                                :spectre []
+                                                                :verilog []
+                                                                :vhdl []}}})
+      (catch js/Error e
+        (js/console.error "Remote search error:" e)
+        (reset! remotemodeldb {}))
+      (finally
+        (reset! remote-search-loading false)))))
+
+; Watch filter-text and selcat for remote searches
+(add-watch filter-text ::remote-search 
+           (fn [_ _ _ new-filter]
+             (search-remote-models new-filter @selcat)))
+
+(add-watch selcat ::remote-search-category
+           (fn [_ _ _ new-category]
+             (search-remote-models @filter-text new-category)))
+
+; Initialize remote search on load
+(search-remote-models @filter-text @selcat)
 
 (defn edit-url [mod]
     (doto (js/URL. ".." js/window.location)
@@ -170,18 +222,45 @@
                                     (and (vec-startswith model-path @selcat) filter-match)))
                                 @db)]
     [:div.schematics
-     [cm/radiobuttons selmodel
-      (doall (for [[model-id model] filtered-models
-                   :let [schem? (= (:type model "ckt") "ckt")
-                         icon (if schem? cm/schemmodel cm/codemodel)]]
-               ; label, key, title
-               [[:span [icon] " " (get model :name model-id)]
-                model-id (get model :name model-id)]))
-      (fn [model-id]
-        (when (= (get-in @db [model-id :type]) "ckt")
-          #(js/window.open (edit-url model-id))))
-      (fn [model-id]
-        #(model-context-menu % db model-id))]]))
+     ; Installed models section
+     [:div.installed-section
+      [:h4.section-header "Installed"]
+      (if (seq filtered-models)
+        [cm/radiobuttons selmodel
+         (doall (for [[model-id model] filtered-models
+                      :let [schem? (= (:type model "ckt") "ckt")
+                            icon (if schem? cm/schemmodel cm/codemodel)]]
+                  ; label, key, title
+                  [[:span [icon] " " (get model :name model-id)]
+                   model-id (get model :name model-id)]))
+         (fn [model-id]
+           (when (= (get-in @db [model-id :type]) "ckt")
+             #(js/window.open (edit-url model-id))))
+         (fn [model-id]
+           #(model-context-menu % db model-id))]
+        [:div.empty "No installed models found"])]
+     
+     ; Separator and Available models section
+     [:div.available-section
+      [:h4.section-header "Available"]
+      (cond
+        @remote-search-loading 
+        [:div.loading-spinner "Loading..."]
+        
+        (seq @remotemodeldb)
+        [:div.remote-models
+         (doall (for [[model-id model] @remotemodeldb
+                      :let [schem? (= (:type model "ckt") "ckt")
+                            icon (if schem? cm/schemmodel cm/codemodel)]]
+                  [:label.remote-model {:key model-id}
+                   [icon] " " (get model :name model-id)
+                   [:button.download-btn {:on-click #(do
+                                                        (js/console.log "Installing model:" model-id)
+                                                        (swap! modeldb assoc model-id model))}
+                    [cm/download]]]))]
+        
+        :else
+        [:div.empty "No remote models found"])]]))
 
 
 

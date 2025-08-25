@@ -381,15 +381,25 @@ body, html {
 .mosaic-libman input[type=radio] {
     display: none;
 }
-.mosaic-libman input[type=radio] + label {
+.mosaic-libman input[type=radio] + label,
+.mosaic-libman .remote-model {
     display: block;
     padding: 10px 15px;
     margin-top: 5px;
     cursor: pointer;
 }
-.mosaic-libman input[type=radio]:checked + label {
+.mosaic-libman input[type=radio]:checked + label,
+.mosaic-libman .remote-model:active {
     background-color: rgba(0, 0, 0, 0.041);
     border-radius: 7px;
+}
+
+.mosaic-libman .remote-model .download-btn {
+    background: none;
+    padding: 2px 4px;
+    margin: 0;
+    box-shadow: none;
+    float: right;
 }
 
 .mosaic-libman .schematics label svg {
