@@ -26,4 +26,4 @@
   :couchdb
   {:target    :node-library
    :output-to "public/js/view.js"
-   :exports   {:model-view nyancad.mosaic.couchdb/model-view}}}}
+   :exports   {:name-search-view nyancad.mosaic.couchdb/name-search-view}}}}

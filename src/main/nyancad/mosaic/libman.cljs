@@ -7,7 +7,7 @@
             [reagent.core :as r]
             [reagent.dom :as rd]
             [clojure.spec.alpha :as s]
-            [nyancad.hipflask :refer [pouch-atom pouchdb sep watch-changes get-group alldocs]]
+            [nyancad.hipflask :refer [pouch-atom pouchdb sep watch-changes get-group alldocs get-view-group get-mango-group]]
             [cljs.core.async :refer [go <! timeout]]
             [cljs.core.async.interop :refer-macros [<p!]]
             [nyancad.mosaic.common :as cm]))
@@ -34,7 +34,7 @@
 (defonce remote-search-loading (r/atom false))
 
 ; computed seltype from last element of selcat only if it's a device type
-(defonce seltype (r/track #(cm/device-types (last @selcat))))
+(defonce seltype (r/track #(cm/device-types (peek @selcat))))
 
 (defn get-preview 
   "Watch function that loads preview for circuit models"
@@ -59,36 +59,37 @@
 ; Watch selmodel and load preview asynchronously  
 (add-watch selmodel ::preview-loader get-preview)
 
+(defn build-model-selector
+  "Build a Mango selector for models based on category and filter text"
+  [selected-category filter-text]
+  (let [selected-type (cm/device-types (peek selected-category))
+        category-path (if selected-type
+                        (pop selected-category)  ; remove type from path
+                        selected-category)]      ; use full path if no type
+    (cond-> (into {} (map-indexed (fn [i cat] [(str "category." i) cat]) category-path))
+      ; Add type constraint if we have one
+      selected-type (assoc :type selected-type)
+      ; Add name regex if we have filter text
+      (seq filter-text) (assoc :name {"$regex" (str "(?i)" filter-text)}))))
+
 (defn search-remote-models
   "Search remote CouchDB for models matching filter and category"
-  [_filter-text _selected-category]
+  [filter-text selected-category]
   (go
     (reset! remote-search-loading true)
     (try
-      ; TODO: Implement actual CouchDB Mango query
-      ; For now, stub with dummy models for testing
-      (<! (timeout 1000))
-      (reset! remotemodeldb {"models:remote-resistor-1" {:name "High Precision Resistor"
-                                                          :type "resistor" 
-                                                          :category ["passive" "resistor"]
-                                                          :templates {:spice [{:name "default" :code "R{name} {ports} {R}"}]
-                                                                     :spectre []
-                                                                     :verilog []
-                                                                     :vhdl []}}
-                             "models:remote-opamp-1" {:name "LM741 OpAmp"
-                                                       :type "ckt"
-                                                       :category ["analog" "amplifier"]
-                                                       :ports {:left ["in-" "in+"]
-                                                              :right ["out"]
-                                                              :top ["vdd"]
-                                                              :bottom ["vss"]}}
-                             "models:remote-cap-1" {:name "Ceramic Capacitor"
-                                                     :type "capacitor"
-                                                     :category ["passive" "capacitor"] 
-                                                     :templates {:spice [{:name "default" :code "C{name} {ports} {C}"}]
-                                                                :spectre []
-                                                                :verilog []
-                                                                :vhdl []}}})
+      (let [results (cond
+                      ; Use Mango query for category searches (with or without filter)
+                      (seq selected-category)
+                      (<! (get-mango-group remotedb (build-model-selector selected-category filter-text) 10))
+                      
+                      ; Use name search view when no categories (filter-only)
+                      (seq filter-text)
+                      (<! (get-view-group remotedb "models/name_search" (clojure.string/lower-case filter-text) 10))
+                      
+                      ; No search criteria
+                      :else {})]
+        (reset! remotemodeldb results))
       (catch js/Error e
         (js/console.error "Remote search error:" e)
         (reset! remotemodeldb {}))
@@ -106,6 +107,24 @@
 
 ; Initialize remote search on load
 (search-remote-models @filter-text @selcat)
+
+(defn replicate-model
+  "Replicate a specific model by ID from remote to local database"
+  [model-id]
+  (let [replication (.. remotedb -replicate (to db #js{:doc_ids #js[model-id]
+                                                       :live false}))]
+    (.on replication "complete" #(js/console.log "Model replicated:" model-id))
+    (.on replication "error" #(js/console.error "Replication error:" %))))
+
+(defn replicate-filtered-models
+  "Replicate models matching current search criteria from remote to local database"
+  [selected-category filter-text]
+  (let [selector (build-model-selector selected-category filter-text)
+        replication (.. remotedb -replicate (to db #js{:selector (clj->js selector)
+                                                       :live false}))]
+    (println selector)
+    (.on replication "complete" #(js/console.log "Filtered models replicated"))
+    (.on replication "error" #(js/console.error "Replication error:" %))))
 
 (defn edit-url [mod]
     (doto (js/URL. ".." js/window.location)
@@ -242,7 +261,12 @@
      
      ; Separator and Available models section
      [:div.available-section
-      [:h4.section-header "Available"]
+      [:div.section-header-with-button
+       [:h4.section-header "Available"]
+       (when (seq @remotemodeldb)
+         [:button.download-btn.all {:on-click #(replicate-filtered-models @selcat @filter-text)
+                                    :title "Download all matching models"}
+          [cm/download] "Download All"])]
       (cond
         @remote-search-loading 
         [:div.loading-spinner "Loading..."]
@@ -254,9 +278,8 @@
                             icon (if schem? cm/schemmodel cm/codemodel)]]
                   [:label.remote-model {:key model-id}
                    [icon] " " (get model :name model-id)
-                   [:button.download-btn {:on-click #(do
-                                                        (js/console.log "Installing model:" model-id)
-                                                        (swap! modeldb assoc model-id model))}
+                   [:button.download-btn {:on-click #(replicate-model model-id)
+                                          :title "Download this model"}
                     [cm/download]]]))]
         
         :else

@@ -1,8 +1,16 @@
 {
   "_id": "_design/models",
   "views": {
-    "model_view": {
-      "map": "function (doc) {\n  require('views/lib/cljs').model_view(doc);\n}"
+    "name_search": {
+      "map": "function (doc) {\n  require('views/lib/cljs').name_search_view(doc);\n}"
+    }
+  },
+  "indexes": {
+    "category-type-index": {
+      "index": {
+        "fields": ["category", "type"]
+      },
+      "type": "json"
     }
   },
   "language": "javascript"

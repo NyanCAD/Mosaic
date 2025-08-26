@@ -219,10 +219,14 @@ body, html {
     color: #222222;
 }
 
+.mosaic-libman button {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+
 .mosaic-libman button svg {
-    margin-right: 0.5em;
     font-size: 20px;
-    vertical-align: middle;
 }
 
 .mosaic-libman .libhead {
@@ -394,7 +398,14 @@ body, html {
     border-radius: 7px;
 }
 
-.mosaic-libman .remote-model .download-btn {
+.mosaic-libman .section-header-with-button {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-right:10px;
+}
+
+.mosaic-libman .available-section .download-btn {
     background: none;
     padding: 2px 4px;
     margin: 0;

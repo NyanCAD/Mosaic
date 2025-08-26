@@ -4,15 +4,21 @@
 
 (ns nyancad.hipflask
   (:require ["pouchdb" :as PouchDB]
+            ["pouchdb-find" :as PouchDBFind]
             [cljs.core.async :refer [go go-loop <!]]
             [cljs.core.async.interop :refer-macros [<p!]]
             [clojure.string :refer [starts-with? split]])
-  (:refer-clojure :exclude [update-keys]))
+  (:refer-clojure :exclude [update-keys find]))
+
+; Install the find plugin
+(.plugin PouchDB PouchDBFind)
 
 (defn pouchdb [name] (PouchDB. name))
 (defn put [db doc] (.put db (clj->js doc)))
 (defn bulkdocs [db docs] ^js (.bulkDocs db (clj->js docs)))
 (defn alldocs [db options] ^js (.allDocs db options))
+(defn query [db view options] ^js (.query db view options))
+(defn find [db selector] ^js (.find db selector))
 
 (defn update-keys
   "Apply f to every valen in keys"
@@ -42,9 +48,11 @@
      (persistent! (transduce xform tombstone-conj! (transient to) from))
      (transduce xform tombstone-conj to from))))
 
-(defn- docs-into [m ^js docs]
-  (into m (map #(vector (get % :id) (get % :doc)))
-        (js->clj (.-rows docs) :keywordize-keys true)))
+(defn- docs-into 
+  ([m ^js docs] (docs-into m docs :doc))
+  ([m ^js docs key]
+   (into m (map #(vector (get % :id) (get % key)))
+         (js->clj (.-rows docs) :keywordize-keys true))))
 
 (def sep ":")
 
@@ -53,6 +61,25 @@
                              :startkey (str group sep)
                              :endkey (str group sep "\ufff0")})]
     (go (docs-into {} (<p! docs)))))
+
+(defn get-view-group 
+  ([db view prefix] (get-view-group db view prefix nil))
+  ([db view prefix limit]
+   (let [result (query db view #js{:startkey prefix
+                                   :endkey (str prefix "\ufff0")
+                                   :include_docs false
+                                   :limit limit})]
+     (go (docs-into {} (<p! result) :value)))))
+
+(defn get-mango-group
+  ([db selector] (get-mango-group db selector nil))
+  ([db selector limit]
+   (go
+     (let [result (find db #js{:selector (clj->js selector)
+                               :limit limit})
+           response (<p! result)
+           docs (js->clj (.-docs response) :keywordize-keys true)]
+       (into {} (map (juxt :_id identity)) docs)))))
 
 (defn- init-cache [db group cache]
   (go (reset! cache (<! (get-group db group)))))
