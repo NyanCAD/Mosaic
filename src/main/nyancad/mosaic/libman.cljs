@@ -87,8 +87,9 @@
                       (seq filter-text)
                       (<! (get-view-group remotedb "models/name_search" (clojure.string/lower-case filter-text) 10))
                       
-                      ; No search criteria
-                      :else {})]
+                      ; No search criteria - get 10 arbitrary models
+                      :else
+                      (<! (get-group remotedb "models" 10)))]
         (reset! remotemodeldb results))
       (catch js/Error e
         (js/console.error "Remote search error:" e)

@@ -56,11 +56,14 @@
 
 (def sep ":")
 
-(defn get-group [db group]
-  (let [docs (alldocs db #js{:include_docs true
-                             :startkey (str group sep)
-                             :endkey (str group sep "\ufff0")})]
-    (go (docs-into {} (<p! docs)))))
+(defn get-group 
+  ([db group] (get-group db group nil))
+  ([db group limit]
+   (let [docs (alldocs db #js{:include_docs true
+                              :startkey (str group sep)
+                              :endkey (str group sep "\ufff0")
+                              :limit limit})]
+     (go (docs-into {} (<p! docs))))))
 
 (defn get-view-group 
   ([db view prefix] (get-view-group db view prefix nil))
