@@ -938,7 +938,7 @@
       [:<>
        [:h1 (or @name key)]
        [:div.properties
-        (when (and (seq @model) (= (get-in @modeldb [(cm/model-key @model) :type] "ckt") "ckt"))
+        (when (and (seq @model) (not (get-in @modeldb [(cm/model-key @model) :templates])))
           [:a {:href (ckt-url @model)} "Edit"])
         [:label {:for "name" :title "Instance name"} "name"]
         [:input {:id "name"

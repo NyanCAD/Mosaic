@@ -318,16 +318,15 @@ class NyanCircuit(NyanCADMixin, Circuit):
             model_id = bare_id(model_key_str)
             # Skip the top-level circuit itself
             if model_id != name:
-                model_type = model_def.get('type', 'ckt')
-                # Only create subcircuits for circuit models ("ckt" type or empty which defaults to "ckt")
+                # Create subcircuits for schematic models or SPICE models with templates
                 if model_id in schem:
                     # Create subcircuit for models with schematic implementations
                     docs = schem[model_id]
                     nodes = [c[2] for c in port_locations(model_def['ports'])]
                     subcircuit = NyanSubCircuit(model_id, nodes, docs, models, corner, sim)
                     self.subcircuit(subcircuit)
-                elif model_type != 'ckt':
-                    # Add SPICE code for models that are not circuit models
+                else:
+                    # Add SPICE code for models with templates (SPICE subcircuits)
                     templates = model_def.get('templates', {})
                     spice_templates = templates.get('spice', [])
                     if spice_templates:

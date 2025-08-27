@@ -189,7 +189,7 @@
   (let [model (get @db model-id)]
     (cm/set-context-menu (.-clientX e) (.-clientY e)
                          [:ul
-                          (when (= (:type model) "ckt")
+                          (when (not (:templates model))
                             [:li {:on-click #(js/window.open (edit-url model-id), model-id)} "edit"])
                           [:li {:on-click #(swap! db dissoc model-id)} "delete"]])))
 
@@ -248,13 +248,13 @@
       (if (seq filtered-models)
         [cm/radiobuttons selmodel
          (doall (for [[model-id model] filtered-models
-                      :let [schem? (= (:type model "ckt") "ckt")
+                      :let [schem? (not (:templates model))
                             icon (if schem? cm/schemmodel cm/codemodel)]]
                   ; label, key, title
                   [[:span [icon] " " (get model :name model-id)]
                    model-id (get model :name model-id)]))
          (fn [model-id]
-           (when (= (get-in @db [model-id :type]) "ckt")
+           (when (not (get-in @db [model-id :templates]))
              #(js/window.open (edit-url model-id))))
          (fn [model-id]
            #(model-context-menu % db model-id))]
@@ -275,7 +275,7 @@
         (seq @remotemodeldb)
         [:div.remote-models
          (doall (for [[model-id model] @remotemodeldb
-                      :let [schem? (= (:type model "ckt") "ckt")
+                      :let [schem? (not (:templates model))
                             icon (if schem? cm/schemmodel cm/codemodel)]]
                   [:label.remote-model {:key model-id}
                    [icon] " " (get model :name model-id)
@@ -322,8 +322,9 @@
        (if (= (:type @mod "ckt") "ckt")
          [:<>
           [:h4 "Port Configuration"]
-          [:button {:on-click #(import-ports @selmodel mod)}
-           "Import from schematic"]
+          (when (not (:templates @mod))
+            [:button {:on-click #(import-ports @selmodel mod)}
+             "Import from schematic"])
           [port-editor mod :top]
           [port-editor mod :bottom]
           [port-editor mod :left]
@@ -369,7 +370,7 @@
   (let [mod (r/cursor db [@selmodel])]
     [:div.preview
      (if @selmodel
-       (if (= (:type @mod "ckt") "ckt")
+       (if (not (:templates @mod))
          [:<>
           [:button.primary {:on-click #(js/window.open (edit-url @selmodel) @selmodel)
                                         :title "Edit"} [cm/edit] " Edit"]

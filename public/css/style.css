@@ -219,7 +219,7 @@ body, html {
     color: #222222;
 }
 
-.mosaic-libman button {
+.mosaic-libman button:has(svg) {
     display: flex;
     align-items: center;
     gap: 0.5em;

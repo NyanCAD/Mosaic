@@ -30,8 +30,8 @@
       (let [dev (first devs)
             device-type (:type dev)
             model (:model dev)
-            typ (get-in @model-atom [model :type])]
-        (if (and model (not (contains? @schematic-groups model)) (= typ "ckt"))
+            has-templates (get-in @model-atom [model :templates])]
+        (if (and model (not (contains? @schematic-groups model)) (not has-templates))
           (let [_ (swap! schematic-cache assoc model {})
                 subschem (pouch-atom db model (r/cursor schematic-cache [model]))]
             (add-watch-group schematic-groups subschem)
