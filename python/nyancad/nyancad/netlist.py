@@ -11,6 +11,19 @@ from InSpice.Spice.Netlist import Circuit, SubCircuit
 from InSpice.Spice.Parser.HighLevelParser import SpiceSource
 from InSpice.Spice.Parser.Translator import Builder
 
+# package download dependencies
+import urllib.request
+import shutil
+import tempfile
+import hashlib
+from pathlib import Path
+from urllib.parse import urlparse
+try:
+    import py7zr
+    shutil.register_unpack_format('7zip', ['.7z'], py7zr.unpack_7zarchive)
+except ImportError:
+    pass
+
 
 def model_key(bare_id):
     """
@@ -248,6 +261,7 @@ class NyanCADMixin:
         def p(port_name):
             return ports[port_name]
         
+        #TODO implement use_X flag (model is actually a subcircuit)
         
         # Map device types to InSpice API methods
         if device_type == "resistor":
@@ -325,7 +339,7 @@ class NyanCircuit(NyanCADMixin, Circuit):
                     nodes = [c[2] for c in port_locations(model_def['ports'])]
                     subcircuit = NyanSubCircuit(model_id, nodes, docs, models, corner, sim)
                     self.subcircuit(subcircuit)
-                else:
+                else: #TODO only select models that are used in the schematic
                     # Add SPICE code for models with templates (SPICE subcircuits)
                     templates = model_def.get('templates', {})
                     spice_templates = templates.get('spice', [])
@@ -355,15 +369,85 @@ class NyanCircuit(NyanCADMixin, Circuit):
         try:
             # Parse SPICE code
             spice_source = SpiceSource(spice_code, title_line=False)
+            
+            # Resolve URL includes in the SpiceSource before building
+            self.resolve_url_includes(spice_source)
+            
             builder = Builder()
             parsed_circuit = builder.translate(spice_source)
             # Copy all content to self (models, subcircuits, elements)
             parsed_circuit.copy_to(self)
+            # copy includes and parameters
+            for include in parsed_circuit._includes:
+                self.include(include)
+            for path, section in parsed_circuit._libs:
+                self.lib(path, section)
+            for name, value in parsed_circuit._parameters.items():
+                self.parameter(name, value)
+
         except Exception as e:
             print(f"SPICE parsing failed: {e}")
             print("Falling back to raw SPICE injection")
             # Append to raw_spice
             self.raw_spice += '\n' + spice_code.strip() + '\n'
+    
+    def _resolve_url_path(self, path_obj):
+        """Helper to resolve a single URL path to a local file path."""
+        cache_dir = Path(tempfile.gettempdir()) / "nyancad_archive_cache"
+        cache_dir.mkdir(exist_ok=True)
+        
+        # Get the raw path from the AST
+        ast = path_obj._ast
+        path_str = str(next(iter(ast))).strip("\"'")
+
+        parsed = urlparse(path_str)
+        
+        if parsed.scheme in ('http', 'https'):
+            try:
+                archive_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                entrypoint = parsed.fragment
+                
+                # Generate cache key from URL
+                url_hash = hashlib.md5(archive_url.encode()).hexdigest()[:8]
+                filename = Path(parsed.path).name
+                cached_file = cache_dir / f"{url_hash}_{filename}"
+                
+                # Download if not cached
+                if not cached_file.exists():
+                    print(f"Downloading: {archive_url}")
+                    urllib.request.urlretrieve(archive_url, cached_file)
+                
+                if entrypoint:
+                    # Archive with entrypoint - extract and resolve
+                    base_name = cached_file.stem  # Get filename without extension
+                    extract_dir = cache_dir / base_name
+                    if not extract_dir.exists():
+                        shutil.unpack_archive(str(cached_file), str(extract_dir))
+                    
+                    resolved_path = extract_dir / entrypoint
+                    if not resolved_path.exists():
+                        print(f"Warning: Entrypoint not found in archive: {entrypoint}")
+                        return
+                else:
+                    # Bare SPICE file - use directly
+                    resolved_path = cached_file
+                
+                # Replace the _path in the object
+                path_obj._path = resolved_path
+            except Exception as e:
+                print(f"Failed to resolve path {path_str}: {e}")
+                # Leave original path unchanged on error
+
+    def resolve_url_includes(self, spice_source):
+        """Resolve HTTP includes (archives or bare files) to local file paths in a SpiceSource object."""
+        # Process includes
+        for include in spice_source._includes:
+            self._resolve_url_path(include)
+        
+        # Also process libs if they exist
+        if hasattr(spice_source, '_libs'):
+            for lib in spice_source._libs:
+                self._resolve_url_path(lib)
 
 
 class NyanSubCircuit(NyanCADMixin, SubCircuit):

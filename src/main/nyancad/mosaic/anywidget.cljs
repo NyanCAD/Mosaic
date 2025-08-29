@@ -28,10 +28,10 @@
   (go-loop [devs (seq (vals @schematic-atom))]
     (when (seq devs)
       (let [dev (first devs)
-            device-type (:type dev)
             model (:model dev)
-            has-templates (get-in @model-atom [model :templates])]
-        (if (and model (not (contains? @schematic-groups model)) (not has-templates))
+            model-def (get @model-atom model)
+            has-templates (:templates model-def)]
+        (if (and model (not (contains? @schematic-groups model)) (seq model-def) (not has-templates))
           (let [_ (swap! schematic-cache assoc model {})
                 subschem (pouch-atom db model (r/cursor schematic-cache [model]))]
             (add-watch-group schematic-groups subschem)

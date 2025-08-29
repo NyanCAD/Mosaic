@@ -313,13 +313,13 @@
        [cm/dbfield :input {:id "model-name"} mod
         :name
         #(swap! %1 assoc :name %2)]
-       
+
        [:label {:for "categories" :title "Comma-seperated device categories"} "Categories"]
        [cm/dbfield :input {:id "categories"} mod
         #(clojure.string/join " " (or (:category %) []))
         #(swap! %1 assoc :category (clojure.string/split %2 #"[, ]+" -1))]
-       
-       (if (= (:type @mod "ckt") "ckt")
+
+       (when (= (:type @mod "ckt") "ckt")
          [:<>
           [:h4 "Port Configuration"]
           (when (not (:templates @mod))
@@ -328,14 +328,15 @@
           [port-editor mod :top]
           [port-editor mod :bottom]
           [port-editor mod :left]
-          [port-editor mod :right]]
+          [port-editor mod :right]])
+       (when (:templates @mod)
          [:<>
           [:label {:for "device-type" :title "Device type"} "Device Type"]
           [:input {:id "device-type"
                    :type "text"
                    :disabled true
                    :value (:type @mod)}]
-          
+
           [:label {:for "language"} "Language"]
           [:select {:id "language"
                     :type "text"
