@@ -395,7 +395,7 @@
                      ::conn mosfet-shape
                      ::sym mosfet-sym
                      ::template "{self.name}: {self.props.width}/{self.props.length}"
-                     ::props {:m {:tooltip "multiplier"}
+                     ::props {:multiplier {:tooltip "multiplier"}
                               :nfin {:tooltip "number of fingers"}
                               :width {:tooltip "width" :unit "meter"}
                               :length {:tooltip "length" :unit "meter"}}}
@@ -403,7 +403,7 @@
                      ::conn mosfet-shape
                      ::sym mosfet-sym
                      ::template "{self.name}: {self.props.width}/{self.props.length}"
-                     ::props {:m {:tooltip "multiplier"}
+                     ::props {:multiplier {:tooltip "multiplier"}
                               :nfin {:tooltip "number of fingers"}
                               :width {:tooltip "width" :unit "meter"}
                               :length {:tooltip "length" :unit "meter"}}}
@@ -411,12 +411,12 @@
                     ::conn bjt-conn
                     ::sym bjt-sym
                      ::template "{self.name}: {self.props.width}/{self.props.length}"
-                    ::props {:m {:tooltip "multiplier"}}}
+                    ::props {:multiplier {:tooltip "multiplier"}}}
              "pnp" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
                      ::template "{self.name}: {self.props.width}/{self.props.length}"
-                    ::props {:m {:tooltip "multiplier"}}}
+                    ::props {:multiplier {:tooltip "multiplier"}}}
              "resistor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
                          ::sym resistor-sym

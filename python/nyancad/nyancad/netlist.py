@@ -239,8 +239,26 @@ def netlist(docs, models):
 class NyanCADMixin:
     """Mixin providing NyanCAD integration for InSpice netlist objects."""
     
+    def _select_template(self, templates, sim):
+        """Select template from templates dict based on sim parameter.
+        
+        Returns:
+            dict: selected template or None if no templates
+        """
+        spice_templates = templates.get('spice', [])
+        if not spice_templates:
+            return None
+            
+        # Look for implementation matching sim parameter, fallback to first (default)
+        for template in spice_templates:
+            if template.get('name', '').lower() == sim.lower():
+                return template
+        
+        return spice_templates[0]  # Use first as default
+    
     def populate_from_nyancad(self, docs, models, corner='tt', sim='NgSpice'):
         """Populate this netlist with elements from NyanCAD docs."""
+        self.used_models = set()
         nl = netlist(docs, models)
         
         for dev_id, ports in nl.items():
@@ -253,51 +271,96 @@ class NyanCADMixin:
         name = dev.get('name') or dev_id.replace(':', '_')  # InSpice names can't have colons
         props = dev.get('props', {}).copy()
 
+        # Map 'multiplier' property to 'm' for SPICE output (workaround for ClojureScript single-letter property bug)
+        if 'multiplier' in props:
+            props['m'] = props.pop('multiplier')
+
         model_id = model_key(dev.get('model'))
+        model_use_x = False
+        model_name = None
         if model_id and model_id in models:
-            props['model'] = models[model_id]['name']
+            self.used_models.add(model_id)
+            model_def = models[model_id]
+            model_name = model_def['name']
+            props['model'] = model_name
+            
+            # Check if model should be used as subcircuit (X) instead of component
+            templates = model_def.get('templates', {})
+            selected_template = self._select_template(templates, sim)
+            model_use_x = selected_template.get('use-x', False) if selected_template else False
         
+        print(props)
         # Helper to get port by name
         def p(port_name):
             return ports[port_name]
         
-        #TODO implement use_X flag (model is actually a subcircuit)
-        
         # Map device types to InSpice API methods
         if device_type == "resistor":
-            resistance = props.get('resistance')
-            self.R(name, p('P'), p('N'), resistance)
+            if model_use_x:
+                subcircuit_model = props.pop('model', model_name)
+                self.X(name, subcircuit_model, p('P'), p('N'), **props)
+            else:
+                resistance = props.get('resistance')
+                self.R(name, p('P'), p('N'), resistance)
             
         elif device_type == "capacitor":
-            capacitance = props.get('capacitance')
-            self.C(name, p('P'), p('N'), capacitance)
+            if model_use_x:
+                subcircuit_model = props.pop('model', model_name)
+                self.X(name, subcircuit_model, p('P'), p('N'), **props)
+            else:
+                capacitance = props.get('capacitance')
+                self.C(name, p('P'), p('N'), capacitance)
             
         elif device_type == "inductor":
-            inductance = props.get('inductance')
-            self.L(name, p('P'), p('N'), inductance)
+            if model_use_x:
+                subcircuit_model = props.pop('model', model_name)
+                self.X(name, subcircuit_model, p('P'), p('N'), **props)
+            else:
+                inductance = props.get('inductance')
+                self.L(name, p('P'), p('N'), inductance)
             
         elif device_type == "diode":
-            self.D(name, p('P'), p('N'), **props)
+            if model_use_x:
+                subcircuit_model = props.pop('model', model_name)
+                self.X(name, subcircuit_model, p('P'), p('N'), **props)
+            else:
+                self.D(name, p('P'), p('N'), **props)
             
         elif device_type == "vsource":
-            dc = props.get('dc')
-            ac = props.get('ac')
-            tran = props.get('tran')
-            self.V(name, p('P'), p('N'), dc, ac, tran)
+            if model_use_x:
+                subcircuit_model = props.pop('model', model_name)
+                self.X(name, subcircuit_model, p('P'), p('N'), **props)
+            else:
+                dc = props.get('dc')
+                ac = props.get('ac')
+                tran = props.get('tran')
+                self.V(name, p('P'), p('N'), dc, ac, tran)
             
         elif device_type == "isource":
-            dc = props.get('dc')
-            ac = props.get('ac')
-            tran = props.get('tran')
-            self.I(name, p('P'), p('N'), dc, ac, tran)
+            if model_use_x:
+                subcircuit_model = props.pop('model', model_name)
+                self.X(name, subcircuit_model, p('P'), p('N'), **props)
+            else:
+                dc = props.get('dc')
+                ac = props.get('ac')
+                tran = props.get('tran')
+                self.I(name, p('P'), p('N'), dc, ac, tran)
             
         elif device_type in {"pmos", "nmos"}:
-            bulk_node = p('B') if 'B' in ports else self.gnd
-            # Map parameter names and copy dict to avoid mutation
-            self.M(name, p('D'), p('G'), p('S'), bulk_node, **props)
+            if model_use_x:
+                subcircuit_model = props.pop('model', model_name)
+                bulk_node = p('B') if 'B' in ports else self.gnd
+                self.X(name, subcircuit_model, p('D'), p('G'), p('S'), bulk_node, **props)
+            else:
+                bulk_node = p('B') if 'B' in ports else self.gnd
+                self.M(name, p('D'), p('G'), p('S'), bulk_node, **props)
             
         elif device_type in {"npn", "pnp"}:
-            self.Q(name, p('C'), p('B'), p('E'), **props)
+            if model_use_x:
+                subcircuit_model = props.pop('model', model_name)
+                self.X(name, subcircuit_model, p('C'), p('B'), p('E'), **props)
+            else:
+                self.Q(name, p('C'), p('B'), p('E'), **props)
             
         else:  # subcircuit
             if model_id in models:
@@ -326,8 +389,12 @@ class NyanCircuit(NyanCADMixin, Circuit):
         
         models = schem["models"]
         
-        # Process models: create subcircuits for schematic models, add SPICE for others
-        for model_key_str, model_def in models.items():
+        # First populate main circuit elements to collect used models
+        self.populate_from_nyancad(schem[name], models, corner, sim)
+        
+        # Then process only the used models: create subcircuits for schematic models, add SPICE for others
+        for model_key_str in self.used_models:
+            model_def = models[model_key_str]
             # Extract bare model ID for schematic lookup (models dict keys always have "models:" prefix)
             model_id = bare_id(model_key_str)
             # Skip the top-level circuit itself
@@ -339,26 +406,14 @@ class NyanCircuit(NyanCADMixin, Circuit):
                     nodes = [c[2] for c in port_locations(model_def['ports'])]
                     subcircuit = NyanSubCircuit(model_id, nodes, docs, models, corner, sim)
                     self.subcircuit(subcircuit)
-                else: #TODO only select models that are used in the schematic
+                else:
                     # Add SPICE code for models with templates (SPICE subcircuits)
                     templates = model_def.get('templates', {})
-                    spice_templates = templates.get('spice', [])
-                    if spice_templates:
-                        # Look for implementation matching sim parameter, fallback to first (default)
-                        selected_template = None
-                        for template in spice_templates:
-                            if template.get('name', '').lower() == sim.lower():
-                                selected_template = template
-                                break
-                        if not selected_template:
-                            selected_template = spice_templates[0]  # Use first as default
-                        
+                    selected_template = self._select_template(templates, sim)
+                    if selected_template:
                         code = selected_template.get('code', '').strip()
                         if code:
                             self.add_spice_code(code)
-        
-        # Populate main circuit elements
-        self.populate_from_nyancad(schem[name], models, corner, sim)
     
     def add_spice_code(self, spice_code: str):
         """Add SPICE code to circuit. Try structured parsing first, fallback to raw injection.
