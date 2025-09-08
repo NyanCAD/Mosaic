@@ -76,13 +76,14 @@
 (def sep ":")
 
 (defn get-group 
-  ([db group] (get-group db group nil))
-  ([db group limit]
+  ([db group] (get-group db group nil {}))
+  ([db group limit] (get-group db group limit {}))
+  ([db group limit target]
    (let [docs (alldocs db #js{:include_docs true
                               :startkey (str group sep)
                               :endkey (str group sep "\ufff0")
                               :limit limit})]
-     (go (docs-into {} (<p! docs))))))
+     (go (docs-into target (<p! docs))))))
 
 (defn get-view-group 
   ([db view prefix] (get-view-group db view prefix nil))
@@ -104,7 +105,7 @@
        (into {} (map (juxt :_id identity)) docs)))))
 
 (defn- init-cache [db group cache]
-  (go (reset! cache (<! (get-group db group)))))
+  (go (reset! cache (<! (get-group db group nil (empty @cache))))))
 
 (defn watch-changes [db & patoms]
   ; browsers allow 6 concurrent requests per domain
