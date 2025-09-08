@@ -271,13 +271,10 @@ class NyanCADMixin:
         name = dev.get('name') or dev_id.replace(':', '_')  # InSpice names can't have colons
         props = dev.get('props', {}).copy()
 
-        # Map 'multiplier' property to 'm' for SPICE output (workaround for ClojureScript single-letter property bug)
-        if 'multiplier' in props:
-            props['m'] = props.pop('multiplier')
-
         model_id = model_key(dev.get('model'))
         model_use_x = False
         model_name = None
+
         if model_id and model_id in models:
             self.used_models.add(model_id)
             model_def = models[model_id]
@@ -288,7 +285,7 @@ class NyanCADMixin:
             templates = model_def.get('templates', {})
             selected_template = self._select_template(templates, sim)
             model_use_x = selected_template.get('use-x', False) if selected_template else False
-        
+
         print(props)
         # Helper to get port by name
         def p(port_name):

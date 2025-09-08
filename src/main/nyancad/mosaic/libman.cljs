@@ -7,7 +7,7 @@
             [reagent.core :as r]
             [reagent.dom :as rd]
             [clojure.spec.alpha :as s]
-            [nyancad.hipflask :refer [pouch-atom pouchdb sep watch-changes get-group alldocs get-view-group get-mango-group]]
+            [nyancad.hipflask :refer [pouch-atom pouchdb sep watch-changes get-group alldocs get-view-group get-mango-group json->clj]]
             [cljs.core.async :refer [go <! timeout]]
             [cljs.core.async.interop :refer-macros [<p!]]
             [nyancad.mosaic.common :as cm]))
@@ -50,7 +50,7 @@
                                       :startkey (str snapshot-group sep "\ufff0")
                                       :descending true
                                       :limit 1}))
-            rows (js->clj (.-rows docs) :keywordize-keys true)]
+            rows (json->clj (.-rows docs))]
         (if-let [preview-attachment (get-in rows [0 :doc :_attachments :preview.svg :data])]
           (reset! preview-url (js/URL.createObjectURL preview-attachment))
           (reset! preview-url nil))))
@@ -296,6 +296,26 @@
       #(clojure.string/join " " (get-in % path))
       #(swap! %1 assoc-in path (clojure.string/split %2 #"[, ]+" -1))]]))
 
+(defn parameters-editor [cell]
+  [:<>
+   [:label {:for "parameters"} "Names"]
+   [cm/dbfield :input {:id "parameters", :type "text" :placeholder "resistance dtemp"} cell
+    #(clojure.string/join " " (map :name (get % :props [])))
+    (fn [atom-ref param-string]
+      (let [param-names (clojure.string/split param-string #"[, ]+" -1)]
+        (swap! atom-ref update :props
+               #(mapv (fn [current new-name]
+                        (assoc current :name new-name))
+                      (concat % (repeat {}))
+                      param-names))))]
+   (doall
+    (for [[idx param] (map-indexed vector (get @cell :props []))]
+      [:<> {:key idx}
+       [:label (str (:name param "") " tooltip")]
+       [cm/dbfield :input {:type "text"} cell
+        #(get-in % [:props idx :tooltip] "")
+        #(swap! %1 assoc-in [:props idx :tooltip] %2)]]))])
+
 (defn model-properties 
   "Edit properties for the selected model"
   [db]
@@ -331,6 +351,7 @@
           [port-editor mod :right]])
        (when (:templates @mod)
          [:<>
+          [:h4 "Template Configuration"]
           [:label {:for "device-type" :title "Device type"} "Device Type"]
           [:input {:id "device-type"
                    :type "text"
@@ -364,7 +385,9 @@
              [:input {:type "checkbox"
                       :id "use-x"
                       :checked (get @template-cursor :use-x false)
-                      :on-change #(swap! template-cursor assoc :use-x (.. % -target -checked))}]])])]
+                      :on-change #(swap! template-cursor assoc :use-x (.. % -target -checked))}]])])
+       [:h4 "Parameters"]
+       [parameters-editor mod]]
       [:div.empty "Select a model to edit its properties."])))
 
 (defn model-preview [db]

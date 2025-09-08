@@ -155,8 +155,14 @@
 (s/def ::template-list (s/coll-of ::template :kind vector?))
 (s/def ::templates (s/map-of keyword? ::template-list))
 
+; Parameter specs for unified props system
+(s/def ::tooltip string?)
+(s/def ::parameter (s/keys :req-un [::name]
+                           :opt-un [::tooltip]))
+(s/def ::props (s/coll-of ::parameter :kind vector?))
+
 (s/def ::model-def (s/keys :req-un [::name]
-                           :opt-un [::type ::category ::ports ::templates]))
+                           :opt-un [::type ::category ::ports ::templates ::props]))
 (s/def ::modeldb (s/map-of string? ::model-def))
 
 ; https://clojure.atlassian.net/browse/CLJS-3207
@@ -340,7 +346,7 @@
            (let [key-names (map name (keys state))
                  values (map clj->js (vals state))
                  func (apply js/Function (concat key-names [(str "return (" code ")")]))
-                 result (js->clj (apply func values))
+                 result (nyancad.hipflask/json->clj (apply func values))
                  fres (js/parseFloat result)]
              (case type
                "e" (.toExponential fres (js/parseInt precision))

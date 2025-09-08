@@ -10,6 +10,25 @@
             [clojure.string :refer [starts-with? split]])
   (:refer-clojure :exclude [update-keys find]))
 
+; like json->clj but safe for single character keys with advanced compilation
+(defn json->clj [data]
+  (cond
+    (nil? data)
+    nil
+
+    (js/Array.isArray data)
+    (mapv #(json->clj %) data)
+
+    (= (.-constructor data) js/Object)
+    (into {}
+          (map (fn [[k v]]
+                 [(keyword k)
+                  (json->clj v)]))
+          (js/Object.entries data))
+
+    :else
+    data))
+
 ; Install the find plugin
 (.plugin PouchDB PouchDBFind)
 
@@ -52,7 +71,7 @@
   ([m ^js docs] (docs-into m docs :doc))
   ([m ^js docs key]
    (into m (map #(vector (get % :id) (get % key)))
-         (js->clj (.-rows docs) :keywordize-keys true))))
+         (json->clj (.-rows docs)))))
 
 (def sep ":")
 
@@ -81,7 +100,7 @@
      (let [result (find db #js{:selector (clj->js selector)
                                :limit limit})
            response (<p! result)
-           docs (js->clj (.-docs response) :keywordize-keys true)]
+           docs (json->clj (.-docs response))]
        (into {} (map (juxt :_id identity)) docs)))))
 
 (defn- init-cache [db group cache]
@@ -99,7 +118,7 @@
                                 :include_docs true})
         groups-atom (atom (into {} (map (fn [pa] [(.-group pa) (.-cache pa)]) patoms)))]
     (.on ch "change" (fn [change]
-                       (let [doc (js->clj ^js (.-doc change) :keywordize-keys true)
+                       (let [doc (json->clj ^js (.-doc change))
                              id (get doc :_id)
                              del? (get doc :_deleted)
                              group (first (split id sep))]

@@ -394,76 +394,70 @@
 (def models {"pmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
-                     ::template "{self.name}: {self.props.width}/{self.props.length}"
-                     ::props {:multiplier {:tooltip "multiplier"}
-                              :nfin {:tooltip "number of fingers"}
-                              :width {:tooltip "width" :unit "meter"}
-                              :length {:tooltip "length" :unit "meter"}}}
+                     ::template "{self.name}"
+                     ::props []}
              "nmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
-                     ::template "{self.name}: {self.props.width}/{self.props.length}"
-                     ::props {:multiplier {:tooltip "multiplier"}
-                              :nfin {:tooltip "number of fingers"}
-                              :width {:tooltip "width" :unit "meter"}
-                              :length {:tooltip "length" :unit "meter"}}}
+                     ::template "{self.name}"
+                     ::props []}
              "npn" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
-                     ::template "{self.name}: {self.props.width}/{self.props.length}"
-                    ::props {:multiplier {:tooltip "multiplier"}}}
+                     ::template "{self.name}"
+                    ::props []}
              "pnp" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
-                     ::template "{self.name}: {self.props.width}/{self.props.length}"
-                    ::props {:multiplier {:tooltip "multiplier"}}}
+                     ::template "{self.name}"
+                    ::props []}
              "resistor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
                          ::sym resistor-sym
                          ::template "{self.name}: {self.props.resistance}Ω"
-                         ::props {:resistance {:tooltip "Resistance" :unit "Ohm"}}}
+                         ::props [{:name "resistance" :tooltip "Resistance value" :spice "resistance"}]}
              "capacitor" {::bg cm/twoport-bg
                           ::conn cm/twoport-conn
                           ::sym capacitor-sym
                           ::template "{self.name}: {self.props.capacitance}F"
-                          ::props {:capacitance {:tooltip "Capacitance" :unit "Farad"}}}
+                          ::props [{:name "capacitance" :tooltip "Capacitance value" :spice "capacitance"}]}
              "inductor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
                          ::sym inductor-sym
                          ::template "{self.name}: {self.props.inductance}H"
-                         ::props {:inductance {:tooltip "Inductance" :unit "Henry"}}}
+                         ::props [{:name "inductance" :tooltip "Inductance value" :spice "inductance"}]}
              "vsource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
                         ::sym vsource-sym
                         ::template "{self.name}: {self.props.dc}V"
-                        ::props {:dc {:tooltip "DC voltage" :unit "Volt"}
-                                 :ac {:tooltip "AC voltage" :unit "Volt"}
-                                 :tran {:tooltip "Transient voltage" :unit "Volt"}}}
+                        ::props [{:name "dc" :tooltip "DC voltage" :spice "dc"}
+                                 {:name "ac" :tooltip "AC voltage" :spice "ac"}
+                                 {:name "tran" :tooltip "Transient voltage" :spice "tran"}]}
              "isource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
                         ::sym isource-sym
                         ::template "{self.name}: {self.props.dc}I"
-                        ::props {:dc {:tooltip "DC current" :unit "Ampere"}
-                                 :ac {:tooltip "AC current" :unit "Ampere"}}
-                                 :tran {:tooltip "Transient current" :unit "Ampere"}}
+                        ::props [{:name "dc" :tooltip "DC current" :spice "dc"}
+                                 {:name "ac" :tooltip "AC current" :spice "ac"}
+                                 {:name "tran" :tooltip "Transient current" :spice "tran"}]}
              "diode" {::bg cm/twoport-bg
                       ::conn cm/twoport-conn
                       ::sym diode-sym
-                      ::props {}}
+                      ::props []}
              "wire" {::bg []
                      ::conn []
                      ::sym wire-sym
-                     ::props {}}
+                     ::props []}
              "port" {::bg []
                      ::conn [[0 0 "P"]]
                      ::sym port-sym
                      ::template "{self.name}: {res.op[self.name.toLowerCase()]:.2f}V"
-                     ::props {}}
+                     ::props []}
              "text" {::bg []
                      ::conn []
                      ::sym text-sym
                      ::template "Operating Point:\n{res.op}"
-                     ::props {}}})
+                     ::props []}})
 
 (defn rotate-shape [shape [a b c d e f] devx, devy]
   (let [size (cm/pattern-size shape)
@@ -933,12 +927,13 @@
   (let [props (r/cursor schematic [key :props])
         device-type (r/cursor schematic [key :type])
         model (r/cursor schematic [key :model])
-        name (r/cursor schematic [key :name])]
+        name (r/cursor schematic [key :name])
+        model-def (r/cursor modeldb [(cm/model-key @model)])]
     (fn [key]
       [:<>
        [:h1 (or @name key)]
        [:div.properties
-        (when (and (seq @model) (not (get-in @modeldb [(cm/model-key @model) :templates])))
+        (when (and (seq @model) (not (:templates @model-def)))
           [:a {:href (ckt-url @model)} "Edit"])
         [:label {:for "name" :title "Instance name"} "name"]
         [:input {:id "name"
@@ -954,13 +949,19 @@
          (doall (for [[k v] @modeldb
                       :when (= (:type v "ckt") @device-type)]
                   [:option {:key k :value (cm/bare-id k)} (:name v)]))]
-        (doall (for [[prop meta] (::props (get models @device-type))]
-                 [:<> {:key prop}
-                  [:label {:for prop :title (:tooltip meta)} prop]
-                  [:input {:id prop
-                           :type "text"
-                           :default-value (get @props prop)
-                           :on-change (debounce #(swap! props assoc prop (.. % -target -value)))}]]))
+        ; Get properties from built-in device and model
+        (let [device-props (::props (get models @device-type) [])
+              model-props (:props @model-def [])
+              all-props (concat device-props model-props)]
+          (doall (for [param-def all-props
+                       :let [prop-name (keyword (:name param-def))
+                             tooltip (:tooltip param-def)]]
+                   [:<> {:key prop-name}
+                    [:label {:for prop-name :title tooltip} prop-name]
+                    [:input {:id prop-name
+                             :type "text"
+                             :default-value (get @props prop-name)
+                             :on-change (debounce #(swap! props assoc prop-name (.. % -target -value)))}]])))
         [:label {:for "template" :title "Template to display"} "Text"]
         [:textarea {:id "template"
                     :default-value (get-in @schematic [key :template] (::template (get models @device-type)))

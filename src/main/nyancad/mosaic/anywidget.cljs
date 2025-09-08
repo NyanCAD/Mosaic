@@ -5,7 +5,7 @@
 (ns nyancad.mosaic.anywidget
   (:require [reagent.core :as r]
             [cljs.core.async :refer [go-loop <!]]
-            [nyancad.hipflask :refer [pouch-atom pouchdb watch-changes add-watch-group done?]]))
+            [nyancad.hipflask :refer [pouch-atom pouchdb watch-changes add-watch-group done? json->clj]]))
 
 ;; Extract parameters like editor.cljs (but for schematic, not notebook)
 (def params (js/URLSearchParams. js/window.location.search))
@@ -64,7 +64,7 @@
     ;; Watch for simulation data changes from Python side
     (.on model "change:simulation_data"
          (fn []
-           (let [simulation-data (js->clj (.get model "simulation_data") :keywordize-keys true)
+           (let [simulation-data (json->clj (.get model "simulation_data"))
                  timestamp (.toISOString (js/Date.))
                  key (str group "$result:" timestamp)]
              (println "Received simulation data from Python, storing with key:" key)
