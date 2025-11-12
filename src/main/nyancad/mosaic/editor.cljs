@@ -1280,9 +1280,10 @@
       [schematic-elements @schematic]
       [schematic-dots]
       [tool-elements]]]
-     [:details#mosaic_notebook
-      [:summary "Notebook"]
-      [:iframe {:src (notebook-url)}]]]
+     [:div#mosaic_notebook_wrapper
+      [:details#mosaic_notebook_toggle
+       [:summary "Notebook"]]
+      [:iframe#mosaic_notebook {:src (notebook-url)}]]]
    [cm/contextmenu]
    [cm/modal]])
 
