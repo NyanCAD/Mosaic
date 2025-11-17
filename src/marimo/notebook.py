@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.13.15"
+__generated_with = "0.15.0"
 app = marimo.App()
 
 
@@ -280,7 +280,18 @@ def _(mo):
 
 
 @app.cell
-def _():
+async def _():
+    import sys
+    if "pyodide" in sys.modules:
+        import micropip
+        micropip.uninstall("narwhals")
+        await micropip.install("holoviews==1.21.0")
+        await micropip.install("nyancad")
+        await micropip.install("inspice")
+        from pyodide.http import pyfetch
+        response = await pyfetch("/wasm-libs/libngspice-44.2.zip")
+        await response.unpack_archive(format="zip", extract_dir="/usr/lib")
+
     import marimo as mo
     import pandas as pd
     import numpy as np
