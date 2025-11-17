@@ -292,6 +292,7 @@ async def _():
         response = await pyfetch("/wasm-libs/libngspice-44.2.zip")
         await response.unpack_archive(format="zip", extract_dir="/usr/lib")
 
+    import os
     import marimo as mo
     import pandas as pd
     import numpy as np
@@ -307,6 +308,7 @@ async def _():
         inspice_netlist,
         mo,
         np,
+        os,
         pd,
         schematic_bridge,
         sweepplot,
@@ -360,6 +362,7 @@ def _(
     noise_stop_freq,
     noise_summary,
     noise_variation,
+    os,
     pz_node1,
     pz_node2,
     pz_node3,
@@ -377,8 +380,9 @@ def _(
     tran_stop,
     tran_uic,
 ):
+    xyce_command = os.environ.get("XYCE")
     # Run simulation with direct widget access
-    _simulator = Simulator.factory(simulator=simname.value)
+    _simulator = Simulator.factory(simulator=simname.value, xyce_command=xyce_command)
     _simulation = _simulator.simulation(spice)
 
     _analysis_type = simtabs.value
