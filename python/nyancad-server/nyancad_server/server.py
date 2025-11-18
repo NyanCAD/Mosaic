@@ -161,15 +161,15 @@ async def logout_endpoint(request: Request):
 
 def create_app(use_wasm: bool = False) -> Starlette:
     """Create the Starlette application with static files and optional marimo edit integration."""
-    
+
     # Get the notebook file via symlinked resources
     with resources.path("nyancad_server", "notebook.py") as notebook_path:
         notebook_file = str(notebook_path)
-    
+
     # Create marimo components (mirroring start() function)
     file_router = AppFileRouter.from_filename(MarimoPath(notebook_file))
     config_manager = get_default_config_manager(current_path=notebook_file)
-    
+
     # Create session manager in EDIT mode (key difference from ASGI API)
     session_manager = SessionManager(
         file_router=file_router,
@@ -186,7 +186,7 @@ def create_app(use_wasm: bool = False) -> Starlette:
         redirect_console_to_browser=False,
         watch=False,
     )
-    
+
     # Create marimo Starlette app with base_url="" (internal routing is root)
     marimo_app = create_starlette_app(
         base_url="",
@@ -200,14 +200,14 @@ def create_app(use_wasm: bool = False) -> Starlette:
         allow_origins=("*",),
         skew_protection=True,
     )
-    
+
     # Set required state on marimo app
     marimo_app.state.session_manager = session_manager
     marimo_app.state.config_manager = config_manager
     marimo_app.state.base_url = ""
     marimo_app.state.headless = True
     marimo_app.state.watch = False
-    
+
     # Create main Starlette app with signal handler for proper session cleanup
     app = Starlette(
         routes=[
@@ -219,24 +219,33 @@ def create_app(use_wasm: bool = False) -> Starlette:
             lifespans.signal_handler,
         ])
     )
-    
-    
+
+
     # Set session manager on main app so signal handler can clean it up
     app.state.session_manager = session_manager
     app.state.config_manager = config_manager
     app.state.remote_url = None
-    
+
     if not use_wasm:
         # Mount marimo at /notebook
         app.mount("/notebook", marimo_app)
-    
+
+    # Mount MCP server at /mcp (SSE transport for circuit operations)
+    try:
+        from nyancad_mcp.sse import create_sse_app
+        mcp_app = create_sse_app()
+        app.mount("/mcp", mcp_app)
+    except ImportError:
+        # MCP server not installed, skip
+        pass
+
     # Get the static files directory via symlinked resources
     with resources.path("nyancad_server", "public") as public_path:
         static_path = str(public_path)
-    
+
     # Mount static files at root
     app.mount("/", StaticFiles(directory=static_path, html=True), name="static")
-    
+
     return app
 
 

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "nyancad": {
+      "command": "nyancad-mcp",
+      "description": "NyanCAD circuit operations - netlist generation, schematic queries, model search"
+    }
+  }
+}
