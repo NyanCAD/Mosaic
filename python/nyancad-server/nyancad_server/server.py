@@ -230,10 +230,10 @@ def create_app(use_wasm: bool = False) -> Starlette:
         # Mount marimo at /notebook
         app.mount("/notebook", marimo_app)
 
-    # Mount MCP server at /mcp (SSE transport for circuit operations)
+    # Mount MCP server at /mcp (Streamable HTTP transport for circuit operations)
     try:
-        from nyancad_mcp.sse import create_sse_app
-        mcp_app = create_sse_app()
+        from nyancad_mcp.http import create_http_app
+        mcp_app = create_http_app()
         app.mount("/mcp", mcp_app)
     except ImportError:
         # MCP server not installed, skip

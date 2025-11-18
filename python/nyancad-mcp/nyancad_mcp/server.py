@@ -35,8 +35,8 @@ logger = logging.getLogger("nyancad-mcp")
 # Global CouchDB client
 db_client: Optional[CouchDBClient] = None
 
-# Default database
-DEFAULT_DB = os.getenv("NYANCAD_DB", "offline")
+# Default database from config
+from .config import get_config
 
 
 def get_db_client() -> CouchDBClient:
@@ -55,8 +55,17 @@ async def cleanup():
         db_client = None
 
 
-async def serve() -> Server:
-    """Create and configure the MCP server."""
+async def serve(session_cookie: Optional[str] = None) -> Server:
+    """Create and configure the MCP server.
+
+    Args:
+        session_cookie: Optional session cookie for HTTP mode (inherited from NyanCAD server)
+    """
+    # Initialize DB client with session cookie if provided
+    global db_client
+    if db_client is None:
+        db_client = CouchDBClient(session_cookie=session_cookie)
+
     server = Server("nyancad-mcp")
 
     # ===== TOOLS =====
@@ -64,97 +73,84 @@ async def serve() -> Server:
     @server.list_tools()
     async def list_tools() -> list[Tool]:
         """List available tools."""
+        config = get_config()
+        default_db = config.get_default_db()
+
         return [
             Tool(
-                name="get_schematic",
-                description="Fetch schematic documents from CouchDB database",
+                name="query_circuit",
+                description=(
+                    "Ask natural language questions about a circuit schematic. "
+                    "Examples: 'What devices are in this circuit?', 'What is the topology?', "
+                    "'Which nets are connected to device X?', 'Show me the signal path from input to output'."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "name": {
+                        "schematic_name": {
                             "type": "string",
-                            "description": "Schematic name (e.g., 'top$top')",
+                            "description": "Name of the schematic to query (e.g., 'top$top')",
+                        },
+                        "question": {
+                            "type": "string",
+                            "description": "Natural language question about the circuit",
                         },
                         "db": {
                             "type": "string",
-                            "description": f"Database name (default: {DEFAULT_DB})",
+                            "description": f"Database name (default: {default_db})",
                         },
                     },
-                    "required": ["name"],
+                    "required": ["schematic_name", "question"],
                 },
             ),
             Tool(
-                name="generate_netlist",
-                description="Generate SPICE netlist from schematic documents",
+                name="search_components",
+                description=(
+                    "Search for circuit components/models in the library. "
+                    "Use natural queries like 'nmos transistor', 'opamp low noise', 'resistor high precision'. "
+                    "Returns matching models with their IDs, types, and key parameters."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "name": {
+                        "query": {
                             "type": "string",
-                            "description": "Schematic name (e.g., 'top$top')",
+                            "description": "Search query (e.g., 'nmos 180nm', 'opamp')",
                         },
-                        "db": {
+                        "category": {
                             "type": "string",
-                            "description": f"Database name (default: {DEFAULT_DB})",
-                        },
-                    },
-                    "required": ["name"],
-                },
-            ),
-            Tool(
-                name="list_devices",
-                description="List all devices in a schematic with their types and properties",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "Schematic name (e.g., 'top$top')",
-                        },
-                        "db": {
-                            "type": "string",
-                            "description": f"Database name (default: {DEFAULT_DB})",
-                        },
-                    },
-                    "required": ["name"],
-                },
-            ),
-            Tool(
-                name="query_models",
-                description="Search for circuit models by name in CouchDB",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "search_term": {
-                            "type": "string",
-                            "description": "Search string to match model names",
-                        },
-                        "db": {
-                            "type": "string",
-                            "description": f"Database name (default: {DEFAULT_DB})",
+                            "description": "Optional category filter (e.g., 'transistor', 'passive', 'analog')",
                         },
                         "limit": {
                             "type": "integer",
-                            "description": "Maximum number of results (default: 20)",
+                            "description": "Maximum results to return (default: 20)",
                             "default": 20,
                         },
+                        "db": {
+                            "type": "string",
+                            "description": f"Database name (default: {default_db})",
+                        },
                     },
-                    "required": ["search_term"],
+                    "required": ["query"],
                 },
             ),
             Tool(
-                name="get_model",
-                description="Get detailed information about a specific circuit model",
+                name="get_component_details",
+                description=(
+                    "Get complete details about a specific component/model including ports, "
+                    "parameters, SPICE templates, and usage information. "
+                    "Use this after search_components to get full information."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "model_id": {
                             "type": "string",
-                            "description": "Model ID (with or without 'models:' prefix)",
+                            "description": "Model ID from search results (e.g., 'nmos_standard')",
                         },
                         "db": {
                             "type": "string",
-                            "description": f"Database name (default: {DEFAULT_DB})",
+                            "description": f"Database name (default: {default_db})",
                         },
                     },
                     "required": ["model_id"],
@@ -166,28 +162,15 @@ async def serve() -> Server:
     async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         """Handle tool calls."""
         client = get_db_client()
-        db = arguments.get("db", DEFAULT_DB)
+        config = get_config()
+        db = arguments.get("db", config.get_default_db())
 
         try:
-            if name == "get_schematic":
-                schem_name = arguments["name"]
-                docs = await client.get_schematic_docs(db, schem_name)
+            if name == "query_circuit":
+                schem_name = arguments["schematic_name"]
+                question = arguments["question"]
 
-                if not docs:
-                    return [TextContent(
-                        type="text",
-                        text=f"No schematic found with name: {schem_name}"
-                    )]
-
-                return [TextContent(
-                    type="text",
-                    text=json.dumps(docs, indent=2)
-                )]
-
-            elif name == "generate_netlist":
-                schem_name = arguments["name"]
-
-                # Fetch schematic docs
+                # Fetch schematic and netlist
                 docs = await client.get_schematic_docs(db, schem_name)
                 if not docs:
                     return [TextContent(
@@ -195,77 +178,73 @@ async def serve() -> Server:
                         text=f"No schematic found with name: {schem_name}"
                     )]
 
-                # Fetch all models
                 models = await client.get_models_by_prefix(db, "models:")
-
-                # Generate netlist
                 nl = netlist(docs, models)
 
-                return [TextContent(
-                    type="text",
-                    text=json.dumps(nl, indent=2)
-                )]
-
-            elif name == "list_devices":
-                schem_name = arguments["name"]
-
-                # Fetch schematic docs
-                docs = await client.get_schematic_docs(db, schem_name)
-                if not docs:
-                    return [TextContent(
-                        type="text",
-                        text=f"No schematic found with name: {schem_name}"
-                    )]
-
-                # Extract device info
+                # Build context for answering the question
                 devices = []
                 for doc_id, doc in docs.items():
                     device_type = doc.get("type", "unknown")
-                    # Skip wires and ports for device listing
                     if device_type not in ["wire", "port", "text"]:
                         devices.append({
                             "id": doc_id,
                             "type": device_type,
                             "name": doc.get("name", ""),
                             "model": doc.get("model", ""),
-                            "props": doc.get("props", {}),
-                            "position": {"x": doc.get("x"), "y": doc.get("y")},
                         })
+
+                context = {
+                    "question": question,
+                    "schematic": schem_name,
+                    "devices": devices,
+                    "netlist": nl,
+                    "device_count": len(devices),
+                }
 
                 return [TextContent(
                     type="text",
-                    text=json.dumps(devices, indent=2)
+                    text=json.dumps(context, indent=2)
                 )]
 
-            elif name == "query_models":
-                search_term = arguments["search_term"]
+            elif name == "search_components":
+                query = arguments["query"]
                 limit = arguments.get("limit", 20)
+                category = arguments.get("category")
 
-                models = await client.search_models(db, search_term, limit)
+                models = await client.search_models(db, query, limit)
 
                 if not models:
                     return [TextContent(
                         type="text",
-                        text=f"No models found matching: {search_term}"
+                        text=f"No components found matching: {query}"
                     )]
 
-                # Simplify output
+                # Simplify output - show only useful info
                 results = []
                 for model in models:
+                    model_category = model.get("category", [])
+                    # Filter by category if specified
+                    if category and category.lower() not in [c.lower() for c in model_category]:
+                        continue
+
                     results.append({
-                        "id": model.get("_id", ""),
+                        "id": model.get("_id", "").replace("models:", ""),
                         "name": model.get("name", ""),
                         "type": model.get("type", ""),
-                        "category": model.get("category", []),
+                        "category": model_category,
                         "ports": model.get("ports", {}),
                     })
 
                 return [TextContent(
                     type="text",
-                    text=json.dumps(results, indent=2)
+                    text=json.dumps({
+                        "query": query,
+                        "results": results[:limit],
+                        "count": len(results)
+                    }, indent=2)
                 )]
 
-            elif name == "get_model":
+            elif name == "get_component_details":
                 model_id = arguments["model_id"]
 
                 # Add prefix if not present
@@ -277,7 +256,7 @@ async def serve() -> Server:
                 if not model:
                     return [TextContent(
                         type="text",
-                        text=f"No model found with ID: {model_id}"
+                        text=f"No component found with ID: {model_id}"
                     )]
 
                 return [TextContent(

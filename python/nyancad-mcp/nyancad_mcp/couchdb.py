@@ -8,25 +8,53 @@ from typing import Dict, List, Any, Optional
 from urllib.parse import quote
 import httpx
 
+from .config import get_config
+
 
 class CouchDBClient:
-    """Async CouchDB client for fetching schematics and models."""
+    """Async CouchDB client for fetching schematics and models.
 
-    def __init__(self, url: Optional[str] = None, username: Optional[str] = None, password: Optional[str] = None):
+    Supports two authentication modes:
+    1. stdio mode: Uses config file or environment variables
+    2. HTTP mode: Inherits session cookie from NyanCAD server
+    """
+
+    def __init__(
+        self,
+        url: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        session_cookie: Optional[str] = None
+    ):
         """Initialize CouchDB client.
 
         Args:
-            url: CouchDB URL (defaults to COUCHDB_URL env var or https://api.nyancad.com/)
-            username: CouchDB username (defaults to COUCHDB_ADMIN_USER env var)
-            password: CouchDB password (defaults to COUCHDB_ADMIN_PASS env var)
+            url: CouchDB URL (defaults to config or env)
+            username: CouchDB username (defaults to config or env)
+            password: CouchDB password (defaults to config or env)
+            session_cookie: Session cookie from NyanCAD server (HTTP mode)
         """
-        self.url = (url or os.getenv("COUCHDB_URL", "https://api.nyancad.com/")).rstrip('/')
-        self.username = username or os.getenv("COUCHDB_ADMIN_USER", "admin")
-        self.password = password or os.getenv("COUCHDB_ADMIN_PASS", "")
-        self.client = httpx.AsyncClient(
-            auth=(self.username, self.password) if self.password else None,
-            timeout=30.0
-        )
+        # Load config for stdio mode
+        config = get_config()
+
+        self.url = (url or config.get_couchdb_url()).rstrip('/')
+        self.session_cookie = session_cookie
+
+        # Setup authentication
+        if session_cookie:
+            # HTTP mode: Use inherited session
+            self.client = httpx.AsyncClient(
+                cookies={"AuthSession": session_cookie},
+                timeout=30.0
+            )
+        else:
+            # stdio mode: Use basic auth from config/env
+            self.username = username or config.get_couchdb_username()
+            self.password = password or config.get_couchdb_password()
+            self.client = httpx.AsyncClient(
+                auth=(self.username, self.password) if self.password else None,
+                timeout=30.0
+            )
 
     async def close(self):
         """Close the HTTP client."""

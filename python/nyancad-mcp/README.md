@@ -1,26 +1,36 @@
 # NyanCAD MCP Server
 
-Model Context Protocol (MCP) server for NyanCAD circuit operations. Provides tools and resources for working with circuit schematics, netlists, and models stored in CouchDB.
+Model Context Protocol (MCP) server for NyanCAD circuit operations. Provides intent-based tools for working with circuit schematics and component libraries stored in CouchDB.
+
+Built following MCP spec 2025-03-26+ with Streamable HTTP transport and OAuth 2.1 authentication patterns.
 
 ## Features
 
-### Tools
+### Intent-Based Tools
 
-- **get_schematic** - Fetch schematic documents from CouchDB
-- **generate_netlist** - Generate SPICE netlist from schematic
-- **list_devices** - List all devices in a schematic
-- **query_models** - Search for circuit models by name
-- **get_model** - Get detailed model information
+**Simple tools (implemented):**
+- **query_circuit** - Ask natural language questions about circuits ("What devices are in this circuit?", "Show me the signal path")
+- **search_components** - Search component library with natural queries ("nmos 180nm", "opamp low noise")
+- **get_component_details** - Get complete model information including ports, parameters, SPICE templates
+
+**Complex tools (planned):**
+- **add_device** - Add component with connections in one call
+- **modify_device** - Update device properties or connections
+- **remove_device** - Remove component with auto-reconnect
+- **validate_circuit** - Check for common circuit issues
+- **simulate_circuit** - Run SPICE analysis
 
 ### Resources
 
-- `schematic://{name}` - Access schematic documents
-- `model://{model_id}` - Access model definitions
-- `netlist://{name}` - Generate netlists on-demand
+- `circuit://{name}` - Full schematic with hierarchy
+- `circuit://{name}/device/{id}` - Individual device details
+- `circuit://{name}/netlist` - Generated netlist (read-only)
+- `model://{model_id}` - Model definition
+- `library://category/{path}` - Browse model library
 
 ### Prompts
 
-- **analyze_circuit** - Analyze a circuit and provide insights
+- **analyze_circuit** - Comprehensive circuit analysis with insights
 
 ## Installation
 
@@ -31,34 +41,48 @@ pip install -e .
 
 ## Usage
 
-### Stdio Transport (for Claude Code, etc.)
+### Stdio Transport (for Claude Code, CLI)
 
 ```bash
 nyancad-mcp
 ```
 
-### SSE Transport (HTTP streaming)
+**Configuration:**
 
-Integrated into NyanCAD server at `/mcp` endpoint.
+Config file: `~/.config/nyancad/credentials.json`
+```json
+{
+  "couchdb": {
+    "url": "https://api.nyancad.com/",
+    "username": "your-username",
+    "password": "your-password"
+  },
+  "default_db": "offline"
+}
+```
 
-## Configuration
+Fallback to environment variables:
+- `COUCHDB_URL`
+- `COUCHDB_USER` or `COUCHDB_ADMIN_USER`
+- `COUCHDB_PASSWORD` or `COUCHDB_ADMIN_PASS`
+- `NYANCAD_DB`
 
-Environment variables:
+### Streamable HTTP Transport (NyanCAD Server)
 
-- `COUCHDB_URL` - CouchDB server URL (default: https://api.nyancad.com/)
-- `COUCHDB_ADMIN_USER` - CouchDB admin username (default: admin)
-- `COUCHDB_ADMIN_PASS` - CouchDB admin password
-- `NYANCAD_DB` - Default database name (default: offline)
+Integrated into NyanCAD server at `/mcp` endpoint using Streamable HTTP (MCP spec 2025-03-26+).
+
+Authentication: Inherits CouchDB session from parent NyanCAD server (no separate auth needed).
 
 ## Claude Code Integration
 
-Add to your Claude Code MCP settings:
+Add to `.claude/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "nyancad": {
-      "command": "nyancad-mcp"
+      "command": "nyancad-mcp",
+      "description": "NyanCAD circuit operations - netlist generation, schematic queries, model search"
     }
   }
 }
