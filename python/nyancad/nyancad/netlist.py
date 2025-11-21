@@ -12,12 +12,31 @@ from InSpice.Spice.Parser.HighLevelParser import SpiceSource
 from InSpice.Spice.Parser.Translator import Builder
 
 # package download dependencies
-import urllib.request
+import sys
 import shutil
 import tempfile
 import hashlib
 from pathlib import Path
 from urllib.parse import urlparse
+
+# Conditional imports based on environment
+if sys.platform == 'emscripten':  # Pyodide/WASM
+    from pyodide.http import pyfetch
+
+    async def download_file(url, dest_path):
+        """Download using native Pyodide pyfetch"""
+        response = await pyfetch(url)
+        if not response.ok:
+            raise Exception(f"HTTP {response.status}: {response.status_text}")
+        content = await response.bytes()
+        Path(dest_path).write_bytes(content)
+else:  # Native Python
+    import urllib.request
+
+    async def download_file(url, dest_path):
+        """Download using urllib"""
+        urllib.request.urlretrieve(url, dest_path)
+
 try:
     import py7zr
     shutil.register_unpack_format('7zip', ['.7z'], py7zr.unpack_7zarchive)
@@ -372,23 +391,24 @@ class NyanCADMixin:
 
 class NyanCircuit(NyanCADMixin, Circuit):
     """InSpice Circuit populated from NyanCAD schematic data."""
-    
+
     def __init__(self, name, schem, corner='tt', sim='NgSpice', **kwargs):
         """
         Create InSpice Circuit from full NyanCAD schematic data.
-        
+
         Parameters:
         - name: Top-level schematic name (key in schem)
         - schem: Full schematic dictionary with models and subcircuits
         - corner, sim: Simulation parameters
         """
         super().__init__(title="schematic", **kwargs)
-        
+        self._pending_downloads = []  # List of (url, dest_path) tuples
+
         models = schem["models"]
-        
+
         # First populate main circuit elements to collect used models
         self.populate_from_nyancad(schem[name], models, corner, sim)
-        
+
         # Then process only the used models: create subcircuits for schematic models, add SPICE for others
         for model_key_str in self.used_models:
             model_def = models[model_key_str]
@@ -411,17 +431,35 @@ class NyanCircuit(NyanCADMixin, Circuit):
                         code = selected_template.get('code', '').strip()
                         if code:
                             self.add_spice_code(code)
-    
+
+    async def download_includes(self):
+        """Download all pending URL includes."""
+        for url, dest_path, entrypoint in self._pending_downloads:
+            try:
+                print(f"Downloading: {url}")
+                await download_file(url, dest_path)
+                # Extract if archive with entrypoint
+                if entrypoint:
+                    cache_dir = dest_path.parent
+                    base_name = dest_path.stem
+                    extract_dir = cache_dir / base_name
+                    if not extract_dir.exists():
+                        shutil.unpack_archive(str(dest_path), str(extract_dir))
+            except Exception as e:
+                print(f"Warning: Failed to download/extract {url}: {e}")
+                # Continue with other downloads
+        self._pending_downloads.clear()
+
     def add_spice_code(self, spice_code: str):
         """Add SPICE code to circuit. Try structured parsing first, fallback to raw injection.
-        
+
         Args:
             spice_code: Raw SPICE code (models, subcircuits, etc.)
         """
         try:
             # Parse SPICE code
             spice_source = SpiceSource(spice_code, title_line=False)
-            
+
             # Resolve URL includes in the SpiceSource before building
             self.resolve_url_includes(spice_source)
             
@@ -438,7 +476,9 @@ class NyanCircuit(NyanCADMixin, Circuit):
                 self.parameter(name, value)
 
         except Exception as e:
-            print(f"SPICE parsing failed: {e}")
+            import traceback
+            print(f"SPICE parsing failed: {type(e).__name__}: {e}")
+            print(f"Traceback:\n{traceback.format_exc()}")
             print("Falling back to raw SPICE injection")
             # Append to raw_spice
             self.raw_spice += '\n' + spice_code.strip() + '\n'
@@ -447,55 +487,44 @@ class NyanCircuit(NyanCADMixin, Circuit):
         """Helper to resolve a single URL path to a local file path."""
         cache_dir = Path(tempfile.gettempdir()) / "nyancad_archive_cache"
         cache_dir.mkdir(exist_ok=True)
-        
+
         # Get the raw path from the AST
         ast = path_obj._ast
         path_str = str(next(iter(ast))).strip("\"'")
 
         parsed = urlparse(path_str)
-        
+
         if parsed.scheme in ('http', 'https'):
-            try:
-                archive_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-                entrypoint = parsed.fragment
-                
-                # Generate cache key from URL
-                url_hash = hashlib.md5(archive_url.encode()).hexdigest()[:8]
-                filename = Path(parsed.path).name
-                cached_file = cache_dir / f"{url_hash}_{filename}"
-                
-                # Download if not cached
-                if not cached_file.exists():
-                    print(f"Downloading: {archive_url}")
-                    urllib.request.urlretrieve(archive_url, cached_file)
-                
-                if entrypoint:
-                    # Archive with entrypoint - extract and resolve
-                    base_name = cached_file.stem  # Get filename without extension
-                    extract_dir = cache_dir / base_name
-                    if not extract_dir.exists():
-                        shutil.unpack_archive(str(cached_file), str(extract_dir))
-                    
-                    resolved_path = extract_dir / entrypoint
-                    if not resolved_path.exists():
-                        print(f"Warning: Entrypoint not found in archive: {entrypoint}")
-                        return
-                else:
-                    # Bare SPICE file - use directly
-                    resolved_path = cached_file
-                
-                # Replace the _path in the object
-                path_obj._path = resolved_path
-            except Exception as e:
-                print(f"Failed to resolve path {path_str}: {e}")
-                # Leave original path unchanged on error
+            archive_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            entrypoint = parsed.fragment
+
+            # Generate cache key from URL
+            url_hash = hashlib.md5(archive_url.encode()).hexdigest()[:8]
+            filename = Path(parsed.path).name
+            cached_file = cache_dir / f"{url_hash}_{filename}"
+
+            # Schedule download if not cached
+            if not cached_file.exists():
+                self._pending_downloads.append((archive_url, cached_file, entrypoint))
+
+            # Compute the expected resolved path (will exist after download/extract)
+            if entrypoint:
+                base_name = cached_file.stem
+                extract_dir = cache_dir / base_name
+                resolved_path = extract_dir / entrypoint
+            else:
+                # Bare SPICE file - use directly
+                resolved_path = cached_file
+
+            # Replace the _path in the object
+            path_obj._path = resolved_path
 
     def resolve_url_includes(self, spice_source):
         """Resolve HTTP includes (archives or bare files) to local file paths in a SpiceSource object."""
         # Process includes
         for include in spice_source._includes:
             self._resolve_url_path(include)
-        
+
         # Also process libs if they exist
         if hasattr(spice_source, '_libs'):
             for lib in spice_source._libs:
@@ -520,23 +549,25 @@ class NyanSubCircuit(NyanCADMixin, SubCircuit):
         self.populate_from_nyancad(docs, models, corner, sim)
 
 
-def inspice_netlist(name, schem, corner='tt', sim='NgSpice', **kwargs):
+async def inspice_netlist(name, schem, corner='tt', sim='NgSpice', **kwargs):
     """
     Convenience function to create InSpice Circuit from NyanCAD schematic.
-    
+
     Parameters:
     - name: Top-level schematic name
-    - schem: Full schematic dictionary  
+    - schem: Full schematic dictionary
     - corner, sim: Simulation parameters
     - **kwargs: Additional Circuit constructor arguments
-    
+
     Returns:
     - NyanCircuit instance
-    
+
     Usage:
     ```
-    circuit = inspice_netlist("top$top", schem_data)
+    circuit = await inspice_netlist("top$top", schem_data)
     simulator = circuit.simulator(temperature=25, nominal_temperature=25)
     ```
     """
-    return NyanCircuit(name, schem, corner, sim, **kwargs)
+    circuit = NyanCircuit(name, schem, corner, sim, **kwargs)
+    await circuit.download_includes()
+    return circuit

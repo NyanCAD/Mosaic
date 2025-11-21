@@ -325,8 +325,8 @@ def _(schematic_bridge):
 
 
 @app.cell
-def _(inspice_netlist, reader):
-    spice = inspice_netlist(reader.name, reader.schematic_data)
+async def _(inspice_netlist, reader):
+    spice = await inspice_netlist(reader.name, reader.schematic_data)
     print(spice)
     return (spice,)
 
