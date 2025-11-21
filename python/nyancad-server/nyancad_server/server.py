@@ -11,13 +11,24 @@ import uvicorn
 from starlette.applications import Starlette
 from starlette.staticfiles import StaticFiles
 from starlette.routing import Route
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.requests import Request
+from starlette.background import BackgroundTask
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 # CouchDB configuration from environment
 COUCHDB_URL = os.getenv("COUCHDB_URL", "https://api.nyancad.com/").rstrip('/')
 COUCHDB_ADMIN_USER = os.getenv("COUCHDB_ADMIN_USER", "admin")
 COUCHDB_ADMIN_PASS = os.getenv("COUCHDB_ADMIN_PASS", "")
+
+# Rate limiting
+limiter = Limiter(key_func=get_remote_address)
+
+# HTTP client for GitHub proxy (global for connection pooling)
+github_client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
 
 # Marimo server components (mirroring start.py)
 import marimo._server.api.lifespans as lifespans
@@ -140,23 +151,89 @@ async def logout_endpoint(request: Request):
     try:
         # Get session cookie from request
         session_cookie = request.cookies.get("AuthSession")
-        
+
         # Forward logout request to CouchDB
         async with httpx.AsyncClient() as client:
             response = await client.delete(
                 f"{COUCHDB_URL}/_session",
                 cookies={"AuthSession": session_cookie} if session_cookie else {}
             )
-            
+
             # Forward the response
             return Response(
                 content=response.text,
                 status_code=response.status_code,
                 headers=dict(response.headers)
             )
-            
+
     except Exception as e:
         return JSONResponse({"error": "Internal server error"}, status_code=500)
+
+
+# Whitelisted GitHub repositories for proxy access
+ALLOWED_REPOS = {
+    "fossi-foundation/skywater-pdk-libs-sky130_fd_pr",
+    "fossi-foundation/globalfoundries-pdk-libs-gf180mcu_fd_pr",
+    "IHP-GmbH/IHP-Open-PDK",
+}
+
+
+@limiter.limit("10/minute")
+async def github_proxy_endpoint(request: Request):
+    """Proxy requests to GitHub for whitelisted repositories."""
+    try:
+        # Get the path after /gh/
+        path = request.path_params.get("path", "")
+
+        # Extract owner/repo from path (first two components)
+        parts = path.split("/", 2)
+        if len(parts) < 2:
+            return JSONResponse(
+                {"error": "Invalid path format. Expected: /gh/owner/repo/..."},
+                status_code=400
+            )
+
+        owner, repo = parts[0], parts[1]
+        repo_path = f"{owner}/{repo}"
+
+        # Check if repo is whitelisted
+        if repo_path not in ALLOWED_REPOS:
+            return JSONResponse(
+                {"error": f"Repository {repo_path} is not whitelisted"},
+                status_code=403
+            )
+
+        # Construct GitHub URL
+        github_url = f"https://github.com/{path}"
+
+        # Use manual streaming mode: build request and send with stream=True
+        # This prevents buffering the entire response in memory
+        req = github_client.build_request("GET", github_url)
+        response = await github_client.send(req, stream=True)
+
+        # Stream the response (success or error) with background cleanup
+        return StreamingResponse(
+            response.aiter_bytes(chunk_size=8192),
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=response.headers.get("content-type", "application/octet-stream"),
+            background=BackgroundTask(response.aclose)
+        )
+
+    except httpx.TimeoutException as e:
+        print(f"Timeout error: {e}")
+        return JSONResponse(
+            {"error": "Request to GitHub timed out"},
+            status_code=504
+        )
+    except Exception as e:
+        import traceback
+        print(f"Proxy error: {e}")
+        print(traceback.format_exc())
+        return JSONResponse(
+            {"error": f"Proxy error: {str(e)}"},
+            status_code=500
+        )
 
 
 def create_app(use_wasm: bool = False) -> Starlette:
@@ -214,13 +291,21 @@ def create_app(use_wasm: bool = False) -> Starlette:
             Route("/auth/register", register_endpoint, methods=["POST"]),
             Route("/auth/login", login_endpoint, methods=["POST"]),
             Route("/auth/logout", logout_endpoint, methods=["POST"]),
+            Route("/gh/{path:path}", github_proxy_endpoint, methods=["GET"]),
         ],
         lifespan=Lifespans([
             lifespans.signal_handler,
         ])
     )
-    
-    
+
+    # Add rate limiting middleware
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
+        {"error": "Rate limit exceeded. Try again later."},
+        status_code=429
+    ))
+    app.add_middleware(SlowAPIMiddleware)
+
     # Set session manager on main app so signal handler can clean it up
     app.state.session_manager = session_manager
     app.state.config_manager = config_manager
