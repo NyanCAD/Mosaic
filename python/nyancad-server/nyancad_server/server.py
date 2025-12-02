@@ -287,15 +287,8 @@ def create_app(use_wasm: bool = False) -> Starlette:
     mcp_app = mcp.streamable_http_app()
     mcp_lifespan = mcp_app.router.lifespan_context
 
-    # Create OAuth routes and separate them by mount point
+    # Create OAuth routes (standard paths at root, custom paths prefixed with /oauth)
     oauth_routes = create_oauth_routes()
-
-    # Separate .well-known routes (root level) from /oauth routes
-    well_known_routes = [r for r in oauth_routes if r.path.startswith("/.well-known")]
-    oauth_prefix_routes = [r for r in oauth_routes if not r.path.startswith("/.well-known")]
-
-    # Create OAuth sub-app for /oauth/* routes
-    oauth_app = Starlette(routes=oauth_prefix_routes)
 
     # Create main Starlette app with signal handler for proper session cleanup
     app = Starlette(
@@ -308,23 +301,21 @@ def create_app(use_wasm: bool = False) -> Starlette:
             Route("/gh/{path:path}", github_proxy_endpoint, methods=["GET"]),
             # MCP server
             Mount("/ai", app=mcp_app),
-            # OAuth server (mounted to handle /oauth/* paths)
-            Mount("/oauth", app=oauth_app),
-        ] + well_known_routes,  # Add .well-known routes at root level
+        ] + oauth_routes,  # Add all OAuth routes directly at root level
         lifespan=Lifespans([
             lifespans.signal_handler,
             mcp_lifespan,
         ])
     )
 
-    # Add rate limiting state (but don't add middleware globally to avoid conflicts with OAuth CORS)
+    # Add rate limiting state
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
         {"error": "Rate limit exceeded. Try again later."},
         status_code=429
     ))
-    # Note: SlowAPIMiddleware disabled to avoid conflicts with OAuth CORSMiddleware
-    # Rate limiting is still applied to specific endpoints via @limiter.limit decorator
+    # Note: SlowAPIMiddleware not added globally to avoid middleware conflicts
+    # Rate limiting is applied to specific endpoints via @limiter.limit decorator
 
     # Set session manager on main app so signal handler can clean it up
     app.state.session_manager = session_manager

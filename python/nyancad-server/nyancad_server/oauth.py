@@ -5,20 +5,18 @@ user authentication and issue JWT tokens that can be validated by both the MCP s
 and CouchDB (using shared HMAC secret).
 """
 
+import logging
 import secrets
-import hashlib
-import base64
 import time
 import uuid
 from typing import Any
 
-import jwt
 import httpx
-from urllib.parse import quote
+import jwt
 from pydantic import AnyHttpUrl
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from mcp.server.auth.provider import (
@@ -35,6 +33,73 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from .config import JWT_SECRET, SERVER_URL, COUCHDB_URL
 
+logger = logging.getLogger(__name__)
+
+
+class JWTTokenVerifier:
+    """Verifies JWT tokens signed with shared HMAC secret.
+
+    This verifier validates JWTs that were issued by the OAuth Authorization Server.
+    The same JWTs can be used with CouchDB when it's configured with the same HMAC secret.
+    """
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        """Verify JWT and return AccessToken.
+
+        Args:
+            token: JWT token string from Authorization: Bearer header
+
+        Returns:
+            AccessToken if valid with username, scopes, and expiry
+            None if token is invalid, expired, or malformed
+        """
+        if not JWT_SECRET:
+            logger.error("JWT_SECRET environment variable not set")
+            return None
+
+        try:
+            # Decode and validate JWT
+            payload = jwt.decode(
+                token,
+                JWT_SECRET,
+                algorithms=["HS256"],
+                audience=COUCHDB_URL,
+                options={"require": ["sub", "exp", "iat"]}
+            )
+
+            # Extract claims
+            username = payload.get("sub")
+            roles = payload.get("_couchdb.roles", [])
+            exp = payload.get("exp")
+
+            if not username:
+                logger.warning("Token verification failed: No username in token")
+                return None
+
+            # Convert CouchDB roles to MCP scopes
+            # Format: "role:admin", "role:_admin", etc.
+            scopes = [f"role:{role}" for role in roles] if roles else ["user"]
+
+            return AccessToken(
+                token=token,
+                client_id=username,  # Use username as client identifier
+                scopes=scopes,
+                expires_at=exp,
+            )
+
+        except jwt.ExpiredSignatureError:
+            logger.warning("Token verification failed: Token expired")
+            return None
+        except jwt.InvalidAudienceError:
+            logger.warning(f"Token verification failed: Invalid audience (expected {COUCHDB_URL})")
+            return None
+        except jwt.InvalidTokenError as e:
+            logger.warning(f"Token verification failed: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Token verification error: {e}")
+            return None
+
 
 class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, RefreshToken, AccessToken]):
     """OAuth provider that integrates with CouchDB for authentication.
@@ -47,9 +112,6 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
     """
 
     def __init__(self):
-        if not JWT_SECRET:
-            raise ValueError("JWT_SECRET environment variable must be set")
-
         self.clients: dict[str, OAuthClientInformationFull] = {}
         self.auth_codes: dict[str, AuthorizationCode] = {}
         self.tokens: dict[str, AccessToken] = {}
@@ -80,7 +142,7 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             "scopes": params.scopes,
         }
 
-        # Redirect to login page with state parameter
+        # Redirect to login page with state parameter (custom endpoint with /oauth prefix)
         return f"{SERVER_URL}/oauth/login?state={state}"
 
     async def load_authorization_code(
@@ -115,7 +177,7 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         now = int(time.time())
         payload = {
             "sub": username,
-            "iss": f"{SERVER_URL}/oauth",
+            "iss": SERVER_URL,
             "aud": COUCHDB_URL,
             "_couchdb.roles": roles,
             "exp": now + 3600,  # 1 hour expiry
@@ -196,7 +258,7 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
 
                 return False, []
             except Exception as e:
-                print(f"CouchDB authentication error: {e}")
+                logger.error(f"CouchDB authentication error: {e}")
                 return False, []
 
     async def get_login_page(self, state: str) -> HTMLResponse:
@@ -363,9 +425,9 @@ oauth_provider = CouchDBOAuthProvider()
 def create_oauth_routes() -> list[Route]:
     """Create all OAuth routes including standard OAuth endpoints and custom login endpoints."""
 
-    # OAuth settings for MCP
+    # OAuth settings for MCP (standard OAuth paths at root level)
     auth_settings = AuthSettings(
-        issuer_url=AnyHttpUrl(f"{SERVER_URL}/oauth"),
+        issuer_url=AnyHttpUrl(SERVER_URL),
         client_registration_options=ClientRegistrationOptions(
             enabled=True,
             valid_scopes=["user"],
@@ -384,7 +446,7 @@ def create_oauth_routes() -> list[Route]:
         revocation_options=auth_settings.revocation_options,
     )
 
-    # Add login page route (GET) - path is relative to /oauth mount point
+    # Add custom login page route (GET) - prefixed with /oauth for clarity
     async def login_page_handler(request: Request) -> Response:
         """Show login form."""
         state = request.query_params.get("state")
@@ -392,21 +454,21 @@ def create_oauth_routes() -> list[Route]:
             raise HTTPException(400, "Missing state parameter")
         return await oauth_provider.get_login_page(state)
 
-    routes.append(Route("/login", endpoint=login_page_handler, methods=["GET"]))
+    routes.append(Route("/oauth/login", endpoint=login_page_handler, methods=["GET"]))
 
-    # Add login callback route (POST) - path is relative to /oauth mount point
+    # Add custom login callback route (POST) - prefixed with /oauth for clarity
     async def login_callback_handler(request: Request) -> Response:
         """Handle login form submission."""
         return await oauth_provider.handle_login_callback(request)
 
-    routes.append(Route("/login/callback", endpoint=login_callback_handler, methods=["POST"]))
+    routes.append(Route("/oauth/login/callback", endpoint=login_callback_handler, methods=["POST"]))
 
     # Add protected resource metadata (RFC 9728)
     async def protected_resource_handler(request: Request) -> Response:
         """Serve protected resource metadata."""
         metadata = {
             "resource": f"{SERVER_URL}/ai",
-            "authorization_servers": [f"{SERVER_URL}/oauth"],
+            "authorization_servers": [SERVER_URL],
             "bearer_methods_supported": ["header"],
             "resource_documentation": f"{SERVER_URL}/",
         }
