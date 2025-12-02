@@ -10,7 +10,7 @@ import httpx
 import uvicorn
 from starlette.applications import Starlette
 from starlette.staticfiles import StaticFiles
-from starlette.routing import Route
+from starlette.routing import Route, Mount
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.requests import Request
 from starlette.background import BackgroundTask
@@ -18,11 +18,9 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-
-# CouchDB configuration from environment
-COUCHDB_URL = os.getenv("COUCHDB_URL", "https://api.nyancad.com/").rstrip('/')
-COUCHDB_ADMIN_USER = os.getenv("COUCHDB_ADMIN_USER", "admin")
-COUCHDB_ADMIN_PASS = os.getenv("COUCHDB_ADMIN_PASS", "")
+from .mcp_server import mcp
+from .oauth import create_oauth_routes
+from .config import COUCHDB_URL, COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS
 
 # Rate limiting
 limiter = Limiter(key_func=get_remote_address)
@@ -284,27 +282,49 @@ def create_app(use_wasm: bool = False) -> Starlette:
     marimo_app.state.base_url = ""
     marimo_app.state.headless = True
     marimo_app.state.watch = False
-    
+
+    # Create MCP app and extract its lifespan
+    mcp_app = mcp.streamable_http_app()
+    mcp_lifespan = mcp_app.router.lifespan_context
+
+    # Create OAuth routes and separate them by mount point
+    oauth_routes = create_oauth_routes()
+
+    # Separate .well-known routes (root level) from /oauth routes
+    well_known_routes = [r for r in oauth_routes if r.path.startswith("/.well-known")]
+    oauth_prefix_routes = [r for r in oauth_routes if not r.path.startswith("/.well-known")]
+
+    # Create OAuth sub-app for /oauth/* routes
+    oauth_app = Starlette(routes=oauth_prefix_routes)
+
     # Create main Starlette app with signal handler for proper session cleanup
     app = Starlette(
         routes=[
+            # Legacy auth endpoints (cookie-based)
             Route("/auth/register", register_endpoint, methods=["POST"]),
             Route("/auth/login", login_endpoint, methods=["POST"]),
             Route("/auth/logout", logout_endpoint, methods=["POST"]),
+            # GitHub proxy
             Route("/gh/{path:path}", github_proxy_endpoint, methods=["GET"]),
-        ],
+            # MCP server
+            Mount("/ai", app=mcp_app),
+            # OAuth server (mounted to handle /oauth/* paths)
+            Mount("/oauth", app=oauth_app),
+        ] + well_known_routes,  # Add .well-known routes at root level
         lifespan=Lifespans([
             lifespans.signal_handler,
+            mcp_lifespan,
         ])
     )
 
-    # Add rate limiting middleware
+    # Add rate limiting state (but don't add middleware globally to avoid conflicts with OAuth CORS)
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
         {"error": "Rate limit exceeded. Try again later."},
         status_code=429
     ))
-    app.add_middleware(SlowAPIMiddleware)
+    # Note: SlowAPIMiddleware disabled to avoid conflicts with OAuth CORSMiddleware
+    # Rate limiting is still applied to specific endpoints via @limiter.limit decorator
 
     # Set session manager on main app so signal handler can clean it up
     app.state.session_manager = session_manager
