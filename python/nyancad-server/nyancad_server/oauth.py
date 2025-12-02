@@ -142,8 +142,8 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             "scopes": params.scopes,
         }
 
-        # Redirect to login page with state parameter (custom endpoint with /oauth prefix)
-        return f"{SERVER_URL}/oauth/login?state={state}"
+        # Redirect to auth.cljs page with state parameter
+        return f"{SERVER_URL}/auth/?state={state}"
 
     async def load_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: str
@@ -261,160 +261,78 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 logger.error(f"CouchDB authentication error: {e}")
                 return False, []
 
-    async def get_login_page(self, state: str) -> HTMLResponse:
-        """Generate login page HTML."""
-        if not state or state not in self.state_mapping:
-            raise HTTPException(400, "Invalid or missing state parameter")
+    async def handle_oauth_login(self, request: Request) -> Response:
+        """Handle OAuth login via JSON API (used by auth.cljs)."""
+        try:
+            # Parse JSON body
+            body = await request.json()
+            username = body.get("username")
+            password = body.get("password")
+            state = body.get("state")
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>NyanCAD Authentication</title>
-            <style>
-                body {{
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-                    max-width: 400px;
-                    margin: 50px auto;
-                    padding: 20px;
-                    background-color: #f5f5f5;
-                }}
-                .container {{
-                    background: white;
-                    padding: 30px;
-                    border-radius: 8px;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                }}
-                h2 {{
-                    margin-top: 0;
-                    color: #333;
-                }}
-                .form-group {{
-                    margin-bottom: 20px;
-                }}
-                label {{
-                    display: block;
-                    margin-bottom: 5px;
-                    color: #666;
-                    font-size: 14px;
-                }}
-                input {{
-                    width: 100%;
-                    padding: 10px;
-                    border: 1px solid #ddd;
-                    border-radius: 4px;
-                    font-size: 14px;
-                    box-sizing: border-box;
-                }}
-                button {{
-                    width: 100%;
-                    background-color: #007bff;
-                    color: white;
-                    padding: 12px;
-                    border: none;
-                    border-radius: 4px;
-                    cursor: pointer;
-                    font-size: 16px;
-                    font-weight: 500;
-                }}
-                button:hover {{
-                    background-color: #0056b3;
-                }}
-                .error {{
-                    color: #dc3545;
-                    margin-top: 10px;
-                    font-size: 14px;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>Sign in to NyanCAD</h2>
-                <form action="{SERVER_URL}/oauth/login/callback" method="post">
-                    <input type="hidden" name="state" value="{state}">
-                    <div class="form-group">
-                        <label>Username</label>
-                        <input type="text" name="username" required autofocus>
-                    </div>
-                    <div class="form-group">
-                        <label>Password</label>
-                        <input type="password" name="password" required>
-                    </div>
-                    <button type="submit">Sign In</button>
-                </form>
-            </div>
-        </body>
-        </html>
-        """
+            if not username or not password or not state:
+                return JSONResponse(
+                    {"error": "Missing required parameters"},
+                    status_code=400
+                )
 
-        return HTMLResponse(content=html_content)
+            # Get stored authorization parameters
+            auth_params = self.state_mapping.get(state)
+            if not auth_params:
+                return JSONResponse(
+                    {"error": "Invalid or expired state parameter"},
+                    status_code=400
+                )
 
-    async def handle_login_callback(self, request: Request) -> Response:
-        """Handle login form submission and create authorization code."""
-        form = await request.form()
-        username = form.get("username")
-        password = form.get("password")
-        state = form.get("state")
+            # Validate credentials with CouchDB
+            valid, roles = await self.validate_credentials(username, password)
+            if not valid:
+                return JSONResponse(
+                    {"error": "Invalid username or password"},
+                    status_code=401
+                )
 
-        if not username or not password or not state:
-            raise HTTPException(400, "Missing required parameters")
+            # Generate authorization code
+            code = f"nyancad_{secrets.token_hex(16)}"
 
-        # Ensure strings (not UploadFile objects)
-        username = str(username)
-        password = str(password)
-        state = str(state)
-
-        # Get stored authorization parameters
-        auth_params = self.state_mapping.get(state)
-        if not auth_params:
-            raise HTTPException(400, "Invalid state parameter")
-
-        # Validate credentials with CouchDB
-        valid, roles = await self.validate_credentials(username, password)
-        if not valid:
-            # Return login page with error
-            html_content = await self.get_login_page(state)
-            error_html = html_content.body.decode().replace(
-                '</form>',
-                '<div class="error">Invalid username or password</div></form>'
+            # Create authorization code with CouchDB user data
+            auth_code = AuthorizationCode(
+                code=code,
+                client_id=auth_params["client_id"],
+                redirect_uri=AnyHttpUrl(auth_params["redirect_uri"]),
+                redirect_uri_provided_explicitly=auth_params["redirect_uri_provided_explicitly"],
+                expires_at=time.time() + 300,  # 5 minutes
+                scopes=auth_params.get("scopes", ["user"]),
+                code_challenge=auth_params.get("code_challenge"),
+                resource=auth_params.get("resource"),
             )
-            return HTMLResponse(content=error_html, status_code=401)
 
-        # Generate authorization code
-        code = f"nyancad_{secrets.token_hex(16)}"
+            # Store authorization code and user data
+            self.auth_codes[code] = auth_code
+            self.user_data[code] = {
+                "username": username,
+                "roles": roles,
+            }
 
-        # Create authorization code with CouchDB user data
-        auth_code = AuthorizationCode(
-            code=code,
-            client_id=auth_params["client_id"],
-            redirect_uri=AnyHttpUrl(auth_params["redirect_uri"]),
-            redirect_uri_provided_explicitly=auth_params["redirect_uri_provided_explicitly"],
-            expires_at=time.time() + 300,  # 5 minutes
-            scopes=auth_params.get("scopes", ["user"]),
-            code_challenge=auth_params.get("code_challenge"),
-            resource=auth_params.get("resource"),
-        )
+            # Clean up state mapping
+            del self.state_mapping[state]
 
-        # Store authorization code
-        self.auth_codes[code] = auth_code
+            # Construct redirect URI with code and state
+            redirect_uri = construct_redirect_uri(
+                auth_params["redirect_uri"],
+                code=code,
+                state=state,
+            )
 
-        # Store user data separately (Pydantic doesn't allow adding fields)
-        self.user_data[code] = {
-            "username": username,
-            "roles": roles,
-        }
+            # Return redirect URL as JSON
+            return JSONResponse({"redirect_url": redirect_uri})
 
-        # Clean up state mapping
-        del self.state_mapping[state]
-
-        # Redirect back to client with authorization code
-        redirect_uri = construct_redirect_uri(
-            auth_params["redirect_uri"],
-            code=code,
-            state=state,
-        )
-
-        return RedirectResponse(url=redirect_uri, status_code=302)
+        except Exception as e:
+            logger.error(f"OAuth login error: {e}")
+            return JSONResponse(
+                {"error": "Internal server error"},
+                status_code=500
+            )
 
 
 # Create global provider instance
@@ -446,22 +364,12 @@ def create_oauth_routes() -> list[Route]:
         revocation_options=auth_settings.revocation_options,
     )
 
-    # Add custom login page route (GET) - prefixed with /oauth for clarity
-    async def login_page_handler(request: Request) -> Response:
-        """Show login form."""
-        state = request.query_params.get("state")
-        if not state:
-            raise HTTPException(400, "Missing state parameter")
-        return await oauth_provider.get_login_page(state)
+    # Add JSON OAuth login endpoint (POST) - used by auth.cljs
+    async def oauth_login_handler(request: Request) -> Response:
+        """Handle OAuth login via JSON API (used by auth.cljs)."""
+        return await oauth_provider.handle_oauth_login(request)
 
-    routes.append(Route("/oauth/login", endpoint=login_page_handler, methods=["GET"]))
-
-    # Add custom login callback route (POST) - prefixed with /oauth for clarity
-    async def login_callback_handler(request: Request) -> Response:
-        """Handle login form submission."""
-        return await oauth_provider.handle_login_callback(request)
-
-    routes.append(Route("/oauth/login/callback", endpoint=login_callback_handler, methods=["POST"]))
+    routes.append(Route("/oauth/login", endpoint=oauth_login_handler, methods=["POST"]))
 
     # Add protected resource metadata (RFC 9728)
     async def protected_resource_handler(request: Request) -> Response:

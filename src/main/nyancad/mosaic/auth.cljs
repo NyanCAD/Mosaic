@@ -16,6 +16,7 @@
 (defonce confirm-password (r/atom ""))
 (defonce loading (r/atom false))
 (defonce error-message (r/atom nil))
+(defonce oauth-state (r/atom nil))  ; Holds OAuth state parameter
 
 ;; Authentication functions
 (defn make-backend-request [method url data]
@@ -67,6 +68,32 @@
       (finally
         (reset! loading false)))))
 
+(defn oauth-login-user
+  "Handle OAuth login with state parameter"
+  [username password state]
+  (go
+    (try
+      (reset! loading true)
+      (reset! error-message nil)
+      (let [response (<p! (make-backend-request "POST"
+                                              "/oauth/login"
+                                              {:username username
+                                               :password password
+                                               :state state}))]
+        (if (.-ok response)
+          (let [result (<p! (.json response))
+                redirect-url (.-redirect_url result)]
+            (js/console.log "OAuth login successful, redirecting to:" redirect-url)
+            ;; Navigate to redirect URL provided by server
+            (set! js/window.location redirect-url))
+          (let [error-response (<p! (.json response))]
+            (reset! error-message (.-error error-response)))))
+      (catch js/Error e
+        (js/console.error "OAuth login error:" e)
+        (reset! error-message "Network error. Please try again."))
+      (finally
+        (reset! loading false)))))
+
 (defn logout-user []
   (go
     (try
@@ -75,6 +102,12 @@
       (js/window.location.reload)
       (catch js/Error e
         (js/console.error "Logout error:" e)))))
+
+(defn get-query-param
+  "Extract query parameter from current URL"
+  [param-name]
+  (let [url-params (js/URLSearchParams. js/window.location.search)]
+    (.get url-params param-name)))
 
 ;; Form validation
 (defn validate-form []
@@ -99,8 +132,10 @@
 (defn auth-form []
   [:div.auth-container
    [:div.auth-card
-    [:h1 (if (= @auth-mode :login) "Login" "Register")]
-    
+    [:h1 (if @oauth-state
+           "Sign in to NyanCAD"
+           (if (= @auth-mode :login) "Login" "Register"))]
+
     (when @error-message
       [:div.error-message @error-message])
     
@@ -108,10 +143,13 @@
                          (.preventDefault e)
                          (if-let [error (validate-form)]
                            (reset! error-message error)
-                           (if (= @auth-mode :login)
-                             (login-user @username @password)
-                             (register-user @username @password))))}
-     
+                           ;; Check if we're in OAuth mode
+                           (if @oauth-state
+                             (oauth-login-user @username @password @oauth-state)
+                             (if (= @auth-mode :login)
+                               (login-user @username @password)
+                               (register-user @username @password)))))}
+
      [form-input "Username" "text" username "Enter your username"]
      [form-input "Password" "password" password "Enter your password"]
      
@@ -122,19 +160,20 @@
       (if @loading
         "Please wait..."
         (if (= @auth-mode :login) "Login" "Register"))]
-     
-     [:div.auth-toggle
-      (if (= @auth-mode :login)
-        [:p "Don't have an account? " 
-         [:a {:href "#" :on-click #(do (.preventDefault %)
-                                       (reset! auth-mode :register)
-                                       (reset! error-message nil))} 
-          "Register here"]]
-        [:p "Already have an account? " 
-         [:a {:href "#" :on-click #(do (.preventDefault %)
-                                       (reset! auth-mode :login)
-                                       (reset! error-message nil))} 
-          "Login here"]])]]
+
+     (when-not @oauth-state
+       [:div.auth-toggle
+        (if (= @auth-mode :login)
+          [:p "Don't have an account? "
+           [:a {:href "#" :on-click #(do (.preventDefault %)
+                                         (reset! auth-mode :register)
+                                         (reset! error-message nil))}
+            "Register here"]]
+          [:p "Already have an account? "
+           [:a {:href "#" :on-click #(do (.preventDefault %)
+                                         (reset! auth-mode :login)
+                                         (reset! error-message nil))}
+            "Login here"]])])]
     
     [:div.local-option
      [:p "Or continue without an account:"]
@@ -163,4 +202,8 @@
 
 (defn ^:export init []
   (set! js/window.name "auth")
+  ;; Check for OAuth state parameter
+  (when-let [state (get-query-param "state")]
+    (reset! oauth-state state)
+    (reset! auth-mode :login))  ; Force login mode for OAuth
   (render))
