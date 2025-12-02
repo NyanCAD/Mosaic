@@ -38,7 +38,8 @@
           (let [result (<p! (.json response))]
             (js/console.log "Login successful:" result)
             (cm/set-current-user (.-name result))
-            (js/window.location.replace "/"))
+            ;(js/window.location.replace "/"))
+          )
           (let [error-response (<p! (.json response))]
             (reset! error-message (.-error error-response)))))
       (catch js/Error e
@@ -70,29 +71,31 @@
 
 (defn oauth-login-user
   "Handle OAuth login with state parameter"
-  [username password state]
-  (go
-    (try
-      (reset! loading true)
-      (reset! error-message nil)
-      (let [response (<p! (make-backend-request "POST"
-                                              "/oauth/login"
-                                              {:username username
-                                               :password password
-                                               :state state}))]
-        (if (.-ok response)
-          (let [result (<p! (.json response))
-                redirect-url (.-redirect_url result)]
-            (js/console.log "OAuth login successful, redirecting to:" redirect-url)
-            ;; Navigate to redirect URL provided by server
-            (set! js/window.location redirect-url))
-          (let [error-response (<p! (.json response))]
-            (reset! error-message (.-error error-response)))))
-      (catch js/Error e
-        (js/console.error "OAuth login error:" e)
-        (reset! error-message "Network error. Please try again."))
-      (finally
-        (reset! loading false)))))
+  ([state]
+   ;; Consent flow: use existing session
+   (oauth-login-user nil nil state))
+  ([username password state]
+   ;; Credential flow or consent flow
+   (go
+     (try
+       (reset! loading true)
+       (reset! error-message nil)
+       (let [body (if (and username password)
+                    {:username username :password password :state state}
+                    {:state state})
+             response (<p! (make-backend-request "POST" "/oauth/login" body))]
+         (if (.-ok response)
+           (let [result (<p! (.json response))
+                 result-clj (js->clj result :keywordize-keys true)
+                 redirect-url (:redirect_url result-clj)]
+             (set! js/window.location redirect-url))
+           (let [error-response (<p! (.json response))
+                 error-clj (js->clj error-response :keywordize-keys true)]
+             (reset! error-message (:error error-clj)))))
+       (catch js/Error e
+         (reset! error-message "Failed to grant access. Please try again."))
+       (finally
+         (reset! loading false))))))
 
 (defn logout-user []
   (go
@@ -182,13 +185,27 @@
 (defn user-account []
   [:div.account-container
    [:div.account-card
-    [:h1 "Account"]
+    [:h1 (if @oauth-state "Grant Access" "Account")]
+
+    (when @error-message
+      [:div.error-message @error-message])
+
     [:div.user-info
      [:p "Logged in as: " [:strong (cm/get-current-user)]]
      [:p "Sync URL: " [:code (cm/get-sync-url)]]]
     [:div.account-actions
-     [:a.button.secondary {:href "/"} "Back to Editor"]
-     [:button.danger {:on-click logout-user} "Logout"]]]])
+     (if @oauth-state
+       ;; OAuth mode: show grant/cancel
+       [:<>
+        [:button.primary
+         {:on-click #(oauth-login-user @oauth-state)
+          :disabled @loading}
+         (if @loading "Please wait..." "Grant Access")]
+        [:a.button.secondary {:href "/"} "Cancel"]]
+       ;; Normal mode: show back/logout
+       [:<>
+        [:a.button.secondary {:href "/"} "Back to Editor"]
+        [:button.danger {:on-click logout-user} "Logout"]])]]])
 
 (defn auth-page []
   (if (cm/is-authenticated?)

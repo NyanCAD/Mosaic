@@ -240,43 +240,75 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         if token in self.tokens:
             del self.tokens[token]
 
-    async def validate_credentials(self, username: str, password: str) -> tuple[bool, list[str]]:
-        """Validate credentials against CouchDB and return user roles."""
+    async def validate_credentials(
+        self,
+        request: Request,
+        username: str | None = None,
+        password: str | None = None
+    ) -> tuple[bool, str, list[str]]:
+        """Validate credentials against CouchDB and return user info.
+
+        Supports credential-based auth OR session cookie auth.
+        Returns: (valid, username, roles)
+        """
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.post(
-                    f"{COUCHDB_URL}/_session",
-                    data={"name": username, "password": password},
-                    headers={"Content-Type": "application/x-www-form-urlencoded"}
-                )
+                # Conditionally prepare request parameters
+                if username and password:
+                    # Credential-based: POST with form data
+                    method = "POST"
+                    url = f"{COUCHDB_URL}/_session"
+                    kwargs = {
+                        "data": {"name": username, "password": password},
+                        "headers": {"Content-Type": "application/x-www-form-urlencoded"}
+                    }
+                else:
+                    # Session-based: GET with cookie
+                    session_cookie = request.cookies.get("AuthSession")
+                    if not session_cookie:
+                        return False, "", []
 
-                if response.status_code == 200:
-                    data = response.json()
-                    user_ctx = data.get("userCtx", {})
-                    roles = user_ctx.get("roles", [])
-                    return True, roles
+                    method = "GET"
+                    url = f"{COUCHDB_URL}/_session"
+                    kwargs = {"cookies": {"AuthSession": session_cookie}}
 
-                return False, []
+                # Single CouchDB call
+                response = await client.request(method, url, **kwargs)
+
+                if response.status_code != 200:
+                    return False, "", []
+
+                data = response.json()
+                user_ctx = data.get("userCtx", {})
+                authenticated_username = user_ctx.get("name")
+                roles = user_ctx.get("roles", [])
+
+                if not authenticated_username:
+                    return False, "", []
+
+                return True, authenticated_username, roles
+
             except Exception as e:
                 logger.error(f"CouchDB authentication error: {e}")
-                return False, []
+                return False, "", []
 
     async def handle_oauth_login(self, request: Request) -> Response:
-        """Handle OAuth login via JSON API (used by auth.cljs)."""
-        try:
-            # Parse JSON body
-            body = await request.json()
-            username = body.get("username")
-            password = body.get("password")
-            state = body.get("state")
+        """Handle OAuth login via JSON API.
 
-            if not username or not password or not state:
+        Supports credential-based or session cookie authentication.
+        """
+        try:
+            body = await request.json()
+            state = body.get("state")
+            username = body.get("username")  # Optional
+            password = body.get("password")  # Optional
+
+            if not state:
                 return JSONResponse(
-                    {"error": "Missing required parameters"},
+                    {"error": "Missing state parameter"},
                     status_code=400
                 )
 
-            # Get stored authorization parameters
             auth_params = self.state_mapping.get(state)
             if not auth_params:
                 return JSONResponse(
@@ -284,47 +316,46 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                     status_code=400
                 )
 
-            # Validate credentials with CouchDB
-            valid, roles = await self.validate_credentials(username, password)
+            # Validate credentials (handles both modes)
+            valid, authenticated_username, roles = await self.validate_credentials(
+                request, username, password
+            )
+
             if not valid:
-                return JSONResponse(
-                    {"error": "Invalid username or password"},
-                    status_code=401
-                )
+                if username and password:
+                    error_msg = "Invalid username or password"
+                else:
+                    error_msg = "No active session. Please login first."
+                return JSONResponse({"error": error_msg}, status_code=401)
 
             # Generate authorization code
             code = f"nyancad_{secrets.token_hex(16)}"
 
-            # Create authorization code with CouchDB user data
             auth_code = AuthorizationCode(
                 code=code,
                 client_id=auth_params["client_id"],
                 redirect_uri=AnyHttpUrl(auth_params["redirect_uri"]),
                 redirect_uri_provided_explicitly=auth_params["redirect_uri_provided_explicitly"],
-                expires_at=time.time() + 300,  # 5 minutes
+                expires_at=time.time() + 300,
                 scopes=auth_params.get("scopes", ["user"]),
                 code_challenge=auth_params.get("code_challenge"),
                 resource=auth_params.get("resource"),
             )
 
-            # Store authorization code and user data
             self.auth_codes[code] = auth_code
             self.user_data[code] = {
-                "username": username,
+                "username": authenticated_username,
                 "roles": roles,
             }
 
-            # Clean up state mapping
             del self.state_mapping[state]
 
-            # Construct redirect URI with code and state
             redirect_uri = construct_redirect_uri(
                 auth_params["redirect_uri"],
                 code=code,
                 state=state,
             )
 
-            # Return redirect URL as JSON
             return JSONResponse({"redirect_url": redirect_uri})
 
         except Exception as e:
