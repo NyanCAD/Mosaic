@@ -399,8 +399,22 @@
   (when-let [username (get-current-user)]
     (str couchdb-url "userdb-" (str-to-hex username))))
 
+;; Reactive authentication state
+(defonce auth-state (r/atom false))
+
+(defn init-auth-state!
+  "Initialize authentication state from localStorage."
+  []
+  (reset! auth-state (not (nil? (get-current-user)))))
+
 (defn is-authenticated? []
-  (not (nil? (get-current-user))))
+  @auth-state)
+
+(defn logout!
+  "Clear authentication state completely."
+  []
+  (clear-current-user)
+  (reset! auth-state false))
 
 ;; Modal dialog functionality
 (defonce modal-content (r/atom nil))

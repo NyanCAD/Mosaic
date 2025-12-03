@@ -1324,13 +1324,37 @@
 (def immediate-shortcuts
   {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))})
 
+(defn handle-auth-failure
+  "Handle authentication failure - immediate logout."
+  []
+  (js/console.warn "Authentication failure detected - 401 from sync")
+  (cm/logout!)
+  (cm/alert "Session expired. Please login again. Your changes are saved locally."))
+
+(defn handle-sync-error
+  "Handle sync errors, checking for 401 auth failures.
+  PouchDB fires 'error' event for 401, not 'denied' (with retry: true)."
+  [error]
+  (if (or (= (.-status error) 401)
+          (and (.-name error)
+               (= (.toLowerCase (.-name error)) "unauthorized")))
+    ;; Authentication failure
+    (do
+      (js/console.warn "Sync error 401 (auth failure)")
+      (handle-auth-failure))
+    ;; Generic error - NOT auth related
+    (do
+      (js/console.error "Sync error:" error)
+      (cm/alert (str "Error synchronising to " sync
+                   ", changes are saved locally")))))
+
 (defn synchronise []
   (when (seq sync) ; pass nil to disable synchronization
     (let [es (.sync db sync #js{:live true :retry true})]
       (.on es "paused" #(reset! syncactive false))
       (.on es "active" #(reset! syncactive true))
-      (.on es "denied" #(cm/alert (str "Permission denied synchronising to " sync ", changes are saved locally")))
-      (.on es "error" #(cm/alert (str "Error synchronising to " sync ", changes are saved locally"))))))
+      (.on es "denied" handle-auth-failure)
+      (.on es "error" handle-sync-error))))
 
 (defn ^:dev/after-load ^:export  render []
   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
@@ -1341,6 +1365,9 @@
 (defn ^:export init []
   (.setItem js/localStorage "schem" group)
   (js/history.replaceState nil nil (str js/window.location.pathname "?schem=" group))
+  ;; Initialize auth state from localStorage
+  (cm/init-auth-state!)
+  ;; Start sync (will handle 401s via "denied" event)
   (synchronise)
   (render))
 

@@ -38,8 +38,7 @@
           (let [result (<p! (.json response))]
             (js/console.log "Login successful:" result)
             (cm/set-current-user (.-name result))
-            ;(js/window.location.replace "/"))
-          )
+            (reset! cm/auth-state true))
           (let [error-response (<p! (.json response))]
             (reset! error-message (.-error error-response)))))
       (catch js/Error e
@@ -60,6 +59,7 @@
           (let [result (<p! (.json response))]
             (js/console.log "Registration successful:" result)
             (cm/set-current-user (.-name result))
+            (reset! cm/auth-state true)
             (js/window.location.replace "/"))
           (let [error-response (<p! (.json response))]
             (reset! error-message (.-error error-response)))))
@@ -101,7 +101,7 @@
   (go
     (try
       (<p! (make-backend-request "POST" "/auth/logout" {}))
-      (cm/clear-current-user)
+      (cm/logout!)
       (js/window.location.reload)
       (catch js/Error e
         (js/console.error "Logout error:" e)))))
@@ -212,6 +212,35 @@
     [user-account]
     [auth-form]))
 
+;; Session validation
+(defn validate-session-async
+  "Asynchronously check if session is still valid and update auth state.
+   Only runs on auth page load - editor uses sync 'denied' event."
+  []
+  (when (cm/is-authenticated?)
+    ;; Background validation - don't block UI
+    (go
+      (try
+        (let [response (<p! (js/fetch (str cm/couchdb-url "_session")
+                                      (clj->js {:credentials "include"})))]
+          (if (.-ok response)
+            (let [data (<p! (.json response))
+                  user-ctx (.-userCtx data)
+                  session-username (.-name user-ctx)
+                  current-username (cm/get-current-user)]
+              (when-not (= session-username current-username)
+                ;; Session invalid or different user
+                (cm/logout!)
+                (js/console.log "Session validation failed, logged out")))
+            ;; 401 or other error - logout
+            (do
+              (cm/logout!)
+              (js/console.log "Session validation returned error, logged out"))))
+        (catch js/Error e
+          (js/console.error "Session validation error:" e)
+          ;; Network error - don't logout, user might be offline
+          nil)))))
+
 ;; Initialization
 (defn ^:dev/after-load render []
   (rd/render [auth-page]
@@ -223,4 +252,8 @@
   (when-let [state (get-query-param "state")]
     (reset! oauth-state state)
     (reset! auth-mode :login))  ; Force login mode for OAuth
+  ;; Initialize auth state from localStorage
+  (cm/init-auth-state!)
+  ;; Validate session in background (updates atom if invalid)
+  (validate-session-async)
   (render))

@@ -31,7 +31,7 @@ from mcp.server.auth.routes import create_auth_routes, cors_middleware
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
-from .config import JWT_SECRET, SERVER_URL, COUCHDB_URL
+from .config import JWT_SECRET, SERVER_URL, COUCHDB_URL, COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS
 
 logger = logging.getLogger(__name__)
 
@@ -114,9 +114,52 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
     def __init__(self):
         self.clients: dict[str, OAuthClientInformationFull] = {}
         self.auth_codes: dict[str, AuthorizationCode] = {}
-        self.tokens: dict[str, AccessToken] = {}
         self.state_mapping: dict[str, dict[str, Any]] = {}
-        self.user_data: dict[str, dict[str, Any]] = {}  # Maps code/token to user data
+        self.user_data: dict[str, dict[str, Any]] = {}  # Maps authorization code to user data
+        # Removed in-memory token storage - tokens now persisted in CouchDB
+
+    async def _get_user_doc(self, username: str) -> dict | None:
+        """Fetch user document from CouchDB _users database."""
+        user_id = f"org.couchdb.user:{username}"
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    f"{COUCHDB_URL}/_users/{user_id}",
+                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                )
+                if response.status_code == 200:
+                    return response.json()
+            except Exception as e:
+                logger.error(f"Error fetching user doc: {e}")
+        return None
+
+    async def _update_user_doc(self, username: str, updates: dict, user_doc: dict | None = None) -> bool:
+        """Update user document in CouchDB _users database.
+
+        Args:
+            username: Username to update
+            updates: Dictionary of fields to update
+            user_doc: Optional existing user doc (to avoid extra GET)
+        """
+        if not user_doc:
+            user_doc = await self._get_user_doc(username)
+            if not user_doc:
+                return False
+
+        user_doc.update(updates)
+        user_id = user_doc["_id"]
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.put(
+                    f"{COUCHDB_URL}/_users/{user_id}",
+                    json=user_doc,
+                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                )
+                return response.status_code in (200, 201)
+            except Exception as e:
+                logger.error(f"Error updating user doc: {e}")
+                return False
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
         """Get OAuth client information by client_id."""
@@ -180,20 +223,36 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             "iss": SERVER_URL,
             "aud": COUCHDB_URL,
             "_couchdb.roles": roles,
-            "exp": now + 3600,  # 1 hour expiry
+            "exp": now + 900,  # 15 minutes expiry (was 3600)
             "iat": now,
             "jti": str(uuid.uuid4()),
         }
         access_token_str = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
-        # Store access token for introspection
-        self.tokens[access_token_str] = AccessToken(
-            token=access_token_str,
-            client_id=client.client_id or "",
-            scopes=authorization_code.scopes,
-            expires_at=now + 3600,
-            resource=authorization_code.resource,
-        )
+        # Generate JWT refresh token (contains username, expiry)
+        # Note: Different audience than access tokens to prevent misuse with CouchDB
+        refresh_expires_at = now + 604800  # 7 days
+        refresh_jti = str(uuid.uuid4())  # Unique token ID for revocation
+        refresh_payload = {
+            "sub": username,
+            "iss": SERVER_URL,
+            "aud": f"{SERVER_URL}/token",  # Refresh tokens only valid for token endpoint
+            "exp": refresh_expires_at,
+            "iat": now,
+            "jti": refresh_jti,
+            "type": "refresh",  # Distinguish from access tokens
+        }
+        refresh_token_str = jwt.encode(refresh_payload, JWT_SECRET, algorithm="HS256")
+
+        # Store refresh token JTI in user doc for revocation tracking
+        await self._update_user_doc(username, {
+            "oauth": {
+                "refresh_jti": refresh_jti,  # Store JTI, not full token
+                "refresh_expires_at": refresh_expires_at,
+                "issued_at": now,
+                "client_id": client.client_id or "",
+            }
+        })
 
         # Clean up used authorization code and user data
         del self.auth_codes[authorization_code.code]
@@ -203,15 +262,67 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         return OAuthToken(
             access_token=access_token_str,
             token_type="Bearer",
-            expires_in=3600,
+            expires_in=900,  # (was 3600)
             scope=" ".join(authorization_code.scopes),
+            refresh_token=refresh_token_str,
         )
 
     async def load_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: str
     ) -> RefreshToken | None:
-        """Load refresh token (not implemented - using short-lived tokens)."""
-        return None
+        """Load and validate JWT refresh token."""
+        try:
+            # Decode JWT to extract username and validate
+            # Refresh tokens have different audience than access tokens
+            payload = jwt.decode(
+                refresh_token,
+                JWT_SECRET,
+                algorithms=["HS256"],
+                audience=f"{SERVER_URL}/token",
+                options={"require": ["sub", "exp", "iat", "jti", "type"]}
+            )
+
+            # Verify it's a refresh token (not access token)
+            if payload.get("type") != "refresh":
+                logger.warning("Token type mismatch: expected refresh token")
+                return None
+
+            username = payload.get("sub")
+            jti = payload.get("jti")
+            expires_at = payload.get("exp")
+
+            if not username or not jti:
+                return None
+
+            # Check if token was revoked by looking up JTI in user doc
+            user_doc = await self._get_user_doc(username)
+            if not user_doc:
+                return None
+
+            oauth_data = user_doc.get("oauth", {})
+            stored_jti = oauth_data.get("refresh_jti")
+
+            # Token is revoked if JTI doesn't match (rotation invalidates old tokens)
+            if stored_jti != jti:
+                logger.info(f"Refresh token revoked for user {username}")
+                return None
+
+            return RefreshToken(
+                token=refresh_token,
+                client_id=oauth_data.get("client_id", ""),
+                scopes=[],  # Scopes from original authorization
+                expires_at=expires_at,
+            )
+
+        except jwt.ExpiredSignatureError:
+            logger.warning("Refresh token expired")
+            return None
+        except jwt.InvalidTokenError as e:
+            logger.warning(f"Invalid refresh token: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error loading refresh token: {e}")
+            return None
 
     async def exchange_refresh_token(
         self,
@@ -219,26 +330,163 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         refresh_token: RefreshToken,
         scopes: list[str],
     ) -> OAuthToken:
-        """Exchange refresh token (not implemented)."""
-        raise HTTPException(400, "Refresh tokens not supported")
+        """Exchange refresh token for new tokens (rotation) - stored in CouchDB."""
+        if not refresh_token.token:
+            raise HTTPException(400, "Invalid refresh token")
+
+        try:
+            # Decode JWT refresh token to extract username
+            # Refresh tokens have different audience than access tokens
+            payload = jwt.decode(
+                refresh_token.token,
+                JWT_SECRET,
+                algorithms=["HS256"],
+                audience=f"{SERVER_URL}/token",
+                options={"require": ["sub", "type"]}
+            )
+
+            if payload.get("type") != "refresh":
+                raise HTTPException(400, "Invalid token type")
+
+            username = payload.get("sub")
+            if not username:
+                raise HTTPException(400, "Invalid refresh token")
+
+            # Get user document for roles
+            user_doc = await self._get_user_doc(username)
+            if not user_doc:
+                raise HTTPException(400, "User not found")
+
+            roles = user_doc.get("roles", [])
+
+            # Generate new access token (15 min)
+            now = int(time.time())
+            access_payload = {
+                "sub": username,
+                "iss": SERVER_URL,
+                "aud": COUCHDB_URL,
+                "_couchdb.roles": roles,
+                "exp": now + 900,  # 15 minutes
+                "iat": now,
+                "jti": str(uuid.uuid4()),
+            }
+            access_token_str = jwt.encode(access_payload, JWT_SECRET, algorithm="HS256")
+
+            # Generate new JWT refresh token (rotation for security)
+            # Different audience prevents use as access token
+            refresh_expires_at = now + 604800  # 7 days
+            new_refresh_jti = str(uuid.uuid4())
+            refresh_payload = {
+                "sub": username,
+                "iss": SERVER_URL,
+                "aud": f"{SERVER_URL}/token",  # Only valid for token endpoint
+                "exp": refresh_expires_at,
+                "iat": now,
+                "jti": new_refresh_jti,
+                "type": "refresh",
+            }
+            new_refresh_token = jwt.encode(refresh_payload, JWT_SECRET, algorithm="HS256")
+
+            # Update user document with new refresh JTI (invalidates old one)
+            # Pass user_doc to avoid extra GET request
+            success = await self._update_user_doc(
+                username,
+                {
+                    "oauth": {
+                        "refresh_jti": new_refresh_jti,
+                        "refresh_expires_at": refresh_expires_at,
+                        "issued_at": now,
+                        "client_id": client.client_id or "",
+                    }
+                },
+                user_doc=user_doc  # Reuse already-fetched doc
+            )
+
+            if not success:
+                raise HTTPException(500, "Failed to update refresh token")
+
+            return OAuthToken(
+                access_token=access_token_str,
+                token_type="Bearer",
+                expires_in=900,
+                scope=" ".join(scopes),
+                refresh_token=new_refresh_token,
+            )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error exchanging refresh token: {e}")
+            raise HTTPException(500, "Internal server error")
 
     async def load_access_token(self, token: str) -> AccessToken | None:
-        """Load and validate access token (for introspection)."""
-        access_token = self.tokens.get(token)
-        if not access_token:
-            return None
+        """Load and validate access token (for introspection) by decoding JWT."""
+        try:
+            # Decode and validate JWT
+            payload = jwt.decode(
+                token,
+                JWT_SECRET,
+                algorithms=["HS256"],
+                audience=COUCHDB_URL,
+                options={"require": ["sub", "exp", "iat"]}
+            )
 
-        # Check if expired
-        if access_token.expires_at and access_token.expires_at < time.time():
-            del self.tokens[token]
-            return None
+            username = payload.get("sub")
+            roles = payload.get("_couchdb.roles", [])
+            exp = payload.get("exp")
 
-        return access_token
+            if not username:
+                return None
+
+            # Convert CouchDB roles to MCP scopes
+            scopes = [f"role:{role}" for role in roles] if roles else ["user"]
+
+            return AccessToken(
+                token=token,
+                client_id=username,
+                scopes=scopes,
+                expires_at=exp,
+            )
+
+        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+            return None
+        except Exception as e:
+            logger.error(f"Token introspection error: {e}")
+            return None
 
     async def revoke_token(self, token: str, token_type_hint: str | None = None) -> None:  # type: ignore
-        """Revoke a token."""
-        if token in self.tokens:
-            del self.tokens[token]
+        """Revoke a token.
+
+        For refresh tokens: decode JWT to get username, then clear from user document.
+        For access tokens: JWTs cannot be revoked (stateless), but they expire after 15 minutes.
+        """
+        try:
+            # Try to decode as refresh token
+            payload = jwt.decode(
+                token,
+                JWT_SECRET,
+                algorithms=["HS256"],
+                audience=f"{SERVER_URL}/token",
+                options={"verify_exp": False}  # Allow revoking expired tokens
+            )
+
+            if payload.get("type") == "refresh":
+                username = payload.get("sub")
+                if username:
+                    # Clear OAuth data from user document
+                    await self._update_user_doc(username, {"oauth": {}})
+                    logger.info(f"Revoked refresh token for user {username}")
+                    return
+
+            # Not a refresh token or no username - try as access token
+            # Access tokens can't be revoked (stateless), just log
+            logger.info("Cannot revoke access token (stateless JWT)")
+
+        except jwt.InvalidTokenError:
+            # Invalid token format, nothing to revoke
+            logger.warning("Cannot revoke invalid token")
+        except Exception as e:
+            logger.error(f"Error revoking token: {e}")
 
     async def validate_credentials(
         self,
@@ -279,9 +527,19 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                     return False, "", []
 
                 data = response.json()
-                user_ctx = data.get("userCtx", {})
-                authenticated_username = user_ctx.get("name")
-                roles = user_ctx.get("roles", [])
+
+                # Handle both response formats:
+                # POST /_session: {"ok": true, "name": "username", "roles": [...]}
+                # GET /_session: {"ok": true, "userCtx": {"name": "username", "roles": [...]}}
+                if "userCtx" in data:
+                    # GET format (session check)
+                    user_ctx = data["userCtx"]
+                    authenticated_username = user_ctx.get("name")
+                    roles = user_ctx.get("roles", [])
+                else:
+                    # POST format (login)
+                    authenticated_username = data.get("name")
+                    roles = data.get("roles", [])
 
                 if not authenticated_username:
                     return False, "", []
