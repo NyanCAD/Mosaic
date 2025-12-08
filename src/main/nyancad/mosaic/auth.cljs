@@ -225,8 +225,10 @@
                                       (clj->js {:credentials "include"})))]
           (if (.-ok response)
             (let [data (<p! (.json response))
-                  user-ctx (.-userCtx data)
-                  session-username (.-name user-ctx)
+                  ;; Explicitly convert to Clojure map to avoid type inference issues
+                  data-clj (js->clj data :keywordize-keys true)
+                  user-ctx (:userCtx data-clj)
+                  session-username (:name user-ctx)
                   current-username (cm/get-current-user)]
               (when-not (= session-username current-username)
                 ;; Session invalid or different user
