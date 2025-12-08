@@ -110,6 +110,12 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Download nyancad distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: nyancad-distributions
+          path: dist/
+
       - name: Download nyancad-server distributions
         uses: actions/download-artifact@v4
         with:
@@ -128,9 +134,9 @@ jobs:
 
       - name: Deploy to server
         run: |
-          scp dist/nyancad_server-*.whl deploy@nyancad.com:/tmp/
+          scp dist/nyancad-*.whl dist/nyancad_server-*.whl deploy@nyancad.com:/tmp/
           ssh deploy@nyancad.com "
-            /opt/nyancad-server/venv/bin/pip install --upgrade /tmp/nyancad_server-*.whl && \
-            sudo /bin/systemctl reload nyancad-server && \
-            rm /tmp/nyancad_server-*.whl
+            /opt/nyancad-server/venv/bin/pip install --upgrade /tmp/nyancad-*.whl /tmp/nyancad_server-*.whl && \
+            (sudo /bin/systemctl reload nyancad-server || true) && \
+            rm /tmp/nyancad-*.whl /tmp/nyancad_server-*.whl
           "
