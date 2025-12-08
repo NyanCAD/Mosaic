@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 import jwt
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, AnyUrl
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -162,14 +162,64 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 return False
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
-        """Get OAuth client information by client_id."""
-        return self.clients.get(client_id)
+        """Get OAuth client from CouchDB oauth_clients database."""
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    f"{COUCHDB_URL}/oauth_clients/{client_id}",
+                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                )
+
+                if response.status_code != 200:
+                    return None
+
+                doc = response.json()
+                client_data = doc.get("client_info")
+                if not client_data:
+                    return None
+
+                # Reconstruct OAuthClientInformationFull
+                return OAuthClientInformationFull(**client_data)
+
+            except Exception as e:
+                logger.error(f"Error fetching client: {e}")
+                return None
 
     async def register_client(self, client_info: OAuthClientInformationFull):
-        """Register a new OAuth client (Dynamic Client Registration - RFC 7591)."""
+        """Register OAuth client - persist to CouchDB oauth_clients database."""
         if not client_info.client_id:
             raise ValueError("No client_id provided")
-        self.clients[client_info.client_id] = client_info
+
+        # Persist to CouchDB oauth_clients database
+        client_data = client_info.model_dump(mode='json', exclude_none=True)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                doc_id = client_info.client_id
+
+                # Try to fetch existing doc to get _rev
+                response = await client.get(
+                    f"{COUCHDB_URL}/oauth_clients/{doc_id}",
+                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                )
+
+                doc = {"_id": doc_id, "client_info": client_data}
+                if response.status_code == 200:
+                    existing_doc = response.json()
+                    doc["_rev"] = existing_doc["_rev"]
+
+                # Store/update document
+                response = await client.put(
+                    f"{COUCHDB_URL}/oauth_clients/{doc_id}",
+                    json=doc,
+                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                )
+
+                if response.status_code not in (200, 201):
+                    logger.error(f"Failed to store client: {response.text}")
+
+            except Exception as e:
+                logger.error(f"Error storing client: {e}")
 
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         """Generate authorization URL that redirects to login page."""
@@ -592,10 +642,10 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             auth_code = AuthorizationCode(
                 code=code,
                 client_id=auth_params["client_id"],
-                redirect_uri=AnyHttpUrl(auth_params["redirect_uri"]),
+                redirect_uri=AnyUrl(auth_params["redirect_uri"]),  # Use AnyUrl to support custom schemes like vscode://
                 redirect_uri_provided_explicitly=auth_params["redirect_uri_provided_explicitly"],
                 expires_at=time.time() + 300,
-                scopes=auth_params.get("scopes", ["user"]),
+                scopes=auth_params.get("scopes") or ["user"],  # Handle None values
                 code_challenge=auth_params.get("code_challenge"),
                 resource=auth_params.get("resource"),
             )

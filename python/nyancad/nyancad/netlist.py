@@ -571,3 +571,45 @@ async def inspice_netlist(name, schem, corner='tt', sim='NgSpice', **kwargs):
     circuit = NyanCircuit(name, schem, corner, sim, **kwargs)
     await circuit.download_includes()
     return circuit
+
+
+async def inspice_netlist_from_api(api, name, corner='tt', sim='NgSpice', **kwargs):
+    """
+    Create InSpice Circuit from any SchematicAPI source (Bridge or Server).
+
+    This convenience function works with both BridgeAPI and ServerAPI,
+    automatically fetching the complete schematic hierarchy and creating
+    the InSpice circuit.
+
+    Parameters:
+    - api: SchematicAPI instance (BridgeAPI or ServerAPI)
+    - name: Top-level schematic name
+    - corner, sim: Simulation parameters
+    - **kwargs: Additional Circuit constructor arguments
+
+    Returns:
+    - NyanCircuit instance
+
+    Usage with BridgeAPI:
+    ```
+    from nyancad.api import BridgeAPI
+    bridge = schematic_bridge()
+    api = BridgeAPI(bridge)
+    circuit = await inspice_netlist_from_api(api, "my_circuit")
+    ```
+
+    Usage with ServerAPI:
+    ```
+    from nyancad.api import ServerAPI
+    async with ServerAPI(
+        "https://api.nyancad.com/userdb-alice",
+        username="alice",
+        password="secret"
+    ) as api:
+        circuit = await inspice_netlist_from_api(api, "my_circuit")
+    ```
+    """
+    seq, schem = await api.get_all_schem_docs(name)
+    circuit = NyanCircuit(name, schem, corner, sim, **kwargs)
+    await circuit.download_includes()
+    return circuit
