@@ -5,11 +5,13 @@ for interacting with NyanCAD projects, schematics, and simulations.
 """
 
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 import jwt
 from mcp.server.fastmcp import FastMCP, Context
 from mcp.server.auth.settings import AuthSettings
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl
 
 from nyancad.api import ServerAPI
@@ -27,6 +29,32 @@ def str_to_hex(s: str) -> str:
 # Initialize JWT token verifier
 token_verifier = JWTTokenVerifier()
 
+# Configure DNS rebinding protection to allow both localhost and production domain
+# Extract hostname from SERVER_URL (e.g., "nyancad.com" from "https://nyancad.com")
+parsed_url = urlparse(SERVER_URL)
+server_host = parsed_url.hostname or "localhost"
+server_scheme = parsed_url.scheme or "http"
+
+# Configure allowed hosts and origins for DNS rebinding protection
+# Include wildcard ports (*) to allow any port number
+allowed_hosts = [
+    # Localhost variants (for local development)
+    "127.0.0.1:*",
+    "localhost:*",
+    "[::1]:*",
+    # Production domain with wildcard port
+    f"{server_host}:*",
+]
+
+allowed_origins = [
+    # Localhost variants (for local development)
+    "http://127.0.0.1:*",
+    "http://localhost:*",
+    "http://[::1]:*",
+    # Production domain (use scheme from SERVER_URL)
+    f"{server_scheme}://{server_host}:*",
+]
+
 # Initialize FastMCP server with authentication (standard OAuth at root level)
 # Using stateful mode to avoid ClosedResourceError bug in stateless mode
 # See: https://github.com/modelcontextprotocol/python-sdk/issues/1219
@@ -39,6 +67,11 @@ mcp = FastMCP(
         issuer_url=AnyHttpUrl(SERVER_URL),
         resource_server_url=AnyHttpUrl(f"{SERVER_URL}/ai"),
         required_scopes=["user"],
+    ),
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
     ),
 )
 
