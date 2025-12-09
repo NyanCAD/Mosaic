@@ -32,6 +32,7 @@ token_verifier = JWTTokenVerifier()
 # See: https://github.com/modelcontextprotocol/python-sdk/issues/1219
 mcp = FastMCP(
     "nyancad-mcp",
+    host="0.0.0.0",  # Accept connections from any host
     stateless_http=False,
     json_response=True,
     token_verifier=token_verifier,
