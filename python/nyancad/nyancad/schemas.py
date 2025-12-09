@@ -15,10 +15,11 @@ class WireDevice(BaseModel):
     """Wire connecting two points on the schematic grid.
 
     Wires are defined by a start position (x, y) and a relative delta (rx, ry).
-    They connect component ports and can form complex routing paths.
+    The wire spans from (x, y) to (x+rx, y+ry) in grid coordinates.
 
-    **Tip**: Use port labels instead of complex wire routing for cleaner schematics.
-    A port label creates an implicit connection without drawing wires.
+    **Note**: For partial updates of existing documents, only _id and _rev are required.
+    All other fields are optional - only specify the fields you want to change.
+    For new documents, omit _rev entirely.
     """
     model_config = ConfigDict(extra='allow', populate_by_name=True)
 
@@ -54,8 +55,9 @@ class WireDevice(BaseModel):
 class ComponentDevice(BaseModel):
     """Electronic component (resistor, capacitor, transistor, etc).
 
-    Components have a type (resistor, capacitor, etc), position, orientation,
-    and properties. The transform matrix handles rotation and mirroring.
+    Components have a type, position (x, y in grid coordinates), orientation
+    (transform matrix), and properties. Component properties depend on type:
+    resistor uses 'resistance', capacitor uses 'capacitance', etc.
 
     Common transform matrices:
     - Identity (0°): [1, 0, 0, 1, 0, 0]
@@ -64,6 +66,10 @@ class ComponentDevice(BaseModel):
     - Rotate 270°: [0, -1, 1, 0, 0, 0]
     - Mirror horizontal: [-1, 0, 0, 1, 0, 0]
     - Mirror vertical: [1, 0, 0, -1, 0, 0]
+
+    **Note**: For partial updates of existing documents, only _id and _rev are required.
+    All other fields are optional - only specify the fields you want to change.
+    For new documents, omit _rev entirely.
     """
     model_config = ConfigDict(extra='allow', populate_by_name=True)
 
@@ -107,7 +113,9 @@ class ComponentDevice(BaseModel):
     )
     props: Optional[dict[str, Any]] = Field(
         None,
-        description="Component properties (resistance='1k', capacitance='10u', etc)"
+        description="Component properties dict. Property names depend on component type: "
+                    "'resistance' for resistor, 'capacitance' for capacitor, 'inductance' for inductor, "
+                    "'dc'/'ac'/'tran' for sources. Values use SPICE notation (1k, 10u, 100m, etc)."
     )
     variant: Optional[str] = Field(
         None,

@@ -151,11 +151,15 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
 
         async with httpx.AsyncClient() as client:
             try:
+                logger.debug(f"Updating user doc {user_id} with: {user_doc}")
                 response = await client.put(
                     f"{COUCHDB_URL}/_users/{user_id}",
                     json=user_doc,
                     auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
                 )
+                if response.status_code not in (200, 201):
+                    logger.error(f"CouchDB user update failed: {response.status_code} - {response.text}")
+                    logger.error(f"Document that failed: {user_doc}")
                 return response.status_code in (200, 201)
             except Exception as e:
                 logger.error(f"Error updating user doc: {e}")
@@ -295,14 +299,30 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         refresh_token_str = jwt.encode(refresh_payload, JWT_SECRET, algorithm="HS256")
 
         # Store refresh token JTI in user doc for revocation tracking
+        # Fetch user doc to append to tokens array (support multiple devices)
+        user_doc = await self._get_user_doc(username)
+        if not user_doc:
+            raise HTTPException(400, "User not found")
+
+        oauth_data = user_doc.get("oauth", {})
+        tokens = oauth_data.get("tokens", [])
+
+        # Add new token to array
+        tokens.append({
+            "jti": refresh_jti,
+            "expires_at": refresh_expires_at,
+            "issued_at": now,
+            "client_id": client.client_id or "",
+        })
+
+        # Clean up expired tokens (keep array manageable)
+        tokens = [t for t in tokens if t.get("expires_at", 0) > now]
+
         await self._update_user_doc(username, {
             "oauth": {
-                "refresh_jti": refresh_jti,  # Store JTI, not full token
-                "refresh_expires_at": refresh_expires_at,
-                "issued_at": now,
-                "client_id": client.client_id or "",
+                "tokens": tokens,
             }
-        })
+        }, user_doc=user_doc)
 
         # Clean up used authorization code and user data
         del self.auth_codes[authorization_code.code]
@@ -350,16 +370,23 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 return None
 
             oauth_data = user_doc.get("oauth", {})
-            stored_jti = oauth_data.get("refresh_jti")
+            tokens = oauth_data.get("tokens", [])
 
-            # Token is revoked if JTI doesn't match (rotation invalidates old tokens)
-            if stored_jti != jti:
+            # Find matching token by JTI
+            matching_token = None
+            for token_data in tokens:
+                if token_data.get("jti") == jti:
+                    matching_token = token_data
+                    break
+
+            # Token is revoked if JTI not found in tokens array
+            if not matching_token:
                 logger.info(f"Refresh token revoked for user {username}")
                 return None
 
             return RefreshToken(
                 token=refresh_token,
-                client_id=oauth_data.get("client_id", ""),
+                client_id=matching_token.get("client_id", ""),
                 scopes=[],  # Scopes from original authorization
                 expires_at=expires_at,
             )
@@ -437,16 +464,35 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             }
             new_refresh_token = jwt.encode(refresh_payload, JWT_SECRET, algorithm="HS256")
 
-            # Update user document with new refresh JTI (invalidates old one)
+            # Update user document: remove old token and add new one (rotation)
             # Pass user_doc to avoid extra GET request
+            oauth_data = user_doc.get("oauth", {})
+            tokens = oauth_data.get("tokens", [])
+
+            # Get old JTI from the refresh token being rotated
+            old_payload = jwt.decode(
+                refresh_token.token,
+                options={"verify_signature": False}
+            )
+            old_jti = old_payload.get("jti")
+
+            # Remove old token and add new one (rotation invalidates old token)
+            tokens = [t for t in tokens if t.get("jti") != old_jti]
+            tokens.append({
+                "jti": new_refresh_jti,
+                "expires_at": refresh_expires_at,
+                "issued_at": now,
+                "client_id": client.client_id or "",
+            })
+
+            # Clean up expired tokens
+            tokens = [t for t in tokens if t.get("expires_at", 0) > now]
+
             success = await self._update_user_doc(
                 username,
                 {
                     "oauth": {
-                        "refresh_jti": new_refresh_jti,
-                        "refresh_expires_at": refresh_expires_at,
-                        "issued_at": now,
-                        "client_id": client.client_id or "",
+                        "tokens": tokens,
                     }
                 },
                 user_doc=user_doc  # Reuse already-fetched doc
@@ -522,9 +568,15 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
 
             if payload.get("type") == "refresh":
                 username = payload.get("sub")
-                if username:
-                    # Clear OAuth data from user document
-                    await self._update_user_doc(username, {"oauth": {}})
+                jti = payload.get("jti")
+                if username and jti:
+                    # Remove specific token from tokens array
+                    user_doc = await self._get_user_doc(username)
+                    if user_doc:
+                        oauth_data = user_doc.get("oauth", {})
+                        tokens = oauth_data.get("tokens", [])
+                        tokens = [t for t in tokens if t.get("jti") != jti]
+                        await self._update_user_doc(username, {"oauth": {"tokens": tokens}}, user_doc=user_doc)
                     logger.info(f"Revoked refresh token for user {username}")
                     return
 
