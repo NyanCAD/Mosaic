@@ -342,3 +342,24 @@ class ServerAPI(SchematicAPI):
             models = {row["id"]: row["doc"] for row in data.get("rows", [])}
 
         return models
+
+    async def bulk_update(self, docs: list[dict]) -> dict:
+        """Bulk update/create/delete documents using CouchDB _bulk_docs.
+
+        Args:
+            docs: List of document objects. Each must have _id.
+                  Include _rev for updates, omit for new documents.
+                  Set _deleted=true to delete.
+
+        Returns:
+            CouchDB bulk_docs response with results array
+
+        Raises:
+            httpx.HTTPStatusError: If the request fails
+        """
+        response = await self.client.post(
+            f"{self.base_url}/_bulk_docs",
+            json={"docs": docs}
+        )
+        response.raise_for_status()
+        return response.json()
