@@ -69,12 +69,11 @@ def normalize_to_model_key(id_str: str) -> str:
 token_verifier = JWTTokenVerifier()
 
 # Initialize FastMCP server with authentication (standard OAuth at root level)
-# Using stateful mode to avoid ClosedResourceError bug in stateless mode
-# See: https://github.com/modelcontextprotocol/python-sdk/issues/1219
+# Using stateless mode for multi-worker support (ClosedResourceError fixed in PR #1384)
 mcp = FastMCP(
     "nyancad-mcp",
     host="0.0.0.0",  # Accept connections from any host
-    stateless_http=False,
+    stateless_http=True,
     json_response=True,
     token_verifier=token_verifier,
     auth=AuthSettings(
