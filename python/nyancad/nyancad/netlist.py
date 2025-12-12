@@ -142,8 +142,8 @@ def getports(doc, models):
     y = doc['y']
     tr = doc.get('transform', [1, 0, 0, 1, 0, 0])
     if device_type == 'wire':
-        rx = doc['rx']
-        ry = doc['ry']
+        rx = doc.get('rx', 0)
+        ry = doc.get('ry', 0)
         return {(x, y): None,
                 (x+rx, y+ry): None}
     elif device_type == 'text':
