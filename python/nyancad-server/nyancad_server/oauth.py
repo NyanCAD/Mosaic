@@ -781,4 +781,15 @@ def create_oauth_routes() -> list[Route]:
         )
     )
 
+    # Also register at path-specific location for resource at /ai
+    # RFC 9728 allows both /.well-known/oauth-protected-resource (root)
+    # and /.well-known/oauth-protected-resource{/path} (path-specific)
+    routes.append(
+        Route(
+            "/.well-known/oauth-protected-resource/ai",
+            endpoint=cors_middleware(protected_resource_handler, ["GET", "OPTIONS"]),
+            methods=["GET", "OPTIONS"],
+        )
+    )
+
     return routes
