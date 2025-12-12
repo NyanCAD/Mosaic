@@ -107,31 +107,14 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
     This provider:
     1. Validates user credentials against CouchDB
     2. Issues JWT tokens signed with shared HMAC secret
-    3. Maintains in-memory storage for OAuth clients and authorization codes
+    3. Stores all OAuth state in CouchDB (oauth_clients database) for multi-worker support
     4. Supports PKCE for secure authorization code flow
     """
-
-    def __init__(self):
-        self.clients: dict[str, OAuthClientInformationFull] = {}
-        self.auth_codes: dict[str, AuthorizationCode] = {}
-        self.state_mapping: dict[str, dict[str, Any]] = {}
-        self.user_data: dict[str, dict[str, Any]] = {}  # Maps authorization code to user data
-        # Removed in-memory token storage - tokens now persisted in CouchDB
 
     async def _get_user_doc(self, username: str) -> dict | None:
         """Fetch user document from CouchDB _users database."""
         user_id = f"org.couchdb.user:{username}"
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(
-                    f"{COUCHDB_URL}/_users/{user_id}",
-                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
-                )
-                if response.status_code == 200:
-                    return response.json()
-            except Exception as e:
-                logger.error(f"Error fetching user doc: {e}")
-        return None
+        return await self._couchdb_get(user_id, database="_users")
 
     async def _update_user_doc(self, username: str, updates: dict, user_doc: dict | None = None) -> bool:
         """Update user document in CouchDB _users database.
@@ -149,95 +132,183 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         user_doc.update(updates)
         user_id = user_doc["_id"]
 
-        async with httpx.AsyncClient() as client:
-            try:
-                logger.debug(f"Updating user doc {user_id} with: {user_doc}")
-                response = await client.put(
-                    f"{COUCHDB_URL}/_users/{user_id}",
-                    json=user_doc,
-                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
-                )
-                if response.status_code not in (200, 201):
-                    logger.error(f"CouchDB user update failed: {response.status_code} - {response.text}")
-                    logger.error(f"Document that failed: {user_doc}")
-                return response.status_code in (200, 201)
-            except Exception as e:
-                logger.error(f"Error updating user doc: {e}")
-                return False
+        logger.debug(f"Updating user doc {user_id} with: {user_doc}")
+        success = await self._couchdb_put(user_id, user_doc, database="_users")
 
-    async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
-        """Get OAuth client from CouchDB oauth_clients database."""
+        if not success:
+            logger.error(f"CouchDB user update failed for {user_id}")
+            logger.error(f"Document that failed: {user_doc}")
+
+        return success
+
+    async def _couchdb_get(self, doc_id: str, database: str = "oauth_clients") -> dict | None:
+        """Generic CouchDB GET operation."""
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(
-                    f"{COUCHDB_URL}/oauth_clients/{client_id}",
+                    f"{COUCHDB_URL}/{database}/{doc_id}",
                     auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
                 )
-
                 if response.status_code != 200:
                     return None
-
-                doc = response.json()
-                client_data = doc.get("client_info")
-                if not client_data:
-                    return None
-
-                # Reconstruct OAuthClientInformationFull
-                return OAuthClientInformationFull(**client_data)
-
+                return response.json()
             except Exception as e:
-                logger.error(f"Error fetching client: {e}")
+                logger.error(f"CouchDB GET {doc_id} failed: {e}")
                 return None
+
+    async def _couchdb_put(self, doc_id: str, doc: dict, database: str = "oauth_clients") -> bool:
+        """Generic CouchDB PUT operation."""
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.put(
+                    f"{COUCHDB_URL}/{database}/{doc_id}",
+                    json=doc,
+                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                )
+                if response.status_code not in (200, 201, 202):
+                    logger.error(f"CouchDB PUT {doc_id} failed: {response.status_code} - {response.text}")
+                    return False
+                logger.debug(f"CouchDB PUT {doc_id} succeeded")
+                return True
+            except Exception as e:
+                logger.error(f"CouchDB PUT {doc_id} error: {e}")
+                return False
+
+    async def _couchdb_delete(self, doc_id: str, database: str = "oauth_clients") -> bool:
+        """Generic CouchDB DELETE with atomic _rev handling."""
+        doc = await self._couchdb_get(doc_id, database)
+        if not doc:
+            return True  # Already deleted
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.delete(
+                    f"{COUCHDB_URL}/{database}/{doc_id}?rev={doc['_rev']}",
+                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                )
+                if response.status_code in (200, 404, 409):  # 409 = race condition
+                    return True
+                logger.error(f"CouchDB DELETE {doc_id} failed: {response.status_code}")
+                return False
+            except Exception as e:
+                logger.error(f"CouchDB DELETE {doc_id} error: {e}")
+                return False
+
+    async def _store_state(self, state: str, params: dict) -> bool:
+        """Store OAuth state to oauth_clients database."""
+        doc_id = f"state:{state}"
+        doc = {
+            "_id": doc_id,
+            "expires_at": time.time() + 300,  # 5 minutes
+            **params,
+        }
+        return await self._couchdb_put(doc_id, doc)
+
+    async def _get_state(self, state: str) -> dict | None:
+        """Get OAuth state from oauth_clients database."""
+        doc_id = f"state:{state}"
+        doc = await self._couchdb_get(doc_id)
+
+        if not doc:
+            return None
+
+        # Check expiration
+        if doc.get("expires_at", 0) < time.time():
+            logger.info(f"OAuth state {state} expired")
+            await self._delete_state(state)
+            return None
+
+        # Return params without internal fields
+        result = doc.copy()
+        result.pop("_id", None)
+        result.pop("_rev", None)
+        result.pop("expires_at", None)
+        return result
+
+    async def _delete_state(self, state: str) -> bool:
+        """Delete OAuth state from oauth_clients database."""
+        return await self._couchdb_delete(f"state:{state}")
+
+    async def _store_auth_code(self, code: str, auth_code: AuthorizationCode, user_data: dict) -> bool:
+        """Store authorization code to oauth_clients database."""
+        doc_id = f"code:{code}"
+
+        # Serialize AuthorizationCode using Pydantic
+        auth_code_dict = auth_code.model_dump(mode='json', exclude_none=True)
+
+        doc = {
+            "_id": doc_id,
+            "auth_code": auth_code_dict,
+            "user_data": user_data,
+            "expires_at": time.time() + 300,  # 5 minutes
+        }
+        return await self._couchdb_put(doc_id, doc)
+
+    async def _get_auth_code(self, code: str) -> tuple[AuthorizationCode, dict] | None:
+        """Get authorization code from oauth_clients database."""
+        doc_id = f"code:{code}"
+        doc = await self._couchdb_get(doc_id)
+
+        if not doc:
+            return None
+
+        # Check expiration
+        if doc.get("expires_at", 0) < time.time():
+            logger.info(f"Authorization code {code} expired")
+            await self._delete_auth_code(code)
+            return None
+
+        # Reconstruct AuthorizationCode object using Pydantic
+        auth_code = AuthorizationCode.model_validate(doc["auth_code"])
+        return auth_code, doc["user_data"]
+
+    async def _delete_auth_code(self, code: str) -> bool:
+        """Delete authorization code atomically (single-use protection)."""
+        return await self._couchdb_delete(f"code:{code}")
+
+    async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
+        """Get OAuth client from CouchDB oauth_clients database."""
+        doc_id = f"client:{client_id}"
+        doc = await self._couchdb_get(doc_id)
+
+        if not doc:
+            return None
+
+        client_data = doc.get("client_info")
+        if not client_data:
+            return None
+
+        return OAuthClientInformationFull(**client_data)
 
     async def register_client(self, client_info: OAuthClientInformationFull):
         """Register OAuth client - persist to CouchDB oauth_clients database."""
         if not client_info.client_id:
             raise ValueError("No client_id provided")
 
-        # Persist to CouchDB oauth_clients database
+        doc_id = f"client:{client_info.client_id}"
         client_data = client_info.model_dump(mode='json', exclude_none=True)
 
-        async with httpx.AsyncClient() as client:
-            try:
-                doc_id = client_info.client_id
+        # Try to fetch existing doc to get _rev
+        existing_doc = await self._couchdb_get(doc_id)
 
-                # Try to fetch existing doc to get _rev
-                response = await client.get(
-                    f"{COUCHDB_URL}/oauth_clients/{doc_id}",
-                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
-                )
+        doc = {"_id": doc_id, "client_info": client_data}
+        if existing_doc:
+            doc["_rev"] = existing_doc["_rev"]
 
-                doc = {"_id": doc_id, "client_info": client_data}
-                if response.status_code == 200:
-                    existing_doc = response.json()
-                    doc["_rev"] = existing_doc["_rev"]
-
-                # Store/update document
-                response = await client.put(
-                    f"{COUCHDB_URL}/oauth_clients/{doc_id}",
-                    json=doc,
-                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
-                )
-
-                if response.status_code not in (200, 201):
-                    logger.error(f"Failed to store client: {response.text}")
-
-            except Exception as e:
-                logger.error(f"Error storing client: {e}")
+        # Store/update document
+        success = await self._couchdb_put(doc_id, doc)
+        if not success:
+            logger.error(f"Failed to register client {client_info.client_id}")
 
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         """Generate authorization URL that redirects to login page."""
         state = params.state or secrets.token_hex(16)
 
-        # Store authorization parameters for use after login
-        self.state_mapping[state] = {
-            "redirect_uri": str(params.redirect_uri),
-            "code_challenge": params.code_challenge,
-            "redirect_uri_provided_explicitly": params.redirect_uri_provided_explicitly,
-            "client_id": client.client_id,
-            "resource": params.resource,
-            "scopes": params.scopes,
-        }
+        # Store authorization parameters in CouchDB for use after login
+        # Use Pydantic model_dump, exclude state (it's the key), add client_id
+        state_data = params.model_dump(mode='json', exclude={'state'}, exclude_none=True)
+        state_data["client_id"] = client.client_id
+        await self._store_state(state, state_data)
 
         # Redirect to auth.cljs page with state parameter
         return f"{SERVER_URL}/auth/?state={state}"
@@ -246,7 +317,11 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         self, client: OAuthClientInformationFull, authorization_code: str
     ) -> AuthorizationCode | None:
         """Load authorization code for validation."""
-        return self.auth_codes.get(authorization_code)
+        result = await self._get_auth_code(authorization_code)
+        if not result:
+            return None
+        auth_code, _ = result
+        return auth_code
 
     async def exchange_authorization_code(
         self,
@@ -257,14 +332,12 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         if not authorization_code.code:
             raise HTTPException(400, "Invalid authorization code")
 
-        if authorization_code.code not in self.auth_codes:
+        # Get authorization code and user data from CouchDB
+        result = await self._get_auth_code(authorization_code.code)
+        if not result:
             raise HTTPException(400, "Invalid or expired authorization code")
 
-        # Get user data for this authorization code
-        user_data = self.user_data.get(authorization_code.code)
-        if not user_data:
-            raise HTTPException(400, "User data not found for authorization code")
-
+        auth_code_stored, user_data = result
         username = user_data["username"]
         roles = user_data["roles"]
 
@@ -324,10 +397,8 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             }
         }, user_doc=user_doc)
 
-        # Clean up used authorization code and user data
-        del self.auth_codes[authorization_code.code]
-        if authorization_code.code in self.user_data:
-            del self.user_data[authorization_code.code]
+        # Clean up used authorization code (single-use)
+        await self._delete_auth_code(authorization_code.code)
 
         return OAuthToken(
             access_token=access_token_str,
@@ -669,7 +740,8 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                     status_code=400
                 )
 
-            auth_params = self.state_mapping.get(state)
+            # Get state mapping from CouchDB
+            auth_params = await self._get_state(state)
             if not auth_params:
                 return JSONResponse(
                     {"error": "Invalid or expired state parameter"},
@@ -702,13 +774,20 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 resource=auth_params.get("resource"),
             )
 
-            self.auth_codes[code] = auth_code
-            self.user_data[code] = {
+            # Store authorization code and user data in CouchDB
+            success = await self._store_auth_code(code, auth_code, {
                 "username": authenticated_username,
                 "roles": roles,
-            }
+            })
 
-            del self.state_mapping[state]
+            if not success:
+                return JSONResponse(
+                    {"error": "Failed to create authorization code"},
+                    status_code=500
+                )
+
+            # Clean up used state mapping
+            await self._delete_state(state)
 
             redirect_uri = construct_redirect_uri(
                 auth_params["redirect_uri"],
