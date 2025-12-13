@@ -308,8 +308,8 @@ class ServerAPI(SchematicAPI):
         # Detect if this is a user database (view is only in central models DB)
         is_user_db = "userdb-" in self.base_url
 
-        # Category search (with or without name filter)
-        if category:
+        # Use Mango query for: category searches OR (user DB + name filter)
+        if category or (is_user_db and filter):
             selector = self._build_selector(filter, category)
             response = await self.client.post(
                 f"{self.base_url}/_find",
@@ -319,30 +319,18 @@ class ServerAPI(SchematicAPI):
             data = response.json()
             models = {doc["_id"]: doc for doc in data.get("docs", [])}
 
-        # Name search only (no category)
+        # Name search only in central models database (use optimized view)
         elif filter:
-            # User databases: use Mango query (view not deployed to user DBs)
-            if is_user_db:
-                selector = self._build_selector(filter, category)
-                response = await self.client.post(
-                    f"{self.base_url}/_find",
-                    json={"selector": selector}
-                )
-                response.raise_for_status()
-                data = response.json()
-                models = {doc["_id"]: doc for doc in data.get("docs", [])}
-            # Central models database: use optimized view
-            else:
-                response = await self.client.get(
-                    f"{self.base_url}/_design/models/_view/name_search",
-                    params={
-                        "startkey": f'"{filter.lower()}"',
-                        "include_docs": "true"
-                    }
-                )
-                response.raise_for_status()
-                data = response.json()
-                models = {row["id"]: row["doc"] for row in data.get("rows", [])}
+            response = await self.client.get(
+                f"{self.base_url}/_design/models/_view/name_search",
+                params={
+                    "startkey": f'"{filter.lower()}"',
+                    "include_docs": "true"
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
+            models = {row["id"]: row["doc"] for row in data.get("rows", [])}
 
         # No criteria - get all models
         else:
