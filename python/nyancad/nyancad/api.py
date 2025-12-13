@@ -289,9 +289,11 @@ class ServerAPI(SchematicAPI):
     ) -> dict[str, dict]:
         """List available models with filtering via CouchDB views/queries.
 
-        Uses same query patterns as ClojureScript libman:
+        Uses different query strategies based on database type:
+        - User databases (userdb-*): Always use Mango queries (view not deployed)
+        - Central models database: Use view for name-only search, Mango for category
         - Category search: Mango query via _find
-        - Name search only: CouchDB view models/name_search
+        - Name search only: CouchDB view models/name_search (central) or Mango (user DB)
         - No criteria: Basic range query
 
         Args:
@@ -303,8 +305,11 @@ class ServerAPI(SchematicAPI):
         """
         models = {}
 
-        # Category search (with or without name filter)
-        if category:
+        # Detect if this is a user database (view is only in central models DB)
+        is_user_db = "userdb-" in self.base_url
+
+        # Use Mango query for: category searches OR (user DB + name filter)
+        if category or (is_user_db and filter):
             selector = self._build_selector(filter, category)
             response = await self.client.post(
                 f"{self.base_url}/_find",
@@ -314,7 +319,7 @@ class ServerAPI(SchematicAPI):
             data = response.json()
             models = {doc["_id"]: doc for doc in data.get("docs", [])}
 
-        # Name search only (no category)
+        # Name search only in central models database (use optimized view)
         elif filter:
             response = await self.client.get(
                 f"{self.base_url}/_design/models/_view/name_search",
