@@ -289,9 +289,11 @@ class ServerAPI(SchematicAPI):
     ) -> dict[str, dict]:
         """List available models with filtering via CouchDB views/queries.
 
-        Uses same query patterns as ClojureScript libman:
+        Uses different query strategies based on database type:
+        - User databases (userdb-*): Always use Mango queries (view not deployed)
+        - Central models database: Use view for name-only search, Mango for category
         - Category search: Mango query via _find
-        - Name search only: CouchDB view models/name_search
+        - Name search only: CouchDB view models/name_search (central) or Mango (user DB)
         - No criteria: Basic range query
 
         Args:
@@ -302,6 +304,9 @@ class ServerAPI(SchematicAPI):
             Dictionary of {model_id: model_data} with complete model definitions
         """
         models = {}
+
+        # Detect if this is a user database (view is only in central models DB)
+        is_user_db = "userdb-" in self.base_url
 
         # Category search (with or without name filter)
         if category:
@@ -316,16 +321,28 @@ class ServerAPI(SchematicAPI):
 
         # Name search only (no category)
         elif filter:
-            response = await self.client.get(
-                f"{self.base_url}/_design/models/_view/name_search",
-                params={
-                    "startkey": f'"{filter.lower()}"',
-                    "include_docs": "true"
-                }
-            )
-            response.raise_for_status()
-            data = response.json()
-            models = {row["id"]: row["doc"] for row in data.get("rows", [])}
+            # User databases: use Mango query (view not deployed to user DBs)
+            if is_user_db:
+                selector = self._build_selector(filter, category)
+                response = await self.client.post(
+                    f"{self.base_url}/_find",
+                    json={"selector": selector}
+                )
+                response.raise_for_status()
+                data = response.json()
+                models = {doc["_id"]: doc for doc in data.get("docs", [])}
+            # Central models database: use optimized view
+            else:
+                response = await self.client.get(
+                    f"{self.base_url}/_design/models/_view/name_search",
+                    params={
+                        "startkey": f'"{filter.lower()}"',
+                        "include_docs": "true"
+                    }
+                )
+                response.raise_for_status()
+                data = response.json()
+                models = {row["id"]: row["doc"] for row in data.get("rows", [])}
 
         # No criteria - get all models
         else:
