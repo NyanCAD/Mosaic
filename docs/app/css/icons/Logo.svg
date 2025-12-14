@@ -1,0 +1,7 @@
+<!--
+SPDX-FileCopyrightText: 2022 Pepijn de Vos
+
+SPDX-License-Identifier: CC-BY-NC-SA-4.0
+-->
+
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="25" viewBox="0 0 40 25"><g transform="translate(-60 -60)"><path d="M-60,0h8.193l8.193,25h-8.193Z" transform="translate(128.29 60)" fill="#e71d36"/><path d="M8.06,12.09H0L4.03,0h8.06L8.06,12.09Z" transform="translate(60 72.51)" fill="#e71d36"/><path d="M16.408,24.6H8.2L4.1,12.3h8.2ZM4.1,12.3h0L0,0H8.2L4.1,12.3Z" transform="translate(83.592 60)" fill="#e71d36"/></g></svg>

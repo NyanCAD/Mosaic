@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="39.5" height="25" viewBox="0 0 39.5 25">
+  <defs>
+    <style>
+      .cls-1 {
+        opacity: 0.8;
+      }
+
+      .cls-2, .cls-3 {
+        fill: none;
+      }
+
+      .cls-3 {
+        stroke: #222;
+        stroke-linecap: square;
+        stroke-width: 2.5px;
+      }
+
+      .cls-4, .cls-5 {
+        stroke: none;
+      }
+
+      .cls-5 {
+        fill: #222;
+      }
+    </style>
+  </defs>
+  <g id="Diode" class="cls-1" transform="translate(1.25)">
+    <g id="Polygon_1" data-name="Polygon 1" class="cls-2" transform="translate(31) rotate(90)">
+      <path class="cls-4" d="M12.5,0,25,21H0Z"/>
+      <path class="cls-5" d="M 12.5 5.865288734436035 L 5.276956558227539 18 L 19.72304153442383 18 L 12.5 5.865288734436035 M 12.5 0 L 25 21 L 0 21 L 12.5 0 Z"/>
+    </g>
+    <line id="Line_10" data-name="Line 10" class="cls-3" y2="21" transform="translate(29 2)"/>
+    <line id="Line_11" data-name="Line 11" class="cls-3" y2="8" transform="translate(37 12.5) rotate(90)"/>
+    <line id="Line_12" data-name="Line 12" class="cls-3" y2="9" transform="translate(9 13) rotate(90)"/>
+  </g>
+</svg>

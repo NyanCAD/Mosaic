@@ -1,0 +1,19 @@
+<svg id="Component_22_3" data-name="Component 22 – 3" xmlns="http://www.w3.org/2000/svg" width="27" height="7" viewBox="0 0 27 7">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: none;
+        stroke: #fff;
+        stroke-linecap: square;
+        stroke-width: 3px;
+      }
+
+      .cls-2 {
+        fill: #fff;
+      }
+    </style>
+  </defs>
+  <line id="Line_27" data-name="Line 27" class="cls-1" x2="20" transform="translate(3 3.5)"/>
+  <circle id="Ellipse_19" data-name="Ellipse 19" class="cls-2" cx="3.5" cy="3.5" r="3.5" transform="translate(20)"/>
+  <circle id="Ellipse_20" data-name="Ellipse 20" class="cls-2" cx="3.5" cy="3.5" r="3.5"/>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="60" viewBox="0 0 64 60">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        opacity: 0.85;
+      }
+    </style>
+  </defs>
+  <g id="Menu" transform="translate(-2439 -22)">
+    <rect id="Rectangle_147" data-name="Rectangle 147" class="cls-1" width="64" height="60" rx="5" transform="translate(2439 22)"/>
+    <image id="Ham_Menu" data-name="Ham Menu" class="cls-2" width="55" height="55" transform="translate(2499 24) rotate(90)" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgBAMAAAAQtmoLAAAAJFBMVEUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACmWAJHAAAADHRSTlMAKo7V8gWS/P+6kdTwyhQUAAAAdElEQVR4AWIgBEbBKBgFQibOiqSoD6vo6GhPJV4964wOIOgMIFoDVwcYLCBagzhEQyHRGjQgGpqI1rADoqGbaA0eEA0ttNMAaKeOiQAAQAAE9m9NBvYngSrHHmkvvc86HjfUGPINvaFLuqRLuoSBLumSLgEI1SehXxWKU8EAAAAASUVORK5CYII="/>
+  </g>
+</svg>
