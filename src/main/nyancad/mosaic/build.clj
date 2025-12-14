@@ -17,5 +17,6 @@
   []
   (shadow/release :frontend)
   (sh! "bash" "src/bash/marimo-export.sh")
+  (sh! "bash" "src/bash/jekyll-build.sh")
   (shadow/release :couchdb)
   (sh! "bash" "src/bash/couchdb-export.sh"))

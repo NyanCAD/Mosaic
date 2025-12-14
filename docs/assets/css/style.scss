@@ -1,0 +1,56 @@
+---
+---
+
+@import "{{ site.theme }}";
+
+#header_wrap.outer {
+  background-image: url("/Mosaic/Mosaic Logo Designs/Final Designs/Mosiac Logo.png");
+  background-repeat: no-repeat;
+  background-position: 50% -50px;
+}
+
+h1#project_title, h2#project_tagline {
+  display: none;
+}
+
+body, #header_wrap.outer, #footer_wrap.outer {
+    background-color: #0e1a32;
+}
+
+#header_wrap .inner {
+	padding: 250px 10px 0 10px;
+}
+
+#menu {
+	border-top: 1px solid grey;
+	display: flex;
+	justify-content: space-between;
+}
+
+#menu a {
+	margin: 10px 0;
+	display: inline-block;
+	padding: 10px 50px 10px 10px;
+	color: #fff;
+	background: #0090ff no-repeat 95% 50%;
+}
+
+#menu a.forkme_link {
+	background-image: url('../images/blacktocat.png');
+}
+
+#menu a.release_link {
+	background-image: url('../images/download.png');
+}
+
+#menu a.documentation_link {
+	background-image: url('../images/book.png');
+	background-size: 25px;
+	background-position: 90%;
+}
+
+#menu a.try_online_link {
+	background-image: url('../images/arrow-up-right-square.png');
+	background-size: 20px;
+	background-position: 90%;
+}

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="34" height="34" viewBox="0 0 34 34">
+  <defs>
+    <style>
+      .cls-1, .cls-2 {
+        fill: none;
+        stroke: #fff;
+      }
+
+      .cls-1 {
+        stroke-width: 3px;
+      }
+
+      .cls-2 {
+        stroke-width: 2.5px;
+      }
+    </style>
+  </defs>
+  <g id="Current" transform="translate(1.5 1.5)">
+    <circle id="Ellipse_18" data-name="Ellipse 18" class="cls-1" cx="15.5" cy="15.5" r="15.5"/>
+    <line id="Line_29" data-name="Line 29" class="cls-2" x1="12" transform="translate(8.5 15.5)"/>
+    <image id="outline_navigate_next_white_48dp" width="27" height="27" transform="translate(5 2)" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAQAAABIkb+zAAAAt0lEQVR42u3auxGCUBRFURK1OFuxGu0D/NGe18TAUTOZeRxYq4KzA+Xz6DoAAAAA+Fsd6pg9/1FVp+z5FZrwNj8x4WN+WkLtv+ZnJdSm+ioJzRMGCTNIOEuQMEXCJT1hu4SEq4QZJNwkSJgi4Z6esFtCwihBwKrnJ/+Iw/9Gwy9k5rudXvH85EfK8If68Ncq5jeeP5jfcH5vfsOA9EO++GPWHwnhZ/XhX0ukzn8lJH9uAwAAAECMJzkMAodquOsDAAAAAElFTkSuQmCC"/>
+  </g>
+</svg>

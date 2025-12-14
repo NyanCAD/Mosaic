@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="22.5" height="29.5" viewBox="0 0 22.5 29.5">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: none;
+        stroke: #fff;
+        stroke-linecap: square;
+        stroke-width: 2.5px;
+      }
+
+      .cls-2 {
+        fill: #fff;
+      }
+    </style>
+  </defs>
+  <g id="Component_15_3" data-name="Component 15 – 3" transform="translate(1.25 0.25)">
+    <line id="Line_30" data-name="Line 30" class="cls-1" y2="17" transform="translate(0 6)"/>
+    <line id="Line_31" data-name="Line 31" class="cls-1" y2="17" transform="translate(6 6)"/>
+    <line id="Line_32" data-name="Line 32" class="cls-1" y2="12" transform="translate(20 6) rotate(90)"/>
+    <line id="Line_33" data-name="Line 33" class="cls-1" y2="12" transform="translate(20 23) rotate(90)"/>
+    <line id="Line_34" data-name="Line 34" class="cls-1" y2="5" transform="translate(20 23)"/>
+    <line id="Line_35" data-name="Line 35" class="cls-1" y2="5" transform="translate(20 1)"/>
+    <path id="Polygon_2" data-name="Polygon 2" class="cls-2" d="M6,0l6,9H0Z" transform="translate(19) rotate(90)"/>
+  </g>
+</svg>

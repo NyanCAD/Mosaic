@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="34.2" height="34.2" viewBox="0 0 34.2 34.2">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+        stroke: #000;
+        stroke-width: 0.2px;
+      }
+    </style>
+  </defs>
+  <g id="Version_Control" data-name="Version Control" transform="translate(0.1 0.1)">
+    <g id="Time_Circle" data-name="Time Circle">
+      <path id="Combined_Shape" data-name="Combined Shape" class="cls-1" d="M0,17A17,17,0,1,1,17,34,17.019,17.019,0,0,1,0,17Zm2.551,0A14.45,14.45,0,1,0,17,2.551,14.467,14.467,0,0,0,2.551,17Zm19.63,6.1-6.409-3.824a1.282,1.282,0,0,1-.623-1.1V9.937a1.275,1.275,0,0,1,2.551,0v7.517l5.788,3.452A1.276,1.276,0,0,1,22.181,23.1Z"/>
+    </g>
+  </g>
+</svg>
