@@ -1,2 +1,4 @@
 theme: jekyll-theme-slate
 destination: ../public/docs
+baseurl: /docs
+url: ""
