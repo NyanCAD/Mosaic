@@ -37,12 +37,11 @@ jobs:
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.2'
-          bundler-cache: false
+          ruby-version: '3.4'
 
       - name: Install Jekyll
         run: |
-          gem install jekyll bundler
+          gem install jekyll jekyll-theme-slate
 
       - name: Build JS (required for Python packages)
         env:
