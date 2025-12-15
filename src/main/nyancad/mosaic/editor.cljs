@@ -1051,6 +1051,10 @@
          :target "libman"
          :title "Open library manager"}
      [cm/library]]
+    [:a {:href "docs"
+         :target "docs"
+         :title "Open documentation"}
+     [cm/docs]]
     [:a {:title "Save Snapshot"
          :on-click snapshot}
      [cm/save]]

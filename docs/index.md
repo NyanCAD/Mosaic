@@ -46,4 +46,4 @@ There is nothing like a powerful workstation, but sometimes a tablet might be ju
 * [SimServer](https://github.com/NyanCAD/SimServer), an RPC API for streaming data from Ngspice, Xyce, CXXRTL & more
 * [Pyttoresque](https://github.com/NyanCAD/Pyttoresque), a Python library for doing simulation and analysis
 
-This project was funded through the <a href="/PET">NGI0 PET</a> Fund, a fund established by <a href="https://nlnet.nl">NLnet</a> with financial support from the European Commission's <a href="https://ngi.eu">Next Generation Internet</a> programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement N<sup>o</sup> 825310.
+This project was funded through the <a href="https://nlnet.nl/PET">NGI0 PET</a> Fund, a fund established by <a href="https://nlnet.nl">NLnet</a> with financial support from the European Commission's <a href="https://ngi.eu">Next Generation Internet</a> programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement N<sup>o</sup> 825310.
