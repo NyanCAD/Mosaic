@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nyancad-server"
-version = "0.12.1"
+version = "0.12.2"
 description = "NyanCAD server package with marimo integration"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -26,7 +26,7 @@ classifiers = [
 dependencies = [
     "marimo>=0.15.0",
     "uvicorn[standard]>=0.23.0",
-    "nyancad>=0.9.0",
+    "nyancad>=0.10.1",
     "httpx>=0.25.0",
     "slowapi>=0.1.9",
     "mcp>=1.0.0",
