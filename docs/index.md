@@ -1,3 +1,8 @@
+---
+layout: default
+title: Mosaic - Modern schematic entry and simulation
+---
+
 ![demo](jupyter.gif)
 
 ## Modern schematic entry and simulation
