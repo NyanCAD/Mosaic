@@ -368,3 +368,52 @@ class ServerAPI(SchematicAPI):
         )
         response.raise_for_status()
         return response.json()
+
+    async def update_model(self, model: dict) -> dict:
+        """Update a single model document (create, update, or delete).
+
+        Args:
+            model: Model document with required fields.
+                  For new models: include _id, omit _rev
+                  For updates: include _id and current _rev
+                  For deletion: include _id, current _rev, and _deleted=true
+
+        Returns:
+            CouchDB update response for the single model (first result from bulk operation)
+
+        Raises:
+            httpx.HTTPStatusError: If the request fails
+        """
+        bulk_result = await self.bulk_update([model])
+        return bulk_result[0]
+
+    async def get_simulation_results(self, group: str) -> dict:
+        """Get the latest simulation result for a schematic group.
+
+        Args:
+            group: Schematic group name (e.g., "myschem")
+
+        Returns:
+            Dictionary of simulation data from the most recent $result document
+
+        Raises:
+            httpx.HTTPStatusError: If the request fails
+        """
+        # Query for documents in the $result group
+        response = await self.client.get(
+            f"{self.base_url}/_all_docs",
+            params={
+                "include_docs": "true",
+                "startkey": f'"{group}$result:\ufff0"',
+                "endkey": f'"{group}$result:"',
+                "descending": "true",
+                "limit": "1"
+            }
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        rows = data.get('rows', [])
+        if rows:
+            return rows[0].get('doc', {})
+        return {}

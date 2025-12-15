@@ -292,3 +292,73 @@ async def bulk_update_schematic(
 
     finally:
         await api.close()
+
+@mcp.tool()
+async def update_model(
+    ctx: Context,
+    model: Annotated[ModelMetadata, "Model document to create, update, or delete"]
+) -> dict[str, Any]:
+    """Update a single model in the library (create, update, or delete).
+
+    **Unified CRUD Operation:**
+    - **Create new model**: Provide model with `_id` (no `_rev`)
+    - **Update existing model**: Provide model with `_id` and current `_rev`
+    - **Delete model**: Provide model with `_id`, current `_rev`, and `_deleted: true`
+
+    **Model Document Requirements:**
+    - Must include `_id` field (use `models:` prefix for new models)
+    - For updates/deletes: Must include current `_rev` from database
+    - Follows ModelMetadata schema for validation
+
+    **Conflict Resolution:**
+    If you receive a conflict error, the `_rev` is stale. Fetch the latest model
+    with list_library() to obtain the current `_rev`, then retry your update.
+
+    Returns:
+        CouchDB update response with result array
+
+    Raises:
+        ValidationError: If model document is incomplete or has invalid types
+    """
+    api = get_api_from_context(ctx)
+    try:
+        # Convert Pydantic model to dict
+        model_dict = model.model_dump(by_alias=True, exclude_none=True)
+
+        # Normalize model ID to ensure proper format
+        if "_id" in model_dict:
+            model_dict["_id"] = normalize_to_model_key(model_dict["_id"])
+
+        # Use the new update_model API method
+        result = await api.update_model(model_dict)
+        return result
+    finally:
+        await api.close()
+
+@mcp.tool()
+async def get_simulation_result(
+    ctx: Context,
+    id: Annotated[str, "Schematic ID"]
+) -> dict[str, Any]:
+    """Get the latest simulation result for a schematic.
+
+    Retrieves the most recent simulation data stored in the `$result` group
+    for the specified schematic. Simulation results are stored with timestamp-based
+    keys and this returns the latest one.
+
+    Args:
+        id: Schematic ID
+
+    Returns:
+        Dictionary containing the simulation result data, or empty dict if none found
+
+    Raises:
+        HTTPStatusError: If the request fails
+    """
+    api = get_api_from_context(ctx)
+    try:
+        # Use the new get_simulation_results API method
+        result = await api.get_simulation_results(normalize_to_bare_id(id))
+        return result
+    finally:
+        await api.close()
