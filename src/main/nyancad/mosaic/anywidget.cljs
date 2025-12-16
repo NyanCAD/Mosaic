@@ -24,6 +24,9 @@
 ;; Watch changes for the initial groups - returns atom with group->cache mapping
 (defonce schematic-groups (watch-changes db schematic-atom model-atom simulations))
 
+;; Set up BroadcastChannel for probe clicks
+(defonce probechan (js/BroadcastChannel. "probe"))
+
 (defn watch-subcircuits []
   (go-loop [devs (seq (vals @schematic-atom))]
     (when (seq devs)
@@ -69,4 +72,12 @@
                  key (str group "$result:" timestamp)]
              (println "Received simulation data from Python, storing with key:" key)
              (swap! simulations assoc key simulation-data))))
+
+    ;; Listen to probe broadcast channel and forward element_id to Python
+    (.addEventListener probechan "message"
+                       (fn [event]
+                         (let [element-id (.-data event)]
+                           (println "🔍 Probe clicked:" element-id)
+                           (.set model "probed_element_id" element-id)
+                           (.save_changes model))))
     nil))

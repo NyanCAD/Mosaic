@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.15.0"
+__generated_with = "0.18.4"
 app = marimo.App()
 
 
@@ -24,12 +24,25 @@ def _(bodeplot, df, hv, simtabs, sweepplot, timeplot):
 
 
 @app.cell(hide_code=True)
-def _(analysis, mo, widget_state):
+def _(analysis, mo, probed_net, widget_state):
     _options = [*analysis.nodes.keys(), *analysis.branches.keys()]
+
+    # Start with persisted selection or default to all options
+    _value = widget_state["selected_vectors"]
+
+    # Append probed net if it exists and not already selected
+    if probed_net:
+        if probed_net not in _value:
+            _value = [*_value, probed_net]
+        else:
+            _value = [v for v in _value if v != probed_net]
+    # Filter to only valid options
+    _value = [v for v in _value if v in _options]
+
     vectors = mo.ui.multiselect(
         options=_options,
         label="Vectors",
-        value=[v for v in widget_state["selected_vectors"] or _options if v in _options],
+        value=_value,
     )
     vectors
     return (vectors,)
@@ -298,7 +311,7 @@ async def _():
     import numpy as np
     import holoviews as hv
     from nyancad.anywidget import schematic_bridge
-    from nyancad.netlist import inspice_netlist
+    from nyancad.netlist import inspice_netlist, wire_net
     from nyancad.plot import timeplot, sweepplot, bodeplot
     from InSpice import Simulator
     return (
@@ -313,6 +326,7 @@ async def _():
         schematic_bridge,
         sweepplot,
         timeplot,
+        wire_net,
     )
 
 
@@ -329,6 +343,25 @@ async def _(inspice_netlist, reader):
     spice = await inspice_netlist(reader.name, reader.schematic_data)
     print(spice)
     return (spice,)
+
+
+@app.cell
+def _(reader, wire_net):
+    # Resolve probed element_id to net name
+    _probed_element_id = reader.probed_element_id
+    reader.probed_element_id = ""
+
+    if _probed_element_id:
+        _docs = reader.schematic_data[reader.name]
+        _models_dict = reader.schematic_data.get("models", {})
+        probed_net = wire_net(_probed_element_id, _docs, _models_dict)
+        if probed_net:
+            probed_net = probed_net.lower()
+        else:
+            probed_net = ""
+    else:
+        probed_net = ""
+    return (probed_net,)
 
 
 @app.cell
@@ -481,7 +514,7 @@ def _():
     widget_state = {
         # Tab and selection state
         "active_tab": "op",
-        "selected_vectors": [],
+        "selected_vectors": [],  # Will be set from user selection
 
         # Operating Point
         "op_back_annotate": True,

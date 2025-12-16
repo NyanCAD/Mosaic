@@ -39,6 +39,9 @@ export default { render };
     # Schematic name that gets synced from the ClojureScript side
     name = traitlets.Unicode().tag(sync=True)
 
+    # Probed element ID from the schematic editor (empty string when no probe)
+    probed_element_id = traitlets.Unicode(default_value="").tag(sync=True)
+
 def schematic_bridge():
     """
     Create a SchematicBridge widget for use in Marimo notebooks.
