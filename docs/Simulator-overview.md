@@ -2,58 +2,94 @@
 layout: default
 title: Simulator Overview
 ---
-The simulator user interface is a [Panel](https://panel.holoviz.org/) application that uses the [Python API] to run basic simulations and plot their results.
+The simulator user interface is a [Marimo](https://marimo.io/) notebook that uses the [Python API](Python-API.html) to run simulations and plot their results. The notebook provides a unified, fully customizable interface that combines simulation configuration, execution, and visualization in a single reactive environment.
 
-The intention is for the simulator app to remain relatively simple, and use the same [Python API] in [Jupyter Lab](https://jupyter.org/) to create more advanced simulations, analysis, automation, and all that good stuff that would make the interface overly complex.
+The intention is for the simulator notebook to remain relatively simple and accessible, while the same [Python API](Python-API.html) can be used in other Python environments to create more advanced simulations, analysis, automation, and all that good stuff that would make the interface overly complex.
 
-# Edit
+# Unified Notebook Interface
 
-![image](https://user-images.githubusercontent.com/168609/185372214-2f8026cb-0380-477a-b8a1-d4a2f40797fd.png)
+![Notebook Interface](assets/images/notebook.png)
 
-This is the main window to configure a simulation. In the sidebar the type of simulation can be selected, which currently offers
+The Marimo notebook provides a unified interface where all simulation configuration, execution, and visualization happen together. The interface is fully reactive - when you change simulation parameters, the notebook automatically updates to reflect those changes.
 
-1. Operating point
-2. Transient simulation
-3. AC simulation
-4. DC sweep
-5. Noise simulation
-6. **Unstable** FFT simulation (a transient simulation with FFT plotting)
+## Schematic Integration
 
-The fields of each simulation correspond directly with the fields listed in section 15.3 of the [NgSpice manual](https://ngspice.sourceforge.io/docs/ngspice-manual.pdf)
+At the top of the notebook, a schematic bridge widget connects directly to the schematic editor. When you click the simulate button from the schematic editor, the notebook automatically receives the schematic data and generates the SPICE netlist.
 
-The vectors field allows you to specify which vectors are saved. If you select nothing, NgSpice will save all node voltages and some branch currents. The available vectors are populated from those configured in the [library manager|library manager overview].
+## Simulation Type Selection
 
-The "rerun on change" checkbox will watch the database for changes, and rerun the simulation if any are detected. For small designs and short simulations it can be very helpful to instantly see the result of a change, but for longer simulations it's best to manually rerun the simulation when needed.
+The notebook uses a tabbed interface to select and configure different analysis types. The fields of each simulation correspond directly with the fields listed in section 15.3 of the [NgSpice manual](https://ngspice.sourceforge.io/docs/ngspice-manual.pdf). Currently supported analysis types include:
 
-The "Back annotate" checkbox will push simulation results back to the database, where they can be picked up from the schematic editor in [annotations]. The intended use is for operating point analysis and small sweeps. It is possible but strongly discouraged to use this setting on transient analysis, which will potentially store millions of points in the database.
+1. **Operating Point (op)** - Find the DC operating point with capacitors open and inductors shorted
+2. **DC Sweep (dc)** - Compute DC operating point while sweeping independent sources
+3. **AC Small-Signal Analysis (ac)** - Perform small-signal AC analysis with linearized devices
+4. **Transient Analysis (tran)** - Perform non-linear time-domain simulation
+5. **Pole-Zero Analysis (pz)** - Compute poles and zeros of the transfer function
+6. **Noise Analysis (noise)** - Perform stochastic noise analysis at the DC operating point
+7. **Distortion Analysis (disto)** - Analyze harmonic or spectral distortion in the circuit
+8. **Transfer Function Analysis (tf)** - Compute DC small-signal transfer function, input and output resistance
+9. **DC Sensitivity Analysis (dc_sens)** - Compute sensitivity of DC operating point to device parameters
+10. **AC Sensitivity Analysis (ac_sens)** - Compute sensitivity of AC values to device parameters
 
-At the bottom you can click "Setup" to change the connection to the database and simulator, and "Simulate" to run the simulation.
+Each tab provides relevant parameters for that analysis type, with descriptions and appropriate input widgets. The notebook persists your configuration across sessions, so your settings are remembered.
 
-# Simulate
+## Vector Selection
 
-![image](https://user-images.githubusercontent.com/168609/178224200-fb8c77ad-24ca-479d-b443-5f0bf80ad864.png)
+Below the simulation configuration, a multi-select widget allows you to choose which vectors (node voltages and branch currents) are plotted. The available vectors are automatically populated from the simulation results, showing all nodes and branches available in the circuit.
 
-The plot window uses [Holoviews](https://holoviews.org/) and [Datashader](https://datashader.org/) to display high-performance plots of millions of points that stream data from the simulator in real-time. The type of plot is automatically selected per simulation type.
+If you select nothing, the simulation still runs and saves all node voltages and some branch currents, but only selected vectors will be displayed in the plot.
 
-On the left is a list of checkboxes for all the saved vectors in this simulation. Checking/unchecking them will add/remove them from the plot in the middle of the screen.
+## Simulation Engine
 
-At this point, if you use the probe tool in the schematic editor to click on a wire, its voltage should be plotted. **Unstable** it is not yet possible to plot device currents this way.
+The notebook supports multiple simulation engines through a dropdown selector:
 
-At the bottom is a collapsed terminal window that displays simulator logs. If the simulation doesn't work, this is the first place to check.
+- **ngspice-shared** - NgSpice using shared library interface (default)
+- **ngspice-subprocess** - NgSpice as a subprocess
+- **xyce-serial** - Xyce serial simulator
+- **xyce-parallel** - Xyce parallel simulator (for large circuits)
 
-Below that are an "Edit" button to go back to the simulation editor, and a "Simulate" button to rerun the current simulation.
+The simulator engine can be changed at any time to compare results or take advantage of specific simulator features.
 
-# Setup
-![image](https://user-images.githubusercontent.com/168609/178220059-2045f9e7-8dec-4520-beaf-5933eaf30cc8.png)
+The notebook runs in both **native** and **WebAssembly (WASM)** modes. In native mode, all simulation engines are available depending on what's installed on your system. In WASM mode (such as when running in the browser), only **ngspice-shared** is available, compiled to WebAssembly for in-browser execution.
 
-Pressing "Setup" from the edit page brings you to the page where you can configure the schematic and simulation server.
+## Interactive Plotting
 
-When you click the simulate button from the schematic editor, the schematic and database are set to the one used by the schematic, so you normally would not need to change it. But if you are running the Panel app by itself, the first two fields configure the ID of the schematic in the database, and the database URL.
+The plot area uses [Holoviews](https://holoviews.org/) to display high-performance interactive plots. The type of plot is automatically selected based on the simulation type:
 
-The next fields concern the simulation server. By default a `localhost` NgSpice server is chosen, which should work for a standard desktop installation, as well as running on Binder. In a custom deployment this could be configured to connect to a simulator on another host.
+- **DC Sweep**: X-Y plot of swept parameter vs. selected vectors
+- **Transient**: Time-domain waveforms
+- **AC Analysis**: Bode plots (magnitude and phase vs. frequency)
 
-**Unstable** Currently Xyce support is only partially implemented, and other commercial simulators can be supported as customer demand arises.
+The plots are fully interactive with zoom, pan, and hover capabilities. For transient and sweep analyses with large datasets, the notebook can handle millions of points efficiently.
 
-**Unstable** The last field allows you to insert arbitrary SPICE commands to configure the simulator. For example to set the temperature or customize solver options.
+## Back Annotation
 
-At the bottom you can click "Edit" to return to the main edit window.
+For **Operating Point** analysis, the "Back-annotate" checkbox allows you to push simulation results back to the database, where they can be picked up from the schematic editor in [annotations]. This is useful for seeing operating point voltages and currents directly on the schematic.
+
+The intended use is for operating point analysis and small sweeps. It is possible but strongly discouraged to use this setting on transient analysis, which will potentially store millions of points in the database.
+
+## Probe Integration
+
+When you use the probe tool in the schematic editor to click on a wire, its voltage is automatically added to the vector selection and plotted. This provides seamless integration between the schematic and simulation views.
+
+## Notebook Customization
+
+Since the interface is built with Marimo, you can fully customize the notebook by:
+
+- Adding additional analysis cells
+- Creating custom plots and visualizations  
+- Adding Python code to process simulation results
+- Combining multiple simulations for comparison
+- Automating parameter sweeps and optimization
+
+The notebook file is located at `src/marimo/notebook.py` and can be edited to suit your workflow. Any changes are immediately reflected when you re-run the notebook.
+
+## Running Standalone
+
+While the notebook integrates seamlessly with the schematic editor, it can also be run standalone using the `nyancad-server` command, which provides the necessary infrastructure for the schematic bridge widget:
+
+```bash
+nyancad-server
+```
+
+This starts the integrated server that serves both the schematic editor and the notebook interface. The schematic bridge widget requires the nyancad-server infrastructure to function properly - running the notebook with plain `marimo edit` will not have a functional schematic bridge.
