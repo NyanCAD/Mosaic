@@ -234,7 +234,7 @@ async def github_proxy_endpoint(request: Request):
         )
 
 
-def create_app(use_wasm: bool = False) -> Starlette:
+def create_app(use_wasm: bool = False, host: str = "localhost", port: int = 8080) -> Starlette:
     """Create the Starlette application with static files and optional marimo edit integration."""
     
     # Get the notebook file via symlinked resources
@@ -282,6 +282,12 @@ def create_app(use_wasm: bool = False) -> Starlette:
     marimo_app.state.base_url = ""
     marimo_app.state.headless = True
     marimo_app.state.watch = False
+    marimo_app.state.enable_auth = False
+    marimo_app.state.host = host
+    marimo_app.state.port = port
+    marimo_app.state.skew_protection = True
+    marimo_app.state.mcp_server_enabled = False
+    marimo_app.state.asset_url = None
 
     # Create MCP app and extract its lifespan
     mcp_app = mcp.streamable_http_app()
@@ -373,7 +379,7 @@ def main():
         initialize_fd_limit(limit=4096)
         initialize_signals()
         
-        app = create_app(use_wasm=args.wasm)
+        app = create_app(use_wasm=args.wasm, host=args.host, port=args.port)
         
         print(f"Starting NyanCAD server on http://{args.host}:{args.port}")
         print(f"  - Static files served at: http://{args.host}:{args.port}/")
