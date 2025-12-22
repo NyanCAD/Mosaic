@@ -237,7 +237,7 @@ class UserNotebookMiddleware:
             param.split("=", 1) for param in query_string.split("&") if "=" in param
         )
 
-        schematic = query_params.get("schem", "default")
+        schematic = query_params.get("schem")
 
         # Get cookies
         headers = dict(scope.get("headers", []))
@@ -265,7 +265,12 @@ class UserNotebookMiddleware:
             # Local mode - use default user
             username = "local"
 
-        # Get or create notebook
+        # Determine schematic from query param or cookie
+        # Cookie is set on initial page load and used for subsequent requests (like WebSocket)
+        if not schematic:
+            schematic = cookies.get("nyancad_schematic", "default")
+
+        # Get or create notebook path
         notebook_path = self._get_notebook_path(username, schematic)
         cache_key = str(notebook_path)
 
@@ -276,11 +281,24 @@ class UserNotebookMiddleware:
 
         marimo_app = self._app_cache[cache_key]
 
+        # For initial page loads with schematic param, set cookie for subsequent requests
+        set_cookie = schematic and query_params.get("schem") and scope["type"] == "http"
+
         # Rewrite path to remove /notebook prefix for marimo
         # e.g., /notebook/foo -> /foo, /notebook -> /
         new_path = path[len("/notebook"):] or "/"
         scope = dict(scope)
         scope["path"] = new_path
 
-        # Forward to marimo app
-        await marimo_app(scope, receive, send)
+        # Wrap send to add Set-Cookie header if needed
+        if set_cookie:
+            async def send_with_cookie(message):
+                if message["type"] == "http.response.start":
+                    headers = list(message.get("headers", []))
+                    cookie_value = f"nyancad_schematic={schematic}; Path=/notebook; SameSite=Lax"
+                    headers.append((b"set-cookie", cookie_value.encode()))
+                    message = {**message, "headers": headers}
+                await send(message)
+            await marimo_app(scope, receive, send_with_cookie)
+        else:
+            await marimo_app(scope, receive, send)
