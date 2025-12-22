@@ -1,0 +1,7 @@
+[tool.bumpversion]
+current_version = "1.10.4"
+commit = true
+tag = true
+tag_name = "v{new_version}"
+tag_message = "Release v{new_version}"
+allow_dirty = true
