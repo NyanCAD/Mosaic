@@ -107,6 +107,11 @@ class UserNotebookMiddleware:
         # Ensure notebooks directory exists
         self.notebooks_dir.mkdir(parents=True, exist_ok=True)
 
+    @property
+    def state(self):
+        """Proxy state to wrapped app for compatibility with uvicorn/marimo."""
+        return self.app.state
+
     def _get_notebook_path(self, username: str, schematic: str) -> Path:
         """Get path to user's schematic notebook, creating if needed.
 
