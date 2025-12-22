@@ -332,10 +332,11 @@ class UserNotebookMiddleware:
         # Build redirect URL to /notebook/{username}/{schematic}/
         redirect_path = f"/notebook/{username}/{schematic}/"
 
-        # Preserve other query params (except schem which is now in path)
-        other_params = {k: v for k, v in query_params.items() if k != "schem"}
-        if other_params:
-            redirect_path += "?" + urlencode(other_params)
+        # Preserve all query params including schem for frontend compatibility
+        # (frontend JS reads schem from query params)
+        all_params = dict(query_params)
+        all_params["schem"] = schematic  # Ensure schem is present
+        redirect_path += "?" + urlencode(all_params)
 
         logger.info(f"Redirecting to {redirect_path}")
         response = RedirectResponse(url=redirect_path, status_code=307)
