@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nyancad"
-version = "0.10.2"
+version = "0.10.3"
 description = "NyanCAD Python library for schematic editor with anywidget integration"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -37,3 +37,14 @@ Repository = "https://github.com/NyanCAD/Mosaic"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["nyancad*"]
+
+[tool.bumpversion]
+current_version = "0.10.3"
+commit = true
+tag = false
+allow_dirty = true
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
