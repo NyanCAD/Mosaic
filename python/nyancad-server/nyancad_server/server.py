@@ -20,7 +20,8 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from .mcp_server import mcp
 from .oauth import create_oauth_routes
-from .config import COUCHDB_URL, COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS
+from .config import COUCHDB_URL, COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS, NOTEBOOKS_DIR, DeploymentMode
+from .notebook_middleware import UserNotebookMiddleware
 
 # Rate limiting
 limiter = Limiter(key_func=get_remote_address)
@@ -234,60 +235,68 @@ async def github_proxy_endpoint(request: Request):
         )
 
 
-def create_app(use_wasm: bool = False, host: str = "localhost", port: int = 8080) -> Starlette:
-    """Create the Starlette application with static files and optional marimo edit integration."""
-    
-    # Get the notebook file via symlinked resources
+def create_app(mode: DeploymentMode = DeploymentMode.LOCAL, host: str = "localhost", port: int = 8080) -> Starlette:
+    """Create the Starlette application with static files and optional marimo edit integration.
+
+    Args:
+        mode: Deployment mode (LOCAL, LAN, or WASM)
+        host: Server host
+        port: Server port
+    """
+    # Get the notebook file via symlinked resources (used as template in LAN mode)
     with resources.path("nyancad_server", "notebook.py") as notebook_path:
         notebook_file = str(notebook_path)
-    
-    # Create marimo components (mirroring start() function)
-    file_router = AppFileRouter.from_filename(MarimoPath(notebook_file))
-    config_manager = get_default_config_manager(current_path=notebook_file)
-    
-    # Create session manager in EDIT mode (key difference from ASGI API)
-    session_manager = SessionManager(
-        file_router=file_router,
-        mode=SessionMode.EDIT,  # This enables editing capabilities
-        development_mode=False,
-        quiet=True,
-        include_code=True,
-        ttl_seconds=None,
-        lsp_server=NoopLspServer(),
-        config_manager=config_manager,
-        cli_args={},
-        argv=[],
-        auth_token=AuthToken(""),  # No auth for now
-        redirect_console_to_browser=False,
-        watch=False,
-    )
-    
-    # Create marimo Starlette app with base_url="" (internal routing is root)
-    marimo_app = create_starlette_app(
-        base_url="",
-        host="localhost",
-        lifespan=Lifespans([
-            lifespans.etc,
-            lifespans.logging,
-            *LIFESPAN_REGISTRY.get_all(),
-        ]),
-        enable_auth=False,  # Simplified for now
-        allow_origins=("*",),
-        skew_protection=True,
-    )
-    
-    # Set required state on marimo app
-    marimo_app.state.session_manager = session_manager
-    marimo_app.state.config_manager = config_manager
-    marimo_app.state.base_url = ""
-    marimo_app.state.headless = True
-    marimo_app.state.watch = False
-    marimo_app.state.enable_auth = False
-    marimo_app.state.host = host
-    marimo_app.state.port = port
-    marimo_app.state.skew_protection = True
-    marimo_app.state.mcp_server_enabled = False
-    marimo_app.state.asset_url = None
+
+    # Only create shared marimo components in LOCAL mode
+    session_manager = None
+    config_manager = None
+    marimo_app = None
+
+    if mode == DeploymentMode.LOCAL:
+        # LOCAL mode: single shared notebook, no auth
+        file_router = AppFileRouter.from_filename(MarimoPath(notebook_file))
+        config_manager = get_default_config_manager(current_path=notebook_file)
+
+        session_manager = SessionManager(
+            file_router=file_router,
+            mode=SessionMode.EDIT,
+            development_mode=False,
+            quiet=True,
+            include_code=True,
+            ttl_seconds=None,
+            lsp_server=NoopLspServer(),
+            config_manager=config_manager,
+            cli_args={},
+            argv=[],
+            auth_token=AuthToken(""),
+            redirect_console_to_browser=False,
+            watch=False,
+        )
+
+        marimo_app = create_starlette_app(
+            base_url="",
+            host="localhost",
+            lifespan=Lifespans([
+                lifespans.etc,
+                lifespans.logging,
+                *LIFESPAN_REGISTRY.get_all(),
+            ]),
+            enable_auth=False,
+            allow_origins=("*",),
+            skew_protection=True,
+        )
+
+        marimo_app.state.session_manager = session_manager
+        marimo_app.state.config_manager = config_manager
+        marimo_app.state.base_url = ""
+        marimo_app.state.headless = True
+        marimo_app.state.watch = False
+        marimo_app.state.enable_auth = False
+        marimo_app.state.host = host
+        marimo_app.state.port = port
+        marimo_app.state.skew_protection = True
+        marimo_app.state.mcp_server_enabled = False
+        marimo_app.state.asset_url = None
 
     # Create MCP app and extract its lifespan
     mcp_app = mcp.streamable_http_app()
@@ -296,7 +305,7 @@ def create_app(use_wasm: bool = False, host: str = "localhost", port: int = 8080
     # Create OAuth routes (standard paths at root, custom paths prefixed with /oauth)
     oauth_routes = create_oauth_routes()
 
-    # Create main Starlette app with signal handler for proper session cleanup
+    # Create main Starlette app
     app = Starlette(
         routes=[
             # Legacy auth endpoints (cookie-based)
@@ -327,63 +336,85 @@ def create_app(use_wasm: bool = False, host: str = "localhost", port: int = 8080
     app.state.session_manager = session_manager
     app.state.config_manager = config_manager
     app.state.remote_url = None
-    
-    if not use_wasm:
-        # Mount marimo at /notebook
-        app.mount("/notebook", marimo_app)
-    
+
     # Get the static files directory via symlinked resources
     with resources.path("nyancad_server", "public") as public_path:
         static_path = str(public_path)
-    
-    # Mount static files at root
-    app.mount("/", StaticFiles(directory=static_path, html=True), name="static")
-    
-    return app
+
+    if mode == DeploymentMode.LOCAL:
+        # LOCAL mode: mount shared marimo app directly
+        app.mount("/notebook", marimo_app)
+        app.mount("/", StaticFiles(directory=static_path, html=True), name="static")
+        return app
+    elif mode == DeploymentMode.LAN:
+        # LAN mode: mount static files first, then wrap with middleware
+        # Middleware intercepts /notebook routes, passes through to app for others
+        app.mount("/", StaticFiles(directory=static_path, html=True), name="static")
+        return UserNotebookMiddleware(
+            app=app,
+            notebooks_dir=NOTEBOOKS_DIR,
+            default_notebook=notebook_file,
+            require_auth=True,
+            host=host,
+            port=port,
+        )
+    else:
+        # WASM mode: no notebook mounted (client-side execution)
+        app.mount("/", StaticFiles(directory=static_path, html=True), name="static")
+        return app
 
 
 def create_wasm_app() -> Starlette:
     """Create the Starlette application in WASM mode."""
-    return create_app(use_wasm=True)
+    return create_app(mode=DeploymentMode.WASM)
 
 
 def main():
     """Main entry point for the server."""
     parser = argparse.ArgumentParser(description="NyanCAD Server")
     parser.add_argument(
-        "--host", 
-        default="localhost", 
+        "--host",
+        default="localhost",
         help="Host to bind to (default: localhost)"
     )
     parser.add_argument(
-        "--port", 
-        type=int, 
-        default=8080, 
+        "--port",
+        type=int,
+        default=8080,
         help="Port to bind to (default: 8080)"
     )
     parser.add_argument(
-        "--reload", 
-        action="store_true", 
+        "--reload",
+        action="store_true",
         help="Enable auto-reload for development"
     )
     parser.add_argument(
-        "--wasm", 
-        action="store_true", 
-        help="Serve WASM notebook files instead of marimo app"
+        "--mode",
+        type=str,
+        choices=["local", "lan", "wasm"],
+        default="local",
+        help="Deployment mode: local (single user), lan (multi-user with auth), wasm (client-side)"
     )
-    
+
     args = parser.parse_args()
-    
+
+    # Convert mode string to enum
+    mode = DeploymentMode(args.mode)
+
     try:
         # Initialize marimo components (matching start.py order)
         initialize_fd_limit(limit=4096)
         initialize_signals()
-        
-        app = create_app(use_wasm=args.wasm, host=args.host, port=args.port)
-        
+
+        app = create_app(mode=mode, host=args.host, port=args.port)
+
         print(f"Starting NyanCAD server on http://{args.host}:{args.port}")
+        print(f"  - Mode: {mode.value}")
         print(f"  - Static files served at: http://{args.host}:{args.port}/")
-        print(f"  - Marimo notebook editor at: http://{args.host}:{args.port}/notebook/")
+        if mode != DeploymentMode.WASM:
+            print(f"  - Marimo notebook editor at: http://{args.host}:{args.port}/notebook/")
+        if mode == DeploymentMode.LAN:
+            print(f"  - User notebooks directory: {NOTEBOOKS_DIR}")
         
         # Create uvicorn server object (needed for marimo signal handler)
         server = uvicorn.Server(
