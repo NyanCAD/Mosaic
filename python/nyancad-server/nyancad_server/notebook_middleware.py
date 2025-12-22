@@ -278,9 +278,11 @@ class UserNotebookMiddleware:
 
         # Rewrite path to remove /notebook prefix for marimo
         # e.g., /notebook/foo -> /foo, /notebook -> /
+        # Also set root_path like Starlette's mount() does
         new_path = path[len("/notebook"):] or "/"
         scope = dict(scope)
         scope["path"] = new_path
+        scope["root_path"] = scope.get("root_path", "") + "/notebook"
 
         # Forward to marimo app
         await marimo_app(scope, receive, send)
