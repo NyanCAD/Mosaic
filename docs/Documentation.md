@@ -11,4 +11,6 @@ To get more familiar, have a look at the [editor overview](Editor-overview.html)
 
 If you are managing a Mosaic installation, [PDK management](PDK-management.html), [Deployment](Deployment.html), and [Architecture](Architecture.html) might be of interest.
 
+For AI integration, see the [MCP Server](MCP-Server.html) documentation to connect LLM clients like Claude to your NyanCAD instance.
+
 Items indicated with **unstable** are likely to change in the near future.
