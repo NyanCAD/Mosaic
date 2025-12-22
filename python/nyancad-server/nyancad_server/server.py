@@ -305,7 +305,7 @@ def create_app(mode: DeploymentMode = DeploymentMode.LOCAL, host: str = "localho
     # Create OAuth routes (standard paths at root, custom paths prefixed with /oauth)
     oauth_routes = create_oauth_routes()
 
-    # Create main Starlette app with signal handler for proper session cleanup
+    # Create main Starlette app
     app = Starlette(
         routes=[
             # Legacy auth endpoints (cookie-based)

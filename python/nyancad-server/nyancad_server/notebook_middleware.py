@@ -68,6 +68,27 @@ async def validate_couchdb_session(cookies: dict[str, str]) -> tuple[bool, str]:
             return False, ""
 
 
+class LANSessionManager:
+    """Minimal session manager for LAN mode that handles shutdown of cached apps.
+
+    Provides the interface expected by marimo's signal_handler lifespan.
+    """
+
+    def __init__(self, middleware: "UserNotebookMiddleware"):
+        self.middleware = middleware
+        self.quiet = True
+
+    def shutdown(self):
+        """Shutdown all cached marimo apps."""
+        for cache_key, app in self.middleware._app_cache.items():
+            if hasattr(app, 'state') and hasattr(app.state, 'session_manager'):
+                try:
+                    app.state.session_manager.shutdown()
+                except Exception as e:
+                    logger.warning(f"Error shutting down {cache_key}: {e}")
+        self.middleware._app_cache.clear()
+
+
 class UserNotebookMiddleware:
     """Middleware that routes to per-user/schematic notebooks.
 
@@ -106,6 +127,12 @@ class UserNotebookMiddleware:
 
         # Ensure notebooks directory exists
         self.notebooks_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create session manager for signal handler compatibility
+        self._session_manager = LANSessionManager(self)
+
+        # Set session_manager on wrapped app's state for signal_handler lifespan
+        self.app.state.session_manager = self._session_manager
 
     @property
     def state(self):
