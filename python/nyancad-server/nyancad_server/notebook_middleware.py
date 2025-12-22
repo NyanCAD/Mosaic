@@ -199,7 +199,7 @@ class UserNotebookMiddleware:
         )
 
         marimo_app = create_starlette_app(
-            base_url=base_url,
+            base_url="",  # Routes built without prefix (we rewrite scope path)
             host=self.host,
             lifespan=Lifespans([
                 lifespans.etc,
