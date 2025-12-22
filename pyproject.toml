@@ -5,3 +5,8 @@ tag = true
 tag_name = "v{new_version}"
 tag_message = "Release v{new_version}"
 allow_dirty = true
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = 'current_version = "{current_version}"'
+replace = 'current_version = "{new_version}"'
