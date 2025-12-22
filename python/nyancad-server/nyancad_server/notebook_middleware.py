@@ -1,17 +1,21 @@
 """Middleware for per-user/schematic notebook routing.
 
-Adapts marimo's DynamicDirectoryMiddleware pattern for EDIT mode with
-CouchDB session authentication.
+Uses URL-based routing pattern (similar to marimo's DynamicDirectoryMiddleware)
+with CouchDB session authentication for LAN mode.
+
+URL structure:
+- /notebook/?schem=xxx → redirects to /notebook/{username}/{schematic}/
+- /notebook/{username}/{schematic}/... → routes to cached marimo app
 """
 
 import logging
 import shutil
 from pathlib import Path
-from typing import Callable, Awaitable
+from urllib.parse import urlencode
 
 import httpx
-from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse, RedirectResponse
+
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from marimo._config.manager import get_default_config_manager
@@ -90,7 +94,11 @@ class LANSessionManager:
 
 
 class UserNotebookMiddleware:
-    """Middleware that routes to per-user/schematic notebooks.
+    """Middleware that routes to per-user/schematic notebooks using URL-based routing.
+
+    URL structure:
+    - /notebook/?schem=xxx → redirects to /notebook/{username}/{schematic}/
+    - /notebook/{username}/{schematic}/... → routes to cached marimo app
 
     Creates notebook directories on demand and caches marimo apps.
     Validates CouchDB sessions for authentication in LAN mode.
@@ -122,7 +130,7 @@ class UserNotebookMiddleware:
         self.host = host
         self.port = port
 
-        # Cache of marimo apps keyed by notebook path
+        # Cache of marimo apps keyed by URL path (e.g., "/notebook/user/schem")
         self._app_cache: dict[str, ASGIApp] = {}
 
         # Ensure notebooks directory exists
@@ -144,7 +152,7 @@ class UserNotebookMiddleware:
 
         Args:
             username: Authenticated username
-            schematic: Schematic ID from query param
+            schematic: Schematic ID
 
         Returns:
             Path to notebook file
@@ -159,11 +167,12 @@ class UserNotebookMiddleware:
 
         return notebook_path
 
-    def _create_marimo_app(self, notebook_path: Path) -> ASGIApp:
+    def _create_marimo_app(self, notebook_path: Path, base_url: str) -> ASGIApp:
         """Create a marimo app in EDIT mode for a notebook.
 
         Args:
             notebook_path: Path to notebook file
+            base_url: URL path prefix for this app (e.g., "/notebook/user/schem")
 
         Returns:
             Starlette ASGI app for the notebook
@@ -190,7 +199,7 @@ class UserNotebookMiddleware:
         )
 
         marimo_app = create_starlette_app(
-            base_url="",
+            base_url=base_url,
             host=self.host,
             lifespan=Lifespans([
                 lifespans.etc,
@@ -199,13 +208,13 @@ class UserNotebookMiddleware:
             ]),
             enable_auth=False,
             allow_origins=("*",),
-            skew_protection=False,  # Disabled for dynamic app creation
+            skew_protection=True,  # Enabled - works with URL-based routing
         )
 
         # Set required state
         marimo_app.state.session_manager = session_manager
         marimo_app.state.config_manager = config_manager
-        marimo_app.state.base_url = ""
+        marimo_app.state.base_url = base_url
         marimo_app.state.headless = True
         marimo_app.state.watch = False
         marimo_app.state.enable_auth = False
@@ -217,13 +226,27 @@ class UserNotebookMiddleware:
 
         return marimo_app
 
+    def _parse_cookies(self, scope: Scope) -> dict[str, str]:
+        """Parse cookies from scope headers."""
+        headers = dict(scope.get("headers", []))
+        cookie_header = headers.get(b"cookie", b"").decode()
+        return dict(
+            cookie.split("=", 1) for cookie in cookie_header.split("; ") if "=" in cookie
+        )
+
+    def _parse_query_params(self, scope: Scope) -> dict[str, str]:
+        """Parse query parameters from scope."""
+        query_string = scope.get("query_string", b"").decode()
+        return dict(
+            param.split("=", 1) for param in query_string.split("&") if "=" in param
+        )
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Handle ASGI request."""
         if scope["type"] not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return
 
-        # Parse request
         path = scope.get("path", "")
 
         # Only handle /notebook routes
@@ -231,20 +254,7 @@ class UserNotebookMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Extract query params
-        query_string = scope.get("query_string", b"").decode()
-        query_params = dict(
-            param.split("=", 1) for param in query_string.split("&") if "=" in param
-        )
-
-        schematic = query_params.get("schem")
-
-        # Get cookies
-        headers = dict(scope.get("headers", []))
-        cookie_header = headers.get(b"cookie", b"").decode()
-        cookies = dict(
-            cookie.split("=", 1) for cookie in cookie_header.split("; ") if "=" in cookie
-        )
+        cookies = self._parse_cookies(scope)
 
         # Validate authentication if required
         if self.require_auth:
@@ -262,43 +272,71 @@ class UserNotebookMiddleware:
                     await send({"type": "websocket.close", "code": 4001})
                     return
         else:
-            # Local mode - use default user
             username = "local"
 
-        # Determine schematic from query param or cookie
-        # Cookie is set on initial page load and used for subsequent requests (like WebSocket)
-        if not schematic:
-            schematic = cookies.get("nyancad_schematic", "default")
+        # Parse the path to determine routing
+        # Expected formats:
+        # - /notebook or /notebook/ → needs redirect (get schematic from query)
+        # - /notebook/{username}/{schematic}/... → route to app
 
-        # Get or create notebook path
-        notebook_path = self._get_notebook_path(username, schematic)
-        cache_key = str(notebook_path)
+        path_after_notebook = path[len("/notebook"):]
+        path_parts = [p for p in path_after_notebook.split("/") if p]
 
-        # Get or create cached marimo app
-        if cache_key not in self._app_cache:
-            logger.info(f"Creating marimo app for {cache_key}")
-            self._app_cache[cache_key] = self._create_marimo_app(notebook_path)
+        if len(path_parts) >= 2:
+            # URL already has username/schematic structure
+            # e.g., /notebook/alice/circuit1/api/...
+            url_username = path_parts[0]
+            schematic = path_parts[1]
+            remaining_path = "/" + "/".join(path_parts[2:]) if len(path_parts) > 2 else "/"
 
-        marimo_app = self._app_cache[cache_key]
+            # Security: ensure user can only access their own notebooks
+            if self.require_auth and url_username != username:
+                if scope["type"] == "http":
+                    response = JSONResponse(
+                        {"error": "Access denied"},
+                        status_code=403
+                    )
+                    await response(scope, receive, send)
+                    return
+                else:
+                    await send({"type": "websocket.close", "code": 4003})
+                    return
 
-        # For initial page loads with schematic param, set cookie for subsequent requests
-        set_cookie = schematic and query_params.get("schem") and scope["type"] == "http"
+            # Get or create notebook and marimo app
+            notebook_path = self._get_notebook_path(url_username, schematic)
+            base_url = f"/notebook/{url_username}/{schematic}"
+            cache_key = base_url
 
-        # Rewrite path to remove /notebook prefix for marimo
-        # e.g., /notebook/foo -> /foo, /notebook -> /
-        new_path = path[len("/notebook"):] or "/"
-        scope = dict(scope)
-        scope["path"] = new_path
+            if cache_key not in self._app_cache:
+                logger.info(f"Creating marimo app for {cache_key}")
+                self._app_cache[cache_key] = self._create_marimo_app(notebook_path, base_url)
 
-        # Wrap send to add Set-Cookie header if needed
-        if set_cookie:
-            async def send_with_cookie(message):
-                if message["type"] == "http.response.start":
-                    headers = list(message.get("headers", []))
-                    cookie_value = f"nyancad_schematic={schematic}; Path=/notebook; SameSite=Lax"
-                    headers.append((b"set-cookie", cookie_value.encode()))
-                    message = {**message, "headers": headers}
-                await send(message)
-            await marimo_app(scope, receive, send_with_cookie)
-        else:
-            await marimo_app(scope, receive, send)
+            marimo_app = self._app_cache[cache_key]
+
+            # Rewrite path for marimo (remove the base_url prefix)
+            new_scope = dict(scope)
+            new_scope["path"] = remaining_path
+
+            await marimo_app(new_scope, receive, send)
+            return
+
+        # Path is /notebook or /notebook/ - need to redirect with schematic
+        if scope["type"] != "http":
+            # WebSocket to /notebook without user/schematic - invalid
+            await send({"type": "websocket.close", "code": 4000})
+            return
+
+        query_params = self._parse_query_params(scope)
+        schematic = query_params.get("schem", "default")
+
+        # Build redirect URL to /notebook/{username}/{schematic}/
+        redirect_path = f"/notebook/{username}/{schematic}/"
+
+        # Preserve other query params (except schem which is now in path)
+        other_params = {k: v for k, v in query_params.items() if k != "schem"}
+        if other_params:
+            redirect_path += "?" + urlencode(other_params)
+
+        logger.info(f"Redirecting to {redirect_path}")
+        response = RedirectResponse(url=redirect_path, status_code=307)
+        await response(scope, receive, send)
