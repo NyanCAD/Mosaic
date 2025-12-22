@@ -147,22 +147,61 @@ async def hello(ctx: Context) -> dict[str, Any]:
 @mcp.tool()
 async def get_schematic(
     ctx: Context,
-    schematic_id: Annotated[str, "Schematic ID"]
+    id: Annotated[Optional[str], "Schematic ID (UUID format)"] = None,
+    name: Annotated[Optional[str], "Schematic name to search for"] = None
 ) -> SchematicResponse:
     """Get schematic with computed port locations and SPICE netlist.
 
     Retrieves all devices in the schematic, computes port locations from geometry,
     and generates a complete SPICE netlist including all subcircuits and models.
 
+    **Parameters (provide one):**
+    - id: Direct schematic ID (UUID format, e.g., "1ef9c9d7-...")
+    - name: Schematic name to search for (performs lookup to find ID)
+
+    If both are provided, id takes precedence. If only name is provided,
+    searches the library and uses the first matching schematic.
+
     Returns:
         SchematicResponse with:
         - schematic: Dict of document ID → Device (Wire or Component with computed ports)
         - spice: Generated SPICE netlist as string
+
+    Raises:
+        ValueError: If neither id nor name is provided, or if name search finds no match
     """
     api = get_api_from_context(ctx)
     try:
-        # Normalize to bare ID
-        schematic_id = normalize_to_bare_id(schematic_id)
+        # Resolve schematic_id from id or name
+        if id:
+            schematic_id = normalize_to_bare_id(id)
+        elif name:
+            # Search for schematic by name
+            models = await api.get_library(filter=name)
+
+            # Find first schematic (no templates) with exact name match
+            first_partial = None
+            for model_id, model in models.items():
+                # Schematics have no templates field
+                if not model.get('templates'):
+                    model_name = model.get('name', '')
+                    if model_name.lower() == name.lower():
+                        # Exact match - use immediately
+                        schematic_id = normalize_to_bare_id(model_id)
+                        break
+                    elif first_partial is None:
+                        first_partial = model_id
+            else:
+                # No exact match found, use first partial match if available
+                if first_partial:
+                    schematic_id = normalize_to_bare_id(first_partial)
+                else:
+                    raise ValueError(
+                        f"No schematic found with name '{name}'. "
+                        "Use list_library() to see available schematics."
+                    )
+        else:
+            raise ValueError("Either 'id' or 'name' must be provided")
 
         # Get full schematic with all subcircuits and models
         _, full_schem = await api.get_all_schem_docs(schematic_id)
