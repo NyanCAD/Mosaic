@@ -305,6 +305,12 @@ def create_app(mode: DeploymentMode = DeploymentMode.LOCAL, host: str = "localho
     # Create OAuth routes (standard paths at root, custom paths prefixed with /oauth)
     oauth_routes = create_oauth_routes()
 
+    # Build lifespan list - only include signal_handler if we have a session_manager
+    # (WASM mode has no session_manager since notebooks run client-side)
+    app_lifespans = [mcp_lifespan]
+    if session_manager is not None:
+        app_lifespans.insert(0, lifespans.signal_handler)
+
     # Create main Starlette app
     app = Starlette(
         routes=[
@@ -317,10 +323,7 @@ def create_app(mode: DeploymentMode = DeploymentMode.LOCAL, host: str = "localho
             # MCP server
             Mount("/ai", app=mcp_app),
         ] + oauth_routes,  # Add all OAuth routes directly at root level
-        lifespan=Lifespans([
-            lifespans.signal_handler,
-            mcp_lifespan,
-        ])
+        lifespan=Lifespans(app_lifespans)
     )
 
     # Add rate limiting state
