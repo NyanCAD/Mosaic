@@ -1066,6 +1066,9 @@
          :target "docs"
          :title "Open documentation"}
      [cm/docs]]
+    [:a {:title "Keyboard shortcuts & help"
+         :on-click cm/show-onboarding!}
+     [cm/help]]
     [:a {:title "Save Snapshot"
          :on-click snapshot}
      [cm/save]]
@@ -1078,20 +1081,6 @@
   (when (= cell (:type @staging))
     "active"))
 
-(defn icon-image [name]
-  (let [icon (case name
-               "resistor" (rc/inline "icons/resistor.svg")
-               "capacitor" (rc/inline "icons/capacitor.svg")
-               "inductor" (rc/inline "icons/inductor.svg")
-               "diode" (rc/inline "icons/diode.svg")
-               "vsource" (rc/inline "icons/vsource.svg")
-               "isource" (rc/inline "icons/isource.svg")
-               "pmos" (rc/inline "icons/pmos.svg")
-               "nmos" (rc/inline "icons/nmos.svg")
-               "npn" (rc/inline "icons/npn.svg")
-               "pnp" (rc/inline "icons/pnp.svg")
-               "")]
-    [:span {:dangerouslySetInnerHTML (r/unsafe-html icon)}]))
 
 (defn variant-tray [& variants]
   (let [active (r/atom 0)
@@ -1164,45 +1153,45 @@
    [:button {:title "Add resistor [r]"
              :class (device-active "resistor")
              :on-mouse-up #(add-device "resistor" (viewbox-coord %))}
-    [icon-image "resistor"]]
+    [cm/device-icon "resistor"]]
    [:button {:title "Add inductor [l]"
              :class (device-active "inductor")
              :on-mouse-up #(add-device "inductor" (viewbox-coord %))}
-    [icon-image "inductor"]]
+    [cm/device-icon "inductor"]]
    [:button {:title "Add capacitor [c]"
              :class (device-active "capacitor")
              :on-mouse-up #(add-device "capacitor" (viewbox-coord %))}
-    [icon-image "capacitor"]]
+    [cm/device-icon "capacitor"]]
    [:button {:title "Add diode [d]"
              :class (device-active "diode")
              :on-mouse-up #(add-device "diode" (viewbox-coord %))}
-    [icon-image "diode"]]
+    [cm/device-icon "diode"]]
    [variant-tray
     [:button {:title "Add voltage source [v]"
               :class (device-active "vsource")
               :on-mouse-up #(add-device "vsource" (viewbox-coord %))}
-     [icon-image "vsource"]]
+     [cm/device-icon "vsource"]]
     [:button {:title "Add current source [i]"
               :class (device-active "isource")
               :on-mouse-up #(add-device "isource" (viewbox-coord %))}
-     [icon-image "isource"]]]
+     [cm/device-icon "isource"]]]
    [variant-tray
     [:button {:title "Add N-channel mosfet [m]"
               :class (device-active "nmos")
               :on-mouse-up #(add-device "nmos" (viewbox-coord %))}
-     [icon-image "nmos"]]
+     [cm/device-icon "nmos"]]
     [:button {:title "Add P-channel mosfet [shift+m]"
               :class (device-active "pmos")
               :on-mouse-up #(add-device "pmos" (viewbox-coord %))}
-     [icon-image "pmos"]]
+     [cm/device-icon "pmos"]]
     [:button {:title "Add NPN BJT [b]"
               :class (device-active "npn")
               :on-mouse-up #(add-device "npn" (viewbox-coord %))}
-     [icon-image "npn"]]
+     [cm/device-icon "npn"]]
     [:button {:title "Add PNP BJT [shift+b]"
               :class (device-active "pnp")
               :on-mouse-up #(add-device "pnp" (viewbox-coord %))}
-     [icon-image "pnp"]]]
+     [cm/device-icon "pnp"]]]
    [:button {:title "Add subcircuit [x]"
              :class (device-active "ckt")
              :on-mouse-up #(add-device "ckt" (viewbox-coord %))}
@@ -1386,7 +1375,10 @@
   (cm/init-auth-state!)
   ;; Start sync (will handle 401s via "denied" event)
   (synchronise)
-  (render))
+  (render)
+  ;; Show onboarding for first-time users
+  (when-not (cm/onboarding-shown?)
+    (cm/show-onboarding!)))
 
 (defn ^:export clear []
   (swap! schematic #(apply dissoc %1 %2) (set (keys @schematic))))

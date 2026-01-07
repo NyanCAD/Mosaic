@@ -13,7 +13,8 @@
             clojure.string
             [clojure.pprint :refer [pprint]]
             [clojure.zip :as zip]
-            goog.functions))
+            goog.functions
+            [shadow.resource :as rc]))
 
 ; allow taking a cursor of a pouch atom
 (extend-type ^js nyancad.hipflask/PAtom reagent.ratom/IReactiveAtom)
@@ -271,6 +272,7 @@
 (def text (r/adapt-react-class icons/Paragraph))
 (def namei (r/adapt-react-class icons/Fonts))
 (def edit (r/adapt-react-class icons/PencilSquare))
+(def help (r/adapt-react-class icons/QuestionCircle))
 
 (defn radiobuttons
 ([cursor m] (radiobuttons cursor m nil nil nil))
@@ -416,6 +418,13 @@
   (clear-current-user)
   (reset! auth-state false))
 
+;; Onboarding state utilities
+(defn onboarding-shown? []
+  (= "true" (.getItem js/localStorage "onboarding-shown")))
+
+(defn set-onboarding-shown! []
+  (.setItem js/localStorage "onboarding-shown" "true"))
+
 ;; Modal dialog functionality
 (defonce modal-content (r/atom nil))
 
@@ -459,3 +468,125 @@
 
 (defn clear-context-menu []
   (swap! context-content assoc :body nil))
+
+;; Onboarding popup for first-time users
+(defn device-icon [name]
+  (let [icon (case name
+               "resistor" (rc/inline "icons/resistor.svg")
+               "capacitor" (rc/inline "icons/capacitor.svg")
+               "inductor" (rc/inline "icons/inductor.svg")
+               "diode" (rc/inline "icons/diode.svg")
+               "vsource" (rc/inline "icons/vsource.svg")
+               "isource" (rc/inline "icons/isource.svg")
+               "nmos" (rc/inline "icons/nmos.svg")
+               "pmos" (rc/inline "icons/pmos.svg")
+               "npn" (rc/inline "icons/npn.svg")
+               "pnp" (rc/inline "icons/pnp.svg")
+               "")]
+    [:span.device-icon {:dangerouslySetInnerHTML (r/unsafe-html icon)}]))
+
+(defn shortcut-table [title rows]
+  [:div.shortcut-category
+   [:h3 title]
+   [:table
+    [:tbody
+     (for [[icon key desc] rows]
+       ^{:key desc}
+       [:tr
+        [:td.icon-cell icon]
+        [:td (when (seq key) [:kbd key])]
+        [:td.desc desc]])]]])
+
+(defn onboarding-popup []
+  [:div.onboarding
+   [:button.close-btn
+    {:on-click #(reset! modal-content nil)
+     :aria-label "Close"}
+    "\u00D7"]
+   [:h2 "Welcome to Mosaic"]
+   [:p.intro "Modern schematic entry and simulation for analog IC design."]
+
+   ;; Components section - full width
+   [:div.shortcut-category.components-section
+    [:h3 "Components"]
+    [:div.components-row
+     [:div.component-item
+      [device-icon "resistor"]
+      [:kbd "R"]
+      [:span.label "Resistor"]]
+     [:div.component-item
+      [device-icon "capacitor"]
+      [:kbd "C"]
+      [:span.label "Capacitor"]]
+     [:div.component-item
+      [device-icon "inductor"]
+      [:kbd "L"]
+      [:span.label "Inductor"]]
+     [:div.component-item
+      [device-icon "diode"]
+      [:kbd "D"]
+      [:span.label "Diode"]]
+     [:div.component-item
+      [device-icon "vsource"]
+      [:kbd "V"]
+      [:span.label "Vsource"]]
+     [:div.component-item
+      [device-icon "isource"]
+      [:kbd "I"]
+      [:span.label "Isource"]]
+     [:div.component-item
+      [device-icon "nmos"]
+      [:kbd "M"]
+      [:span.label "MOSFET"]]
+     [:div.component-item
+      [device-icon "npn"]
+      [:kbd "B"]
+      [:span.label "BJT"]]
+     [:div.component-item
+      [chip]
+      [:kbd "X"]
+      [:span.label "Subcircuit"]]
+     [:div.component-item
+      [label]
+      [:kbd "P"]
+      [:span.label "Port"]]]
+    [:p.hint "Long-press button or Shift+key for alternatives (PMOS, PNP, etc.)"]]
+
+   ;; Two column layout for tools
+   [:div.shortcut-grid
+    [shortcut-table "Drawing"
+     [[[cursor] "Esc" "Select"]
+      [[wire] "W" "Wire"]
+      [[eraser] "E" "Eraser"]
+      [[move] "Space" "Pan (hold)"]
+      [[rotatecw] "S" "Spin CW"]
+      [[rotateccw] "Shift+S" "Spin CCW"]
+      [[mirror-vertical] "F" "Flip X"]
+      [[mirror-horizontal] "Shift+F" "Flip Y"]
+      [[delete] "Del" "Delete"]
+      [[zoom-in] "Scroll" "Zoom"]]]
+
+    [shortcut-table "Actions"
+     [[[undoi] "Ctrl+Z" "Undo"]
+      [[redoi] "Ctrl+Shift+Z" "Redo"]
+      [[copyi] "Ctrl+C" "Copy"]
+      [[cuti] "Ctrl+X" "Cut"]
+      [[pastei] "Ctrl+V" "Paste"]
+      [[library] "" "Library Manager"]
+      [[docs] "" "Documentation"]
+      [[save] "" "Save Snapshot"]
+      [[help] "" "Keyboard Shortcuts"]
+      [[login] "" "Account"]]]]
+
+   [:div.actions
+    [:a.more-info {:href "docs"
+                   :target "docs"}
+     "View all shortcuts"]
+    [:button.primary
+     {:on-click (fn []
+                  (set-onboarding-shown!)
+                  (reset! modal-content nil))}
+     "Get Started"]]])
+
+(defn show-onboarding! []
+  (reset! modal-content [onboarding-popup]))

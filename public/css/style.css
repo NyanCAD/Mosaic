@@ -1214,3 +1214,190 @@ rect.select {
 .mosaic-auth .account-actions .button {
     flex: 1;
 }
+
+/* Onboarding popup styles */
+.mosaic-app .modal .onboarding {
+    max-width: 700px;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+}
+
+.mosaic-app .modal .onboarding .close-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #666;
+    padding: 5px 10px;
+    box-shadow: none;
+}
+
+.mosaic-app .modal .onboarding .close-btn:hover {
+    color: #000;
+}
+
+.mosaic-app .modal .onboarding h2 {
+    font: 500 25px/25px 'Roboto', sans-serif;
+    letter-spacing: 0.85px;
+    color: #222222;
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.mosaic-app .modal .onboarding .intro {
+    text-align: center;
+    color: #222222A5;
+    margin-bottom: 25px;
+}
+
+.mosaic-app .modal .onboarding .shortcut-category h3 {
+    font: 500 14px/18px 'Roboto', sans-serif;
+    color: #0E1A32;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Components section - full width */
+.mosaic-app .modal .onboarding .components-section {
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #e7e7e7;
+}
+
+.mosaic-app .modal .onboarding .components-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+}
+
+.mosaic-app .modal .onboarding .component-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.mosaic-app .modal .onboarding .component-item > *:first-child {
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mosaic-app .modal .onboarding .device-icon svg {
+    width: 36px;
+    height: 36px;
+}
+
+.mosaic-app .modal .onboarding .component-item > svg {
+    width: 28px;
+    height: 28px;
+    color: #555;
+}
+
+.mosaic-app .modal .onboarding .component-item .label {
+    font-size: 10px;
+    color: #888;
+    text-align: center;
+}
+
+.mosaic-app .modal .onboarding .hint {
+    text-align: center;
+    font-size: 12px;
+    color: #888;
+    margin-top: 10px;
+    margin-bottom: 0;
+}
+
+/* Two column grid for tools */
+.mosaic-app .modal .onboarding .shortcut-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 25px;
+    margin-bottom: 25px;
+}
+
+.mosaic-app .modal .onboarding table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.mosaic-app .modal .onboarding tr {
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.mosaic-app .modal .onboarding tr:last-child {
+    border-bottom: none;
+}
+
+.mosaic-app .modal .onboarding td {
+    padding: 6px 4px;
+    vertical-align: middle;
+}
+
+.mosaic-app .modal .onboarding .icon-cell {
+    width: 24px;
+    text-align: center;
+    color: #555;
+}
+
+.mosaic-app .modal .onboarding .icon-cell svg {
+    width: 16px;
+    height: 16px;
+}
+
+.mosaic-app .modal .onboarding kbd {
+    background: #f8f8f8;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 11px;
+    white-space: nowrap;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.mosaic-app .modal .onboarding .desc {
+    font-size: 13px;
+    color: #222222A5;
+    padding-left: 8px;
+}
+
+.mosaic-app .modal .onboarding .actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid #e7e7e7;
+    padding-top: 20px;
+    margin-top: 10px;
+}
+
+.mosaic-app .modal .onboarding .more-info {
+    color: #0E1A32;
+    text-decoration: none;
+    font-size: 14px;
+}
+
+.mosaic-app .modal .onboarding .more-info:hover {
+    text-decoration: underline;
+}
+
+.mosaic-app .modal .onboarding .primary {
+    background: #0E1A32;
+    color: white;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 5px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.mosaic-app .modal .onboarding .primary:hover {
+    background: #1a2a4a;
+}
