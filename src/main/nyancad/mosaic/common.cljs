@@ -273,8 +273,9 @@
 (def edit (r/adapt-react-class icons/PencilSquare))
 
 (defn radiobuttons
-([cursor m] (radiobuttons cursor m nil nil))
-([cursor m dblclk ctxclk]
+([cursor m] (radiobuttons cursor m nil nil nil))
+([cursor m dblclk ctxclk] (radiobuttons cursor m dblclk ctxclk nil))
+([cursor m dblclk ctxclk on-change]
  [:<>
   (doall (for [[label name disp] m]
            [:<> {:key name}
@@ -282,7 +283,9 @@
                      :id name
                      :value name
                      :checked (= name @cursor)
-                     :on-change #(reset! cursor name)}]
+                     :on-change #(if on-change
+                                   (on-change name)
+                                   (reset! cursor name))}]
             [:label {:for name
                      :title disp
                      :on-double-click (when dblclk (dblclk name))

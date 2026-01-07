@@ -606,12 +606,13 @@
                     (+ y (/ h 2)))))
 
 (defn commit-staged [dev]
-  (let [id (make-name (:type dev))
-        name (last (clojure.string/split id sep))]
-    (swap! schematic assoc id
-           (if (:name dev)
-             dev
-             (assoc dev :name name)))))
+  (when (s/valid? :nyancad.mosaic.common/device dev)
+    (let [id (make-name (:type dev))
+          name (last (clojure.string/split id sep))]
+      (swap! schematic assoc id
+             (if (:name dev)
+               dev
+               (assoc dev :name name))))))
 
 (defn transform-selected [tf]
   (let [f (comp transform-vec tf transform)]
@@ -750,16 +751,25 @@
              (into sel newsel)))
           (reset! selected sel))))))
 
-(defn cancel []
-  (let [uiv @ui]
-    (if (and (::staging uiv) (= (::tool uiv) ::wire))
-      (swap! ui assoc
-             ::dragging nil
-             ::staging nil)
-      (swap! ui assoc
-             ::dragging nil
-             ::tool ::cursor
-             ::staging nil))))
+(defn cancel
+  "Cancel current operation and optionally switch to a new tool.
+   0-arity: default behavior (keep wire tool if drawing wire, else cursor)
+   1-arity: switch to specified tool and clear staging"
+  ([]
+   (let [uiv @ui]
+     (if (and (::staging uiv) (= (::tool uiv) ::wire))
+       (swap! ui assoc
+              ::dragging nil
+              ::staging nil)
+       (swap! ui assoc
+              ::dragging nil
+              ::tool ::cursor
+              ::staging nil))))
+  ([new-tool]
+   (swap! ui assoc
+          ::dragging nil
+          ::tool new-tool
+          ::staging nil)))
 
 (defonce probechan (js/BroadcastChannel. "probe"))
 (defn probe-element [k]
@@ -1001,7 +1011,8 @@
       [[cm/wire] ::wire "Wire [w]"]
       [[cm/eraser] ::eraser "Eraser [e]"]
       [[cm/move] ::pan "Pan [space]"]
-      [[cm/probe] ::probe "Probe nodes in a connected simulator"]]]
+      [[cm/probe] ::probe "Probe nodes in a connected simulator"]]
+     nil nil cancel]
     [:span.sep]
     [:a {:title "Rotate selected clockwise [s]"
          :on-click (fn [_] (transform-selected #(.rotate % 90)))}
@@ -1227,15 +1238,19 @@
   (let [{sel ::selected
          dr ::dragging
          v ::staging
+         tool ::tool
          {x :x y :y} ::delta
          [sx sy] ::mouse-start} @ui
         vx (* grid-size (js/Math.round x))
         vy (* grid-size (js/Math.round y))]
     (cond
-      v [:g.toolstaging
-         (get-model ::bg v ::stagingbg v)
-         (get-model ::sym v ::stagingsym v)
-         (get-model ::conn v ::stagingconn v)]
+      ;; Only render staging when actively placing a device or drawing a wire
+      (and v (or (= tool ::device)
+                 (= (:type v) "wire")))
+      [:g.toolstaging
+       (get-model ::bg v ::stagingbg v)
+       (get-model ::sym v ::stagingsym v)
+       (get-model ::conn v ::stagingconn v)]
       (= dr ::box) [:rect.select
                     {:x (* (min sx (+ sx x)) grid-size)
                      :y (* (min sy (+ sy y)) grid-size)
@@ -1309,10 +1324,8 @@
                 #{:shift :t} #(add-label (::mouse @ui))
                 #{:backspace} delete-selected
                 #{:delete} delete-selected
-                #{:w} (fn [_] ; right away start a wire or not?
-                        ;; (add-wire (::mouse @ui) (nil? (::dragging @ui)))
-                        (swap! ui assoc ::tool ::wire))
-                #{:e} #(swap! ui assoc ::tool ::eraser ::staging nil)
+                #{:w} #(cancel ::wire)
+                #{:e} #(cancel ::eraser)
                 #{:escape} cancel
                 #{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool (::prev-tool %))))
                 #{:s}        (fn [_] (transform-selected #(.rotate % 90)))
