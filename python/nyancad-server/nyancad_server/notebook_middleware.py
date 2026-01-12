@@ -22,8 +22,8 @@ from marimo._config.manager import get_default_config_manager
 from marimo._server.file_router import AppFileRouter
 from marimo._server.lsp import NoopLspServer
 from marimo._server.main import create_starlette_app
-from marimo._server.model import SessionMode
-from marimo._server.sessions import SessionManager
+from marimo._session.model import SessionMode
+from marimo._server.session_manager import SessionManager
 from marimo._server.tokens import AuthToken
 from marimo._utils.marimo_path import MarimoPath
 import marimo._server.api.lifespans as lifespans
@@ -185,7 +185,6 @@ class UserNotebookMiddleware:
         session_manager = SessionManager(
             file_router=file_router,
             mode=SessionMode.EDIT,
-            development_mode=False,
             quiet=True,
             include_code=True,
             ttl_seconds=None,
@@ -215,6 +214,7 @@ class UserNotebookMiddleware:
         marimo_app.state.session_manager = session_manager
         marimo_app.state.config_manager = config_manager
         marimo_app.state.base_url = base_url
+        marimo_app.state.quiet = True
         marimo_app.state.headless = True
         marimo_app.state.watch = False
         marimo_app.state.enable_auth = False

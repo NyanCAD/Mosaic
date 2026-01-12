@@ -35,9 +35,9 @@ from marimo._config.manager import get_default_config_manager
 from marimo._server.file_router import AppFileRouter
 from marimo._server.lsp import NoopLspServer
 from marimo._server.main import create_starlette_app
-from marimo._server.model import SessionMode
+from marimo._session.model import SessionMode
 from marimo._server.registry import LIFESPAN_REGISTRY
-from marimo._server.sessions import SessionManager
+from marimo._server.session_manager import SessionManager
 from marimo._server.tokens import AuthToken
 from marimo._server.utils import initialize_asyncio, initialize_fd_limit
 from marimo._server.uvicorn_utils import initialize_signals
@@ -260,7 +260,6 @@ def create_app(mode: DeploymentMode = DeploymentMode.LOCAL, host: str = "localho
         session_manager = SessionManager(
             file_router=file_router,
             mode=SessionMode.EDIT,
-            development_mode=False,
             quiet=True,
             include_code=True,
             ttl_seconds=None,
@@ -289,6 +288,7 @@ def create_app(mode: DeploymentMode = DeploymentMode.LOCAL, host: str = "localho
         marimo_app.state.session_manager = session_manager
         marimo_app.state.config_manager = config_manager
         marimo_app.state.base_url = ""
+        marimo_app.state.quiet = True
         marimo_app.state.headless = True
         marimo_app.state.watch = False
         marimo_app.state.enable_auth = False
@@ -339,6 +339,7 @@ def create_app(mode: DeploymentMode = DeploymentMode.LOCAL, host: str = "localho
     app.state.session_manager = session_manager
     app.state.config_manager = config_manager
     app.state.remote_url = None
+    app.state.quiet = True
 
     # Get the static files directory via symlinked resources
     with resources.path("nyancad_server", "public") as public_path:
