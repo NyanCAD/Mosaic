@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nyancad-server"
-version = "0.12.6"
+version = "0.12.7"
 description = "NyanCAD server package with marimo integration"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -48,7 +48,7 @@ include = ["nyancad_server*"]
 nyancad_server = ["public/**/*", "notebook.py"]
 
 [tool.bumpversion]
-current_version = "0.12.6"
+current_version = "0.12.7"
 commit = true
 tag = false
 allow_dirty = true
