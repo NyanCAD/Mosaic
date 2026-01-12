@@ -62,6 +62,7 @@
                  (println "Schematic updated, syncing to anywidget model")
                  (watch-subcircuits)
                  (.set model "schematic_data" (clj->js new-state))
+                 (.set model "name" group)
                  (.save_changes model)))
 
     ;; Watch for simulation data changes from Python side
