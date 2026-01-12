@@ -575,6 +575,7 @@
       [[pastei] "Ctrl+V" "Paste"]
       [[library] "" "Library Manager"]
       [[save] "" "Save Snapshot"]
+      [[external-link] "" "Pop Out Notebook"]
       [[help] "" "Keyboard Shortcuts"]
       [[login] "" "Account"]]]]
 
