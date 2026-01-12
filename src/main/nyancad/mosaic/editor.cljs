@@ -62,7 +62,8 @@
                      ::tool ::cursor
                      ::selected #{}
                      ::mouse [0 0]
-                     ::mouse-start [0 0]}))
+                     ::mouse-start [0 0]
+                     ::notebook-popped-out false}))
 
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme #{"tetris" "eyesore"})
@@ -70,7 +71,8 @@
 (s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view ::box}))
 (s/def ::staging (s/nilable :nyancad.mosaic.common/device))
-(s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected]
+(s/def ::notebook-popped-out boolean?)
+(s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-popped-out]
                     :opt [::dragging ::staging]))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
@@ -81,6 +83,7 @@
 (defonce selected (r/cursor ui [::selected]))
 (defonce delta (r/cursor ui [::delta]))
 (defonce staging (r/cursor ui [::staging]))
+(defonce notebook-popped-out (r/cursor ui [::notebook-popped-out]))
 
 
 (defonce undotree (cm/newundotree))
@@ -1062,16 +1065,21 @@
          :target "libman"
          :title "Open library manager"}
      [cm/library]]
-    [:a {:href "docs"
-         :target "docs"
-         :title "Open documentation"}
-     [cm/docs]]
     [:a {:title "Keyboard shortcuts & help"
          :on-click cm/show-onboarding!}
      [cm/help]]
     [:a {:title "Save Snapshot"
          :on-click snapshot}
      [cm/save]]
+    [:a {:title "Pop out notebook"
+         :on-click (fn []
+                     (let [nb-url (str js/window.location.origin "/" (notebook-url))
+                           popup (.open js/window nb-url "mosaic_notebook" "width=1200,height=800")]
+                       (when popup
+                         (swap! ui assoc ::notebook-popped-out true)
+                         (set! (.-onbeforeunload popup)
+                               #(swap! ui assoc ::notebook-popped-out false)))))}
+     [cm/external-link]]
     [:a {:href "/auth/"
          :title "Login / Account"}
      [cm/login]]]])
@@ -1288,10 +1296,27 @@
       [schematic-elements @schematic]
       [schematic-dots]
       [tool-elements]]]
-     [:div#mosaic_notebook_wrapper
-      [:details#mosaic_notebook_toggle
-       [:summary "Notebook"]]
-      [:iframe#mosaic_notebook {:src (notebook-url)}]]]
+     (when-not @notebook-popped-out
+       [:div#mosaic_notebook_wrapper
+        [:div.resize-handle
+         {:on-mouse-down
+          (fn [e]
+            (.preventDefault e)
+            (let [wrapper (js/document.getElementById "mosaic_notebook_wrapper")
+                  start-x (.-clientX e)
+                  start-width (.-offsetWidth wrapper)
+                  on-move (fn on-move [e]
+                            (let [delta (- start-x (.-clientX e))
+                                  new-width (+ start-width delta)]
+                              (set! (.. wrapper -style -width) (str new-width "px"))))
+                  on-up (fn on-up []
+                          (.remove (.-classList wrapper) "resizing")
+                          (.removeEventListener js/document "mousemove" on-move)
+                          (.removeEventListener js/document "mouseup" on-up))]
+              (.add (.-classList wrapper) "resizing")
+              (.addEventListener js/document "mousemove" on-move)
+              (.addEventListener js/document "mouseup" on-up)))}]
+        [:iframe#mosaic_notebook {:src (notebook-url)}]])]
    [cm/contextmenu]
    [cm/modal]])
 

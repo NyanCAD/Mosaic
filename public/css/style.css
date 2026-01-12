@@ -958,91 +958,37 @@ rect.select {
     background: white;
     border-left: 1px solid #ddd;
     z-index: 2;
-    transition: width 0.3s ease;
-}
-
-/* Collapsed state */
-#mosaic_notebook_wrapper:has(#mosaic_notebook_toggle:not([open])) {
-    width: 0;
-}
-
-/* Expanded state */
-#mosaic_notebook_wrapper:has(#mosaic_notebook_toggle[open]) {
-    width: 50%;
-}
-
-#mosaic_notebook_toggle {
-    flex-shrink: 0;
-}
-
-#mosaic_notebook_toggle summary {
-    cursor: pointer;
-    background-color: white;
-    box-shadow: 0px 0px 8px #0000001A;
-    font-weight: 500;
-    color: #222222A5;
-    user-select: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.3s ease;
-    list-style-type: none;
-}
-
-/* Collapsed state - vertical text */
-#mosaic_notebook_toggle:not([open]) summary {
-    writing-mode: vertical-lr;
-    text-orientation: mixed;
-    padding: 1em 0.5em;
-    margin-left: -2em;
-    border-bottom-left-radius: 5px;
-}
-
-/* Expanded state - horizontal text */
-#mosaic_notebook_toggle[open] summary {
-    writing-mode: horizontal-tb;
-    padding: 0.5em 1em;
-}
-
-#mosaic_notebook_toggle summary:hover {
-    background-color: lightgray;
-}
-
-#mosaic_notebook_toggle summary::after {
-    content: "";
-    border: solid black;
-    border-width: 0 1px 1px 0;
-    padding: 3px;
-    transform: rotate(-45deg);
-    float: right;
+    width: min(800px, 45%);
+    min-width: 300px;
+    max-width: 80%;
     position: relative;
-    transition: transform 100ms;
 }
 
-/* Collapsed state */
-#mosaic_notebook_toggle:not([open]) summary::after {
-    top: 6px;
-    left: -2px;
-}
-
-/* Expanded state */
-#mosaic_notebook_toggle[open] summary::after {
-    top: -2px;
-    left: 6px;
-    transform: rotate(45deg);
-}
-
-/* Hide iframe when details is closed */
-#mosaic_notebook_toggle:not([open]) + #mosaic_notebook {
-    display: none;
-}
-
-/* Show iframe when details is open */
-#mosaic_notebook_toggle[open] + #mosaic_notebook {
+#mosaic_notebook {
     flex: 1;
     border: none;
     width: 100%;
+    height: 100%;
     min-height: 0;
+}
+
+#mosaic_notebook_wrapper .resize-handle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 6px;
+    height: 100%;
+    cursor: ew-resize;
+    background: transparent;
+    z-index: 10;
+}
+
+#mosaic_notebook_wrapper .resize-handle:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+#mosaic_notebook_wrapper.resizing #mosaic_notebook {
+    pointer-events: none;
 }
 
 /* Authentication page */
@@ -1373,31 +1319,15 @@ rect.select {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 10px;
     border-top: 1px solid #e7e7e7;
-    padding-top: 20px;
+    padding: 20px 5px 5px 5px;
     margin-top: 10px;
 }
 
-.mosaic-app .modal .onboarding .more-info {
-    color: #0E1A32;
-    text-decoration: none;
-    font-size: 14px;
-}
 
-.mosaic-app .modal .onboarding .more-info:hover {
-    text-decoration: underline;
-}
-
-.mosaic-app .modal .onboarding .primary {
-    background: #0E1A32;
-    color: white;
-    border: none;
-    padding: 10px 24px;
-    border-radius: 5px;
-    font-size: 14px;
-    cursor: pointer;
-}
-
-.mosaic-app .modal .onboarding .primary:hover {
-    background: #1a2a4a;
+.mosaic-app .modal .onboarding .actions button:has(svg) {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
 }

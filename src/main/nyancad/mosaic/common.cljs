@@ -273,6 +273,7 @@
 (def namei (r/adapt-react-class icons/Fonts))
 (def edit (r/adapt-react-class icons/PencilSquare))
 (def help (r/adapt-react-class icons/QuestionCircle))
+(def external-link (r/adapt-react-class icons/BoxArrowUpRight))
 
 (defn radiobuttons
 ([cursor m] (radiobuttons cursor m nil nil nil))
@@ -573,15 +574,16 @@
       [[cuti] "Ctrl+X" "Cut"]
       [[pastei] "Ctrl+V" "Paste"]
       [[library] "" "Library Manager"]
-      [[docs] "" "Documentation"]
       [[save] "" "Save Snapshot"]
       [[help] "" "Keyboard Shortcuts"]
       [[login] "" "Account"]]]]
 
    [:div.actions
-    [:a.more-info {:href "docs"
-                   :target "docs"}
-     "View all shortcuts"]
+    [:button
+     {:on-click (fn []
+                  (.open js/window "docs" "docs"))}
+     [docs]
+     [:span "Documentation"]]
     [:button.primary
      {:on-click (fn []
                   (set-onboarding-shown!)

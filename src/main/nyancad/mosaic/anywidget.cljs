@@ -55,6 +55,7 @@
     (.set model "schematic_data" (clj->js @schematic-cache))
     (.set model "name" group)
     (.save_changes model)
+    (println "Initialized anywidget model with schematic data for group:" group)
 
     ;; Watch for changes to schematic atom and update model
     (add-watch schematic-cache ::anywidget-sync
@@ -63,7 +64,8 @@
                  (watch-subcircuits)
                  (.set model "schematic_data" (clj->js new-state))
                  (.set model "name" group)
-                 (.save_changes model)))
+                 (.save_changes model)
+                 (println "Schematic data synced to anywidget model for group:" group)))
 
     ;; Watch for simulation data changes from Python side
     (.on model "change:simulation_data"
