@@ -6,7 +6,7 @@
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
             [shadow.resource :as rc]
-            [nyancad.hipflask :refer [pouch-atom pouchdb update-keys sep watch-changes]]
+            [nyancad.hipflask :refer [pouch-atom pouchdb update-keys sep watch-changes done?]]
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go go-loop <!]]
             clojure.edn
@@ -87,16 +87,25 @@
 
 
 (defonce undotree (cm/newundotree))
-(add-watch schematic ::undo #(cm/newdo undotree %4))
+
+(declare build-wire-split-index split-wire location-index)
+
+(defn post-action!
+  "Record undo checkpoint and split wires after a user action completes.
+   Returns a channel that completes when done."
+  []
+  (go
+    (<! (done? schematic))
+    (cm/newdo undotree @schematic)
+    (doseq [[w coords] (build-wire-split-index @location-index)]
+      (<! (split-wire w coords)))))
 
 (defn restore [state]
   (let [del (reduce disj (set (keys @schematic)) (keys state))
         norev (reduce #(update %1 %2 dissoc :_rev) state (keys state))]
     (go
-      (remove-watch schematic ::undo)
       (<! (swap! schematic into norev)) ; update
-      (<! (swap! schematic #(apply dissoc %1 %2) del)) ; delete
-      (add-watch schematic ::undo #(cm/newdo undotree %4)))))
+      (<! (swap! schematic #(apply dissoc %1 %2) del)))))
 
 (defn undo-schematic []
   (when-let [st (cm/undo undotree)]
@@ -552,15 +561,7 @@
                   schem))]
     (swap! schematic (partial merge-with merge) wires)))
 
-(defn split-wires []
-  (remove-watch schematic ::split) ; don't recursively split
-  (remove-watch schematic ::undo) ; don't add splitting to undo tree
-  (go (doseq [[w coords] (build-wire-split-index @location-index)]
-        (<! (split-wire w coords)))
-      (add-watch schematic ::undo #(cm/newdo undotree %4))
-      (add-watch schematic ::split split-wires)))
 
-(add-watch schematic ::split split-wires)
 
 
 (defn viewbox-coord [e]
@@ -615,20 +616,23 @@
       (swap! schematic assoc id
              (if (:name dev)
                dev
-               (assoc dev :name name))))))
+               (assoc dev :name name)))
+      (post-action!))))
 
 (defn transform-selected [tf]
   (let [f (comp transform-vec tf transform)]
     (if @staging
       (swap! staging
              update :transform f)
-      (swap! schematic update-keys @selected
-             update :transform f))))
+      (do (swap! schematic update-keys @selected
+                 update :transform f)
+          (post-action!)))))
 
 (defn delete-selected []
   (let [selected (::selected @ui)]
     (swap! ui assoc ::selected #{})
-    (swap! schematic #(apply dissoc %1 %2) selected)))
+    (swap! schematic #(apply dissoc %1 %2) selected)
+    (post-action!)))
 
 (defn drag-view [e]
   (swap! ui update ::zoom
@@ -869,7 +873,8 @@
                     :x (js/Math.round (+ x dx))
                     :y (js/Math.round (+ y dy))))]
     (swap! ui endfn)
-    (swap! schematic update-keys selected round-coords)))
+    (swap! schematic update-keys selected round-coords)
+    (post-action!)))
 
 (defn drag-end-box []
   (let [[x y] (::mouse-start @ui)
@@ -903,6 +908,7 @@
            (= (.-button e) 0)) (commit-staged @staging)
       (= (::dragging @ui) ::box) (drag-end-box)
       (= (::dragging @ui) ::wire) nil
+      (= (::tool @ui) ::eraser) (post-action!)
       :else (end-ui bg? selected dx dy))))
 
 
@@ -952,12 +958,12 @@
         [:input {:id "name"
                  :type "text"
                  :default-value @name
-                 :on-change (debounce #(reset! name (.. % -target -value)))}]
+                 :on-change (debounce #(do (reset! name (.. % -target -value)) (post-action!)))}]
         [:label {:for "model" :title "Device model"} "model"]
         [:select {:id "model"
                   :type "text"
                   :default-value @model
-                  :on-change #(reset! model (.. % -target -value))}
+                  :on-change #(do (reset! model (.. % -target -value)) (post-action!))}
          [:option {:value ""} "Ideal"]
          (doall (for [[k v] @modeldb
                       :when (= (:type v "ckt") @device-type)]
@@ -974,11 +980,11 @@
                     [:input {:id prop-name
                              :type "text"
                              :default-value (get @props prop-name)
-                             :on-change (debounce #(swap! props assoc prop-name (.. % -target -value)))}]])))
+                             :on-change (debounce #(do (swap! props assoc prop-name (.. % -target -value)) (post-action!)))}]])))
         [:label {:for "template" :title "Template to display"} "Text"]
         [:textarea {:id "template"
                     :default-value (get-in @schematic [key :template] (::template (get models @device-type)))
-                    :on-change (debounce #(swap! schematic assoc-in [key :template] (.. % -target -value)))}]]])))
+                    :on-change (debounce #(do (swap! schematic assoc-in [key :template] (.. % -target -value)) (post-action!)))}]]])))
 
 (defn copy []
   (let [sel @selected
@@ -998,7 +1004,8 @@
     (swap! schematic into devmap)
     (swap! ui assoc
             ::dragging ::device
-            ::selected (set (keys devmap)))))
+            ::selected (set (keys devmap)))
+    (post-action!)))
 
 (defn notebook-url []
   (let [url-params (js/URLSearchParams. #js{:schem group})]
