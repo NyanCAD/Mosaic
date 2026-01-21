@@ -337,8 +337,7 @@
   (-> data
       pprint
       with-out-str
-      clojure.string/trim
-      (clojure.string/replace " " "\u00a0")))
+      clojure.string/trim))
 
 (defn format [s state]
   (-> s

@@ -939,7 +939,7 @@
          {:schematic @schematic
           :_attachments {"preview.svg" {:content_type "image/svg+xml"
                                         :data (b64encode (str
-                                                          "<?xml-stylesheet type=\"text/css\" href=\"https://nyancad.github.io/Mosaic/app/css/style.css\" ?>"
+                                                          "<?xml-stylesheet type=\"text/css\" href=\"https://nyancad.com/css/style.css\" ?>"
                                                           (.-outerHTML (js/document.querySelector ".mosaic-canvas"))))}}}))
 
 (defn deviceprops [key]
