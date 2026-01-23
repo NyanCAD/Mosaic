@@ -51,6 +51,7 @@
     "nmos" "M"
     "wire" "W"
     "port" "P"
+    "amp" "U"
     "X"))
 
 (defn make-name [base]
@@ -129,7 +130,7 @@
                     :class [(:type v) (:variant v) (when (contains? @selected k) :selected)]}]
         elements))
 
-(defn port [x y _ _]
+(defn port [x y]
   [:circle.port {:cx (+ x (/ grid-size 2))
                  :cy (+ y (/ grid-size 2))
                  :r (/ grid-size 10)}])
@@ -142,8 +143,8 @@
 
 (defn draw-pattern [size pattern prim k v]
   [apply device size k v
-   (for [[x y c] pattern]
-     ^{:key [x y]} [prim (* x grid-size) (* y grid-size) k v])])
+   (for [[x y _] pattern]
+     ^{:key [x y]} [prim (* x grid-size) (* y grid-size)])])
 
 
 (defn lines [arcs]
@@ -372,36 +373,186 @@
 (defn circuit-shape [k v]
   (let [model (:model v)
         ports (get-in @modeldb [(cm/model-key model) :ports])
-        size (if ports (cm/port-perimeter ports) [1 1])]
+        shape (when (= (:type v) "amp") :amp)
+        size (if ports (cm/port-perimeter ports shape) [1 1])]
     (draw-background size k v)))
 
 (defn circuit-conn [k v]
   (let [model (:model v)
         ports (get-in @modeldb [(cm/model-key model) :ports])
-        [width height] (if ports (cm/port-perimeter ports) [1 1])
-        pattern (if ports (apply concat (cm/port-locations ports)) [])]
-    (println ports pattern)
+        shape (when (= (:type v) "amp") :amp)
+        [width height] (if ports (cm/port-perimeter ports shape) [1 1])
+        pattern (if ports (apply concat (cm/port-locations ports shape)) [])]
     (draw-pattern (+ 2 (max width height)) pattern
                   port k v)))
 
 (defn ckt-url [model]
   (str "?" (.toString (js/URLSearchParams. #js{:schem model}))))
 
-(defn circuit-sym [k v]
+;; Helper: counter-rotation transform for text that should stay upright
+(defn counter-rotate [v x y]
+  (.toString (-> (js/DOMMatrix.)
+                 (.translate x y)
+                 (.multiply (.inverse (transform (:transform v))))
+                 (.translate (- x) (- y)))))
+
+;; Helper: render designator at screen-space top-right corner
+(defn circuit-designator [v size width height]
+  (let [half-size (/ size 2)
+        corners [[(- (+ 1 width) half-size) (- 1 half-size)]             ; top-right
+                 [(- 1 half-size) (- 1 half-size)]                       ; top-left
+                 [(- 1 half-size) (- (+ 1 height) half-size)]            ; bottom-left
+                 [(- (+ 1 width) half-size) (- (+ 1 height) half-size)]] ; bottom-right
+        mat (transform (:transform v))
+        rotated (map (fn [[x y]]
+                       (let [pt (.transformPoint mat (js/DOMPoint. x y))]
+                         [(.-x pt) (.-y pt)]))
+                     corners)
+        [dx dy] (apply max-key (fn [[x y]] (- x y)) rotated)
+        desig-offset-x (+ dx 0.1)
+        desig-offset-y (+ dy 0.25)]
+    (when-let [text (get v :template "{self.name}")]
+      [:text.identifier
+       {:transform (-> (:transform v) transform
+                       (.translate (* grid-size (/ size -2)) (* grid-size (/ size -2)))
+                       .inverse
+                       (.translate (* grid-size desig-offset-x) (* grid-size desig-offset-y))
+                       .toString)}
+       (schem-template v text)])))
+
+;; Helper: render port label with counter-rotation
+(defn port-label [v x y anchor baseline pname]
+  [:text.port-label
+   {:key (str pname)
+    :x x :y y
+    :text-anchor anchor
+    :dominant-baseline baseline
+    :transform (counter-rotate v x y)}
+   pname])
+
+(defn circuit-sym-box [k v]
   (let [model (:model v)
-        ports (get-in @modeldb [(cm/model-key model) :ports])
+        model-def (get @modeldb (cm/model-key model))
+        model-name (or (:name model-def) model)
+        ports (:ports model-def)
+        has-model? (and model (seq model) ports)
         [width height] (if ports (cm/port-perimeter ports) [1 1])
-        [top-locs bottom-locs left-locs right-locs] (cm/port-locations ports)]
-    [device (+ 2 (max width height)) k v
+        [top-locs bottom-locs left-locs right-locs] (cm/port-locations ports)
+        size (+ 2 (max width height))
+        ;; Box center in device-local coords (pixels)
+        cx (* grid-size (+ 1 (/ width 2)))
+        cy (* grid-size (+ 1 (/ height 2)))]
+    [device size k v
      [:<>
-      [lines (for [[x y _] top-locs] [[(+ x 0.5) (+ y 0.5)] [(+ x 0.5) (+ y 1)]])]
-      [lines (for [[x y _] bottom-locs] [[(+ x 0.5) (+ y 0)] [(+ x 0.5) (+ y 0.5)]])]
-      [lines (for [[x y _] right-locs] [[(+ x 0) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]
-      [lines (for [[x y _] left-locs] [[(+ x 1) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]
+      (circuit-designator v size width height)
+      ;; Port lines (only when model selected)
+      (when has-model?
+        [:<>
+         [lines (for [[x y _] top-locs] [[(+ x 0.5) (+ y 0.5)] [(+ x 0.5) (+ y 1)]])]
+         [lines (for [[x y _] bottom-locs] [[(+ x 0.5) (+ y 0)] [(+ x 0.5) (+ y 0.5)]])]
+         [lines (for [[x y _] right-locs] [[(+ x 0) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]
+         [lines (for [[x y _] left-locs] [[(+ x 1) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]])
+      ;; Port labels inside box
+      (when has-model?
+        [:<>
+         (for [[_ y pname] left-locs]
+           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" pname))
+         (for [[_ y pname] right-locs]
+           (port-label v (* (+ width 0.85) grid-size) (* (+ y 0.5) grid-size) "end" "middle" pname))
+         (for [[x _ pname] top-locs]
+           (port-label v (* (+ x 0.5) grid-size) (* 1.3 grid-size) "middle" "hanging" pname))
+         (for [[x _ pname] bottom-locs]
+           (port-label v (* (+ x 0.5) grid-size) (* (+ height 0.7) grid-size) "middle" "baseline" pname))])
+      ;; Box outline (add .placeholder class when no model)
       [:rect.outline
-       {:x grid-size :y grid-size
+       {:class (when-not has-model? "placeholder")
+        :x grid-size :y grid-size
         :width (* grid-size width)
-        :height (* grid-size height)}]]]))
+        :height (* grid-size height)}]
+      ;; Model name or "?"
+      [:text.model-name
+       {:x cx :y cy
+        :text-anchor "middle"
+        :dominant-baseline "middle"
+        :transform (counter-rotate v cx cy)}
+       (if has-model? model-name "?")]]]))
+
+(defn circuit-sym-amplifier [k v]
+  (let [model (:model v)
+        model-def (get @modeldb (cm/model-key model))
+        model-name (or (:name model-def) model)
+        ports (:ports model-def)
+        has-model? (and model (seq model) ports)
+        [width height] (if ports (cm/port-perimeter ports :amp) [1 1])
+        [top-locs bottom-locs left-locs right-locs] (cm/port-locations ports :amp)
+        size (+ 2 (max width height))
+        ;; Triangle vertices (pointing right)
+        tri-left 1
+        tri-right (+ 1 width)
+        tri-top 1
+        tri-bottom (+ 1 height)
+        tri-apex-y (+ 1 (/ height 2))
+        ;; Triangle centroid (offset left since triangle tapers right)
+        cx (* (+ tri-left (/ width 3)) grid-size)
+        cy (* tri-apex-y grid-size)]
+    [device size k v
+     [:<>
+      (circuit-designator v size width height)
+      ;; Triangle outline
+      [:polygon.outline
+       {:class (when-not has-model? "placeholder")
+        :points (str (* tri-left grid-size) "," (* tri-top grid-size) " "
+                     (* tri-left grid-size) "," (* tri-bottom grid-size) " "
+                     (* tri-right grid-size) "," (* tri-apex-y grid-size))}]
+      (when has-model?
+        [:<>
+         ;; Top ports - lines extend down to meet triangle's top edge
+         [lines (for [[x y _] top-locs
+                      :let [tri-y (+ tri-top (* (- (+ x 0.5) tri-left) (/ (- tri-apex-y tri-top) width)))]]
+                  [[(+ x 0.5) (+ y 0.5)] [(+ x 0.5) tri-y]])]
+         ;; Bottom ports - lines extend up to meet triangle's bottom edge
+         [lines (for [[x y _] bottom-locs
+                      :let [tri-y (+ tri-bottom (* (- (+ x 0.5) tri-left) (/ (- tri-apex-y tri-bottom) width)))]]
+                  [[(+ x 0.5) (+ y 0.5)] [(+ x 0.5) tri-y]])]
+         ;; Left ports - lines extend right to left edge
+         [lines (for [[x y _] left-locs]
+                  [[(+ x 0.5) (+ y 0.5)] [tri-left (+ y 0.5)]])]
+         ;; Right ports - lines extend left to meet triangle edge
+         [lines (for [[x y _] right-locs
+                      :let [port-dy (- (+ y 0.5) tri-apex-y)
+                            tri-x (if (< port-dy 0)
+                                    (+ tri-right (* port-dy (/ width (- tri-top tri-apex-y))))
+                                    (+ tri-right (* port-dy (/ width (- tri-bottom tri-apex-y)))))]]
+                  [[(+ x 0.5) (+ y 0.5)] [tri-x (+ y 0.5)]])]])
+      ;; Port labels inside triangle
+      (when has-model?
+        [:<>
+         (for [[_ y pname] left-locs]
+           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" pname))
+         (for [[_ y pname] right-locs]
+           (port-label v (* (+ width 0.6) grid-size) (* (+ y 0.5) grid-size) "end" "middle" pname))
+         ;; Top port labels - follow diagonal edge
+         (for [[x _ pname] top-locs
+               :let [px (+ x 0.5)
+                     edge-y (+ tri-top (* (- px tri-left) (/ (- tri-apex-y tri-top) width)))]]
+           (port-label v (* px grid-size) (* (+ edge-y 0.3) grid-size) "middle" "hanging" pname))
+         ;; Bottom port labels - follow diagonal edge
+         (for [[x _ pname] bottom-locs
+               :let [px (+ x 0.5)
+                     edge-y (+ tri-bottom (* (- px tri-left) (/ (- tri-apex-y tri-bottom) width)))]]
+           (port-label v (* px grid-size) (* (- edge-y 0.3) grid-size) "middle" "baseline" pname))])
+      ;; Model name or "?"
+      [:text.model-name
+       {:x cx :y cy
+        :text-anchor "middle"
+        :dominant-baseline "middle"
+        :transform (counter-rotate v cx cy)}
+       (if has-model? model-name "?")]]]))
+
+(defn circuit-sym [k v]
+  (case (:type v)
+    "amp" (circuit-sym-amplifier k v)
+    (circuit-sym-box k v)))
 
 (def models {"pmos" {::bg cm/active-bg
                      ::conn mosfet-shape
@@ -469,12 +620,13 @@
                      ::conn []
                      ::sym text-sym
                      ::template "Operating Point:\n{res.op}"
-                     ::props []}})
+                     ::props []}
+})
 
 (defn rotate-shape [shape [a b c d e f] devx, devy]
   (let [size (cm/pattern-size shape)
         mid (- (/ size 2) 0.5)]
-    (map (fn [[px py p]]
+    (map (fn [[px py _]]
            (let [x (- px mid)
                  y (- py mid)
                  nx (+ (* a x) (* c y) e)
@@ -502,11 +654,12 @@
                      [(inc x) (inc y) "%"])
                    transform x y)]))
 
-(defn circuit-locations [{:keys [:_id :x :y :model :transform]}]
+(defn circuit-locations [{:keys [:_id :x :y :model :transform :type]}]
   (let [mod (get @modeldb (cm/model-key model))
         ports (:ports mod)
-        conn (if ports (apply concat (cm/port-locations ports)) [])
-        [w h] (if ports (cm/port-perimeter ports) [1 1])]
+        shape (when (= type "amp") :amp)
+        conn (if ports (apply concat (cm/port-locations ports shape)) [])
+        [w h] (if ports (cm/port-perimeter ports shape) [1 1])]
     [(rotate-shape conn transform x y)
      (rotate-shape (for [x (range w) y (range h)]
                      [(inc x) (inc y) "%"])
@@ -1097,7 +1250,7 @@
     "active"))
 
 
-(defn variant-tray [& variants]
+(defn variant-tray [& _variants]
   (let [active (r/atom 0)
         timeout (r/atom nil)]
     (fn [& variants]
@@ -1207,10 +1360,15 @@
               :class (device-active "pnp")
               :on-mouse-up #(add-device "pnp" (viewbox-coord %))}
      [cm/device-icon "pnp"]]]
-   [:button {:title "Add subcircuit [x]"
-             :class (device-active "ckt")
-             :on-mouse-up #(add-device "ckt" (viewbox-coord %))}
-    [cm/chip]]])
+   [variant-tray
+    [:button {:title "Add subcircuit [x]"
+              :class (device-active "ckt")
+              :on-mouse-up #(add-device "ckt" (viewbox-coord %))}
+     [cm/chip]]
+    [:button {:title "Add amplifier [a]"
+              :class (device-active "amp")
+              :on-mouse-up #(add-device "amp" (viewbox-coord %))}
+     [cm/amp-icon]]]])
 
 (defn schematic-elements [schem]
   [:<>
@@ -1338,6 +1496,7 @@
                 #{:b} #(add-device "npn" (::mouse @ui))
                 #{:shift :b} #(add-device "pnp" (::mouse @ui))
                 #{:x} #(add-device "ckt" (::mouse @ui))
+                #{:a} #(add-device "amp" (::mouse @ui))
                 #{:p} #(add-device "port" (::mouse @ui))
                 #{:g} #(add-gnd (::mouse @ui))
                 #{:shift :p} #(add-supply (::mouse @ui))

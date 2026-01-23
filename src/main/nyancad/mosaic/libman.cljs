@@ -339,7 +339,7 @@
         #(clojure.string/join " " (or (:category %) []))
         #(swap! %1 assoc :category (clojure.string/split %2 #"[, ]+" -1))]
 
-       (when (= (:type @mod "ckt") "ckt")
+       (when (#{"ckt" "amp"} (:type @mod "ckt"))
          [:<>
           [:h4 "Port Configuration"]
           (when (not (:templates @mod))

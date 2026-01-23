@@ -853,6 +853,7 @@ rect.select {
 .tetris g.device polyline,
 .tetris g.device circle.outline,
 .tetris g.device rect.outline,
+.tetris g.device polygon.outline,
 .tetris g.device path {
   stroke: black;
   stroke-width: 2px;
@@ -939,6 +940,57 @@ rect.select {
   /* stroke-width: 1px; */
   fill: #00cc66;
   vector-effect: non-scaling-stroke;
+}
+
+/* Subcircuit (ckt) and amplifier (amp) styling - tetris theme */
+.tetris g.device.ckt rect.tetris,
+.tetris g.device.amp rect.tetris {
+  fill: rgb(243, 238, 216);
+  stroke: rgb(243, 238, 216);
+}
+
+.tetris g.device.ckt .outline.placeholder,
+.tetris g.device.amp .outline.placeholder {
+  stroke-dasharray: 5, 5;
+  stroke: #888;
+}
+
+.tetris g.device.ckt text.model-name,
+.tetris g.device.amp text.model-name {
+  font-size: 0.5em;
+  fill: #444;
+}
+
+.tetris g.device.ckt text.port-label,
+.tetris g.device.amp text.port-label {
+  font-size: 0.35em;
+  fill: #666;
+}
+
+.tetris g.device.amp polygon.outline {
+  fill: rgb(243, 238, 216);
+}
+
+/* Subcircuit (ckt) and amplifier (amp) styling - eyesore theme */
+.eyesore g.device.ckt .outline.placeholder,
+.eyesore g.device.amp .outline.placeholder {
+  stroke-dasharray: 5, 5;
+}
+
+.eyesore g.device.ckt text.model-name,
+.eyesore g.device.amp text.model-name {
+  font-size: 0.5em;
+  fill: #00cc66;
+}
+
+.eyesore g.device.ckt text.port-label,
+.eyesore g.device.amp text.port-label {
+  font-size: 0.35em;
+  fill: #00cc66;
+}
+
+.eyesore g.device.amp polygon.outline {
+  fill: none;
 }
 
 .eyesore line.wire {

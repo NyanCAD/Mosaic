@@ -127,7 +127,7 @@
 
 ; Device type specs
 (def device-types #{"pmos" "nmos" "npn" "pnp" "resistor" "capacitor"
-                    "inductor" "vsource" "isource" "diode" "ckt"})
+                    "inductor" "vsource" "isource" "diode" "ckt" "amp"})
 
 (def schematic-only-types #{"wire" "port" "text"})
 
@@ -222,22 +222,73 @@
       size
       1)))
 
-(defn port-perimeter [ports]
-  (let [height (max 1 (count (:left ports)) (count (:right ports)))
-        width (max 1 (count (:top ports)) (count (:bottom ports)))]
-    [width height]))
+(defn port-perimeter
+  "Calculate device perimeter [width height] based on ports.
+   Optional shape parameter: :amp constrains aspect ratio."
+  ([ports] (port-perimeter ports nil))
+  ([ports shape]
+   (let [left-n (count (:left ports))
+         right-n (count (:right ports))
+         top-n (count (:top ports))
+         bottom-n (count (:bottom ports))
+         raw-height (max 1 left-n right-n)
+         raw-width (max 1 top-n bottom-n)
+         ;; Widen to odd if parities differ on opposite sides
+         height (if (and (not= (odd? left-n) (odd? right-n))
+                         (even? raw-height))
+                  (inc raw-height)
+                  raw-height)
+         base-width (if (and (not= (odd? top-n) (odd? bottom-n))
+                             (even? raw-width))
+                      (inc raw-width)
+                      raw-width)
+         ;; For amp: ensure minimum width proportional to height
+         width (if (= shape :amp)
+                 (max base-width (int (Math/ceil (/ height 2))))
+                 base-width)]
+     [width height])))
 
-(defn port-locations [ports]
-  (let [[width height] (port-perimeter ports)
-        top (:top ports)
-        bottom (:bottom ports)
-        left (:left ports)
-        right (:right ports)
-        top-locs (map-indexed (fn [i n] [(inc i) 0 n]) top)
-        bottom-locs (map-indexed (fn [i n] [(inc i) (inc height) n]) bottom)
-        left-locs (map-indexed (fn [i n] [0 (inc i) n]) left)
-        right-locs (map-indexed (fn [i n] [(inc width) (inc i) n]) right)]
-    [top-locs bottom-locs left-locs right-locs]))
+(defn spread-ports
+  "Spread n ports in size slots. Gap in middle if n < size."
+  [n size]
+  (cond
+    (= n size) (vec (range 1 (inc n)))
+    (= n 0) []
+    (< n size)
+    (let [mid (quot (inc size) 2)
+          half (quot n 2)
+          first-half (range 1 (inc half))
+          second-half (range (- size half -1) (inc size))]
+      (vec (if (odd? n)
+             (concat first-half [mid] second-half)
+             (concat first-half second-half))))
+    :else (vec (range 1 (inc n)))))
+
+(defn port-locations
+  "Calculate port locations as [top-locs bottom-locs left-locs right-locs].
+   Optional shape parameter: :amp left-aligns top/bottom ports."
+  ([ports] (port-locations ports nil))
+  ([ports shape]
+   (let [[width height] (port-perimeter ports shape)
+         left (or (:left ports) [])
+         right (or (:right ports) [])
+         top (or (:top ports) [])
+         bottom (or (:bottom ports) [])
+         ;; Spread ports with gap in middle when fewer than dimension
+         left-ys (spread-ports (count left) height)
+         right-ys (spread-ports (count right) height)
+         ;; For amp: left-align top/bottom (triangle narrows to right)
+         top-xs (if (= shape :amp)
+                  (vec (range 1 (inc (count top))))
+                  (spread-ports (count top) width))
+         bottom-xs (if (= shape :amp)
+                     (vec (range 1 (inc (count bottom))))
+                     (spread-ports (count bottom) width))
+         left-locs (map-indexed (fn [i n] [0 (nth left-ys i) n]) left)
+         right-locs (map-indexed (fn [i n] [(inc width) (nth right-ys i) n]) right)
+         top-locs (map-indexed (fn [i n] [(nth top-xs i) 0 n]) top)
+         bottom-locs (map-indexed (fn [i n] [(nth bottom-xs i) (inc height) n]) bottom)]
+     [top-locs bottom-locs left-locs right-locs])))
 
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
@@ -274,6 +325,7 @@
 (def edit (r/adapt-react-class icons/PencilSquare))
 (def help (r/adapt-react-class icons/QuestionCircle))
 (def external-link (r/adapt-react-class icons/BoxArrowUpRight))
+(def amp-icon (r/adapt-react-class icons/CaretRight))
 
 (defn radiobuttons
 ([cursor m] (radiobuttons cursor m nil nil nil))
