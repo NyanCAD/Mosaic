@@ -36,11 +36,11 @@
 ; computed seltype from last element of selcat only if it's a device type
 (defonce seltype (r/track #(cm/device-types (peek @selcat))))
 
-(defn get-preview 
+(defn get-preview
   "Watch function that loads preview for circuit models"
   [_ _ _ new-model]
   (if new-model
-    (go 
+    (go
       (let [schematic-id (cm/bare-id new-model)
             snapshot-group (str schematic-id "$snapshots")
             docs (<p! (alldocs db #js{:include_docs true
@@ -56,7 +56,7 @@
           (reset! preview-url nil))))
     (reset! preview-url nil)))
 
-; Watch selmodel and load preview asynchronously  
+; Watch selmodel and load preview asynchronously
 (add-watch selmodel ::preview-loader get-preview)
 
 (defn build-model-selector
@@ -82,11 +82,11 @@
                       ; Use Mango query for category searches (with or without filter)
                       (seq selected-category)
                       (<! (get-mango-group remotedb (build-model-selector selected-category filter-text) 10))
-                      
+
                       ; Use name search view when no categories (filter-only)
                       (seq filter-text)
                       (<! (get-view-group remotedb "models/name_search" (clojure.string/lower-case filter-text) 10))
-                      
+
                       ; No search criteria - get 10 arbitrary models
                       :else
                       (<! (get-group remotedb "models" 10)))]
@@ -98,7 +98,7 @@
         (reset! remote-search-loading false)))))
 
 ; Watch filter-text and selcat for remote searches
-(add-watch filter-text ::remote-search 
+(add-watch filter-text ::remote-search
            (fn [_ _ _ new-filter]
              (search-remote-models new-filter @selcat)))
 
@@ -128,10 +128,10 @@
     (.on replication "error" #(js/console.error "Replication error:" %))))
 
 (defn edit-url [mod]
-    (doto (js/URL. ".." js/window.location)
-      (.. -searchParams (append "schem" (cm/bare-id mod)))))
+  (doto (js/URL. ".." js/window.location)
+    (.. -searchParams (append "schem" (cm/bare-id mod)))))
 
-(defn transform-direction 
+(defn transform-direction
   "Determine cardinal direction from transformation matrix with initial rotation offset.
   Returns one of: :left, :right, :top, :bottom based on the final orientation."
   [{:keys [transform]}]
@@ -148,7 +148,6 @@
       (if (< x 0) :right :left)
       (if (< y 0) :bottom :top))))
 
-
 (defn import-ports
   "Import port definitions from the selected model's schematic using get-group"
   [model-id mod]
@@ -158,7 +157,7 @@
                    (filter #(= (:type %) "port"))
                    (remove #(= (:variant %) "text"))
                    (map (juxt transform-direction :name)))]
-      (swap! mod update :ports 
+      (swap! mod update :ports
              #(transduce port-xf
                          (fn [acc [side name]] (update acc side conj name))
                          {:top [] :bottom [] :left [] :right []}
@@ -183,7 +182,6 @@
             [:button {:type "button" :on-click #(reset! cm/modal-content nil)} "Cancel"]
             [:input {:type "submit" :value "Create"}]]]))
 
-
 (defn model-context-menu [e db model-id]
   (.preventDefault e)
   (let [model (get @db model-id)]
@@ -193,73 +191,27 @@
                             [:li {:on-click #(js/window.open (edit-url model-id), model-id)} "edit"])
                           [:li {:on-click #(swap! db dissoc model-id)} "delete"]])))
 
-(defn vec-startswith [v prefix]
-  (= (subvec v 0 (min (count v) (count prefix))) prefix))
-
-(defn build-category-type-index 
-  "Build a hierarchical index of categories -> types from flattened model documents"
-  [models]
-  (reduce (fn [index [_id model]]
-            (let [category (or (:category model) [])
-                  type (:type model "ckt")]
-              (assoc-in index (conj category type) #{})))
-          {} models))
-
-(defn categories [base trie]
-  [:<>
-   (doall (for [[cat subtrie] trie
-                :let [path (conj base cat)]]
-            [:details.tree {:key path
-                            :class path
-                            :open (vec-startswith @selcat path)
-                            :on-toggle #(do
-                                          (.stopPropagation %)
-                                          (if (.. % -target -open)
-                                            (reset! selcat path)
-                                            (when (vec-startswith @selcat path)
-                                              (reset! selcat (pop path)))))}
-            [:summary cat]
-             (when (seq subtrie)
-               [:div.detailbody
-                [categories path subtrie]])]))])
-
 (defn database-selector []
   [:div.cellsel
    (if (seq @modeldb)
-     [categories [] (build-category-type-index @modeldb)]
+     [cm/category-tree selcat [] (cm/build-category-type-index @modeldb)]
      [:div.empty "There aren't any models yet"])])
 
-
-(defn model-list-selector 
+(defn model-list-selector
   "Show list of individual models for the selected category/type path"
   [db]
-  (let [filtered-models (filter (fn [[model-id model]]
-                                  (let [model-path (conj (or (:category model) []) (:type model "ckt"))
-                                        model-name (get model :name model-id)
-                                        filter-match (clojure.string/includes?
-                                                      (clojure.string/lower-case model-name)
-                                                      (clojure.string/lower-case @filter-text))]
-                                    (and (vec-startswith model-path @selcat) filter-match)))
-                                @db)]
+  (let [filtered-models (cm/filter-models @db @selcat @filter-text)]
     [:div.schematics
      ; Installed models section
      [:div.installed-section
       [:h4.section-header "Installed"]
-      (if (seq filtered-models)
-        [cm/radiobuttons selmodel
-         (doall (for [[model-id model] filtered-models
-                      :let [schem? (not (:templates model))
-                            icon (if schem? cm/schemmodel cm/codemodel)]]
-                  ; label, key, title
-                  [[:span [icon] " " (get model :name model-id)]
-                   model-id (get model :name model-id)]))
-         (fn [model-id]
-           (when (not (get-in @db [model-id :templates]))
-             #(js/window.open (edit-url model-id))))
-         (fn [model-id]
-           #(model-context-menu % db model-id))]
-        [:div.empty "No installed models found"])]
-     
+      [cm/model-list selmodel filtered-models
+       (fn [model-id]
+         (when (not (get-in @db [model-id :templates]))
+           #(js/window.open (edit-url model-id))))
+       (fn [model-id]
+         #(model-context-menu % db model-id))]]
+
      ; Separator and Available models section
      [:div.available-section
       [:div.section-header-with-button
@@ -269,9 +221,9 @@
                                     :title "Download all matching models"}
           [cm/download] "Download All"])]
       (cond
-        @remote-search-loading 
+        @remote-search-loading
         [:div.loading-spinner "Loading..."]
-        
+
         (seq @remotemodeldb)
         [:div.remote-models
          (doall (for [[model-id model] @remotemodeldb
@@ -282,11 +234,9 @@
                    [:button.download-btn {:on-click #(replicate-model model-id)
                                           :title "Download this model"}
                     [cm/download]]]))]
-        
+
         :else
         [:div.empty "No remote models found"])]]))
-
-
 
 (defn port-editor [cell side]
   (let [path [:ports side]]
@@ -316,7 +266,7 @@
         #(get-in % [:props idx :tooltip] "")
         #(swap! %1 assoc-in [:props idx :tooltip] %2)]]))])
 
-(defn model-properties 
+(defn model-properties
   "Edit properties for the selected model"
   [db]
   (let [mod (r/cursor db [@selmodel])
@@ -397,9 +347,9 @@
        (if (not (:templates @mod))
          [:<>
           [:button.primary {:on-click #(js/window.open (edit-url @selmodel) @selmodel)
-                                        :title "Edit"} [cm/edit] " Edit"]
+                            :title "Edit"} [cm/edit] " Edit"]
           (if @preview-url
-            [:object {:data @preview-url 
+            [:object {:data @preview-url
                       :type "image/svg+xml"}
              "Schematic preview"]
             [:div.empty
@@ -429,14 +379,14 @@
     [:<>
      [:div.schsel
       [:div.addbuttons
-        [:button.primary {:on-click add-schem }
-         [cm/add-model] "Add schematic"]
-        [:button {:on-click add-spice }
-         [cm/add-model] "Add SPICE model"]]
+       [:button.primary {:on-click add-schem}
+        [cm/add-model] "Add schematic"]
+       [:button {:on-click add-spice}
+        [cm/add-model] "Add SPICE model"]]
       [:div.models-header
        [:h2 "Models: " (if (seq @selcat)
-                        (clojure.string/join "/" @selcat)
-                        "All models")]
+                         (clojure.string/join "/" @selcat)
+                         "All models")]
        [cm/dbfield :input {:type "text" :placeholder "Filter models..." :class "filter-input"}
         filter-text identity reset!]]
       [model-list-selector modeldb]]

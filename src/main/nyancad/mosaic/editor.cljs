@@ -18,7 +18,6 @@
                      point transform transform-vec
                      mosfet-shape bjt-conn]]))
 
-
 (def params (js/URLSearchParams. js/window.location.search))
 (def group (or (.get params "schem") (.getItem js/localStorage "schem") (cm/random-name)))
 (def sync (cm/get-sync-url))
@@ -86,6 +85,9 @@
 (defonce staging (r/cursor ui [::staging]))
 (defonce notebook-popped-out (r/cursor ui [::notebook-popped-out]))
 
+; Model selector popup state
+(defonce model-popup-filter (r/atom ""))
+(defonce model-popup-category (r/atom []))
 
 (defonce undotree (cm/newundotree))
 
@@ -146,7 +148,6 @@
    (for [[x y _] pattern]
      ^{:key [x y]} [prim (* x grid-size) (* y grid-size)])])
 
-
 (defn lines [arcs]
   [:<>
    (for [arc arcs]
@@ -169,7 +170,7 @@
     [:g.wire {:on-mouse-down #(drag-start key %)
               :on-mouse-move #(eraser-drag key %)
               :class (when (contains? @selected key) :selected)}
-     ; TODO drag-start ::wire nodes (with reverse) 
+     ; TODO drag-start ::wire nodes (with reverse)
      [:line.wirebb {:x1 (* (+ x 0.5) grid-size)
                     :y1 (* (+ y 0.5) grid-size)
                     :x2 (* (+ x rx 0.5) grid-size)
@@ -187,9 +188,9 @@
                     (vals @schematic))
         text (cm/format fmt {:res res, :schem schem :self dev})]
     (map-indexed
-      (fn [idx line]
-        [:tspan {:key line :x "0" :dy (if (zero? idx) "0" "1.2em")} line])
-      (clojure.string/split-lines text))))
+     (fn [idx line]
+       [:tspan {:key line :x "0" :dy (if (zero? idx) "0" "1.2em")} line])
+     (clojure.string/split-lines text))))
 
 (defn text-sym [key text]
   (let [x (:x text)
@@ -235,9 +236,9 @@
               [0.3 0.7]
               [0.5 0.5]]]])
    [:text {:text-anchor (case (js/Math.round (first (:transform label)))
-                               1 "end"
-                               -1 "start"
-                               "middle")
+                          1 "end"
+                          -1 "start"
+                          "middle")
            :dominant-baseline "middle"
            :transform (-> (:transform label)
                           transform
@@ -567,12 +568,12 @@
              "npn" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
-                     ::template "{self.name}"
+                    ::template "{self.name}"
                     ::props []}
              "pnp" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
-                     ::template "{self.name}"
+                    ::template "{self.name}"
                     ::props []}
              "resistor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
@@ -620,8 +621,7 @@
                      ::conn []
                      ::sym text-sym
                      ::template "Operating Point:\n{res.op}"
-                     ::props []}
-})
+                     ::props []}})
 
 (defn rotate-shape [shape [a b c d e f] devx, devy]
   (let [size (cm/pattern-size shape)
@@ -670,7 +670,7 @@
     (cond
       (= cell "wire") (wire-locations dev)
       (= cell "text") []
-      (contains? models cell) (builtin-locations dev) 
+      (contains? models cell) (builtin-locations dev)
       :else (circuit-locations dev))))
 
 (defn build-location-index [sch]
@@ -713,9 +713,6 @@
                            schem))
                   schem))]
     (swap! schematic (partial merge-with merge) wires)))
-
-
-
 
 (defn viewbox-coord [e]
   (let [^js el (js/document.querySelector ".mosaic-canvas")
@@ -984,7 +981,7 @@
     (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
     (and (= (.-button e) 0)
          (= nil (::dragging @ui))
-         (= ::cursor @tool)) (drag-start-box e) 
+         (= ::cursor @tool)) (drag-start-box e)
     (and (= (.-button e) 0)
          (= ::wire @tool)) (add-wire (viewbox-coord e) (nil? (::dragging @ui)))))
 
@@ -993,7 +990,6 @@
             (not= (::tool @ui) ::cursor))
     (cancel)
     (.preventDefault e)))
-
 
 (defn get-model [layer model k v]
   (let [m (-> models
@@ -1009,22 +1005,21 @@
       (= layer ::conn) ^{:key k} [draw-pattern (cm/pattern-size m) m port k v]
       :else ^{:key k} [(fn [k _v] (println "invalid model for" k))])))
 
-
 (defn end-ui [bg? selected dx dy]
   (letfn [(clean-selected [ui sch]
             (update ui ::selected
                     (fn [sel]
-                    (into #{} (filter #(contains? sch %)) sel)))) (deselect [ui] (if bg? (assoc ui ::selected #{}) ui))
+                      (into #{} (filter #(contains? sch %)) sel)))) (deselect [ui] (if bg? (assoc ui ::selected #{}) ui))
           (endfn [ui]
             (-> ui
                 (assoc ::dragging nil
-                    ::delta {:x 0 :y 0 :rx 0 :ry 0})
+                       ::delta {:x 0 :y 0 :rx 0 :ry 0})
                 deselect
                 (clean-selected @schematic)))
           (round-coords [{x :x y :y :as dev}]
             (assoc dev
-                    :x (js/Math.round (+ x dx))
-                    :y (js/Math.round (+ y dy))))]
+                   :x (js/Math.round (+ x dx))
+                   :y (js/Math.round (+ y dy))))]
     (swap! ui endfn)
     (swap! schematic update-keys selected round-coords)
     (post-action!)))
@@ -1064,7 +1059,6 @@
       (= (::tool @ui) ::eraser) (post-action!)
       :else (end-ui bg? selected dx dy))))
 
-
 (defn add-device [cell [x y] & args]
   (let [kwargs (apply array-map args)
         [width height] (get-in models [cell ::bg])
@@ -1095,49 +1089,90 @@
                                                           "<?xml-stylesheet type=\"text/css\" href=\"https://nyancad.com/css/style.css\" ?>"
                                                           (.-outerHTML (js/document.querySelector ".mosaic-canvas"))))}}}))
 
+(defn model-selector-popup
+  "Popup for selecting a device model with category tree and search"
+  [device-type on-select]
+  (let [selected (r/atom nil)]
+    (fn [device-type on-select]
+      (let [;; Filter models by device type first
+            type-models (into {} (filter (fn [[_ m]] (= (:type m "ckt") device-type)) @modeldb))
+            ;; Build category tree from type-filtered models
+            trie (cm/build-category-type-index type-models)
+            ;; Filter by category and search text using shared function
+            filtered (cm/filter-models type-models @model-popup-category @model-popup-filter)]
+        [:div.model-selector-popup
+         [:h3 "Select Model"]
+         ;; Search input
+         [:input.model-search {:type "text"
+                               :placeholder "Filter models..."
+                               :value @model-popup-filter
+                               :on-change #(reset! model-popup-filter (.. % -target -value))}]
+         [:div.model-popup-content
+          ;; Category tree (left)
+          [:div.model-categories
+           (if (seq trie)
+             [cm/category-tree model-popup-category [] trie]
+             [:div.empty "No categories"])]
+          ;; Model list (right) using shared component
+          [:div.model-list
+           [cm/model-list selected filtered]]]
+         ;; Buttons
+         [:div.model-popup-buttons
+          [:button {:on-click #(reset! cm/modal-content nil)} "Cancel"]
+          [:button.primary {:on-click #(do (on-select @selected)
+                                           (reset! cm/modal-content nil))
+                            :disabled (nil? @selected)} "Select"]]]))))
+
 (defn deviceprops [key]
   (let [props (r/cursor schematic [key :props])
         device-type (r/cursor schematic [key :type])
         model (r/cursor schematic [key :model])
-        name (r/cursor schematic [key :name])
-        model-def (r/cursor modeldb [(cm/model-key @model)])]
+        name (r/cursor schematic [key :name])]
     (fn [key]
-      [:<>
-       [:h1 (or @name key)]
-       [:div.properties
-        (when (and (seq @model) (not (:templates @model-def)))
-          [:a {:href (ckt-url @model)} "Edit"])
-        [:label {:for "name" :title "Instance name"} "name"]
-        [:input {:id "name"
-                 :type "text"
-                 :default-value @name
-                 :on-change (debounce #(do (reset! name (.. % -target -value)) (post-action!)))}]
-        [:label {:for "model" :title "Device model"} "model"]
-        [:select {:id "model"
-                  :type "text"
-                  :default-value @model
-                  :on-change #(do (reset! model (.. % -target -value)) (post-action!))}
-         [:option {:value ""} "Ideal"]
-         (doall (for [[k v] @modeldb
-                      :when (= (:type v "ckt") @device-type)]
-                  [:option {:key k :value (cm/bare-id k)} (:name v)]))]
-        ; Get properties from built-in device and model
-        (let [device-props (::props (get models @device-type) [])
-              model-props (:props @model-def [])
-              all-props (concat device-props model-props)]
-          (doall (for [param-def all-props
-                       :let [prop-name (keyword (:name param-def))
-                             tooltip (:tooltip param-def)]]
-                   [:<> {:key prop-name}
-                    [:label {:for prop-name :title tooltip} prop-name]
-                    [:input {:id prop-name
-                             :type "text"
-                             :default-value (get @props prop-name)
-                             :on-change (debounce #(do (swap! props assoc prop-name (.. % -target -value)) (post-action!)))}]])))
-        [:label {:for "template" :title "Template to display"} "Text"]
-        [:textarea {:id "template"
-                    :default-value (get-in @schematic [key :template] (::template (get models @device-type)))
-                    :on-change (debounce #(do (swap! schematic assoc-in [key :template] (.. % -target -value)) (post-action!)))}]]])))
+      (let [model-def (get @modeldb (cm/model-key @model))]
+        [:<>
+         [:h1 (or @name key)]
+         [:div.properties
+          (when (and (seq @model) (not (:templates model-def)))
+            [:a {:href (ckt-url @model)} "Edit"])
+          [:label {:for "name" :title "Instance name"} "name"]
+          [:input {:id "name"
+                   :type "text"
+                   :default-value @name
+                   :on-change (debounce #(do (reset! name (.. % -target -value)) (post-action!)))}]
+          [:label {:for "model" :title "Device model"} "model"]
+          [:div.model-field
+           [:input {:id "model"
+                    :type "text"
+                    :read-only true
+                    :value (or (:name model-def) (when (seq @model) @model) "Ideal")
+                    :title (or @model "No model selected")}]
+           [:button {:on-click #(do
+                                  (reset! model-popup-filter "")
+                                  (reset! model-popup-category [])
+                                  (reset! cm/modal-content
+                                          [model-selector-popup @device-type
+                                           (fn [model-id]
+                                             (reset! model (if model-id (cm/bare-id model-id) ""))
+                                             (post-action!))]))}
+            [cm/search]]]
+          ; Get properties from built-in device and model
+          (let [device-props (::props (get models @device-type) [])
+                model-props (:props model-def [])
+                all-props (concat device-props model-props)]
+            (doall (for [param-def all-props
+                         :let [prop-name (keyword (:name param-def))
+                               tooltip (:tooltip param-def)]]
+                     [:<> {:key prop-name}
+                      [:label {:for prop-name :title tooltip} prop-name]
+                      [:input {:id prop-name
+                               :type "text"
+                               :default-value (get @props prop-name)
+                               :on-change (debounce #(do (swap! props assoc prop-name (.. % -target -value)) (post-action!)))}]])))
+          [:label {:for "template" :title "Template to display"} "Text"]
+          [:textarea {:id "template"
+                      :default-value (get-in @schematic [key :template] (::template (get models @device-type)))
+                      :on-change (debounce #(do (swap! schematic assoc-in [key :template] (.. % -target -value)) (post-action!)))}]]]))))
 
 (defn copy []
   (let [sel @selected
@@ -1156,14 +1191,13 @@
         devmap (into {} xf devs)]
     (swap! schematic into devmap)
     (swap! ui assoc
-            ::dragging ::device
-            ::selected (set (keys devmap)))
+           ::dragging ::device
+           ::selected (set (keys devmap)))
     (post-action!)))
 
 (defn notebook-url []
   (let [url-params (js/URLSearchParams. #js{:schem group})]
     (str "notebook/?" (.toString url-params))))
-
 
 (defn menu-items []
   [:<>
@@ -1244,11 +1278,9 @@
          :title "Login / Account"}
      [cm/login]]]])
 
-
 (defn device-active [cell]
   (when (= cell (:type @staging))
     "active"))
-
 
 (defn variant-tray [& _variants]
   (let [active (r/atom 0)
@@ -1270,12 +1302,12 @@
           :on-mouse-up
           (fn [e]
             (js/clearTimeout @timeout)
-            (set! (.. e -currentTarget -open) false))} 
+            (set! (.. e -currentTarget -open) false))}
          [:summary {:on-click #(.preventDefault %)}
           (nth variants @active)]
-          [:span.tray
-           (take @active varwraps)
-           (drop (inc @active) varwraps)]]))))
+         [:span.tray
+          (take @active varwraps)
+          (drop (inc @active) varwraps)]]))))
 
 (defn add-gnd [coord]
   (add-device "port" coord
@@ -1293,7 +1325,6 @@
   (add-device "port" coord
               :variant "text"
               :transform (cm/transform-vec (.rotate cm/I 90))))
-
 
 (defn device-tray []
   [:<>
@@ -1461,27 +1492,27 @@
       [schematic-elements @schematic]
       [schematic-dots]
       [tool-elements]]]
-     (when-not @notebook-popped-out
-       [:div#mosaic_notebook_wrapper
-        [:div.resize-handle
-         {:on-mouse-down
-          (fn [e]
-            (.preventDefault e)
-            (let [wrapper (js/document.getElementById "mosaic_notebook_wrapper")
-                  start-x (.-clientX e)
-                  start-width (.-offsetWidth wrapper)
-                  on-move (fn on-move [e]
-                            (let [delta (- start-x (.-clientX e))
-                                  new-width (+ start-width delta)]
-                              (set! (.. wrapper -style -width) (str new-width "px"))))
-                  on-up (fn on-up []
-                          (.remove (.-classList wrapper) "resizing")
-                          (.removeEventListener js/document "mousemove" on-move)
-                          (.removeEventListener js/document "mouseup" on-up))]
-              (.add (.-classList wrapper) "resizing")
-              (.addEventListener js/document "mousemove" on-move)
-              (.addEventListener js/document "mouseup" on-up)))}]
-        [:iframe#mosaic_notebook {:src (notebook-url)}]])]
+    (when-not @notebook-popped-out
+      [:div#mosaic_notebook_wrapper
+       [:div.resize-handle
+        {:on-mouse-down
+         (fn [e]
+           (.preventDefault e)
+           (let [wrapper (js/document.getElementById "mosaic_notebook_wrapper")
+                 start-x (.-clientX e)
+                 start-width (.-offsetWidth wrapper)
+                 on-move (fn on-move [e]
+                           (let [delta (- start-x (.-clientX e))
+                                 new-width (+ start-width delta)]
+                             (set! (.. wrapper -style -width) (str new-width "px"))))
+                 on-up (fn on-up []
+                         (.remove (.-classList wrapper) "resizing")
+                         (.removeEventListener js/document "mousemove" on-move)
+                         (.removeEventListener js/document "mouseup" on-up))]
+             (.add (.-classList wrapper) "resizing")
+             (.addEventListener js/document "mousemove" on-move)
+             (.addEventListener js/document "mouseup" on-up)))}]
+       [:iframe#mosaic_notebook {:src (notebook-url)}]])]
    [cm/contextmenu]
    [cm/modal]])
 
@@ -1543,7 +1574,7 @@
     (do
       (js/console.error "Sync error:" error)
       (cm/alert (str "Error synchronising to " sync
-                   ", changes are saved locally")))))
+                     ", changes are saved locally")))))
 
 (defn synchronise []
   (when (seq sync) ; pass nil to disable synchronization

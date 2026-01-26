@@ -43,10 +43,10 @@
    [:select {:class "combobox-select"
              :value @index-cursor
              :on-change #(reset! index-cursor (js/parseInt (.. % -target -value)))}
-    (doall (map-indexed 
-             (fn [i item]
-               [:option {:key i :value i} (valfn item)])
-             (listfn @vector-cursor)))]])
+    (doall (map-indexed
+            (fn [i item]
+              [:option {:key i :value i} (valfn item)])
+            (listfn @vector-cursor)))]])
 
 (defn sign [n] (if (> n 0) 1 -1))
 
@@ -95,7 +95,6 @@
         idx (bisect-left v xy kf)
         val (get v idx)]
     (and (vector? val) (= xy (kf val)))))
-
 
 (defn transform [[a b c d e f]]
   (.fromMatrix js/DOMMatrixReadOnly
@@ -326,26 +325,101 @@
 (def help (r/adapt-react-class icons/QuestionCircle))
 (def external-link (r/adapt-react-class icons/BoxArrowUpRight))
 (def amp-icon (r/adapt-react-class icons/CaretRight))
+(def search (r/adapt-react-class icons/Search))
 
 (defn radiobuttons
-([cursor m] (radiobuttons cursor m nil nil nil))
-([cursor m dblclk ctxclk] (radiobuttons cursor m dblclk ctxclk nil))
-([cursor m dblclk ctxclk on-change]
- [:<>
-  (doall (for [[label name disp] m]
-           [:<> {:key name}
-            [:input {:type "radio"
-                     :id name
-                     :value name
-                     :checked (= name @cursor)
-                     :on-change #(if on-change
-                                   (on-change name)
-                                   (reset! cursor name))}]
-            [:label {:for name
-                     :title disp
-                     :on-double-click (when dblclk (dblclk name))
-                     :on-context-menu (when ctxclk (ctxclk name))}
-             label]]))]))
+  ([cursor m] (radiobuttons cursor m nil nil nil))
+  ([cursor m dblclk ctxclk] (radiobuttons cursor m dblclk ctxclk nil))
+  ([cursor m dblclk ctxclk on-change]
+   [:<>
+    (doall (for [[label name disp] m]
+             [:<> {:key name}
+              [:input {:type "radio"
+                       :id name
+                       :value name
+                       :checked (= name @cursor)
+                       :on-change #(if on-change
+                                     (on-change name)
+                                     (reset! cursor name))}]
+              [:label {:for name
+                       :title disp
+                       :on-double-click (when dblclk (dblclk name))
+                       :on-context-menu (when ctxclk (ctxclk name))}
+               label]]))]))
+
+;; Model browser utilities - shared between libman and editor
+
+(defn vec-startswith
+  "Check if vector v starts with prefix"
+  [v prefix]
+  (= (subvec v 0 (min (count v) (count prefix))) prefix))
+
+(defn build-category-type-index
+  "Build a hierarchical index of categories -> types from flattened model documents"
+  [models]
+  (reduce (fn [index [_id model]]
+            (let [category (or (:category model) [])
+                  type (:type model "ckt")]
+              (assoc-in index (conj category type) #{})))
+          {} models))
+
+(defn category-tree
+  "Render a collapsible category tree.
+   selected-atom: atom holding selected category path
+   base: current path prefix
+   trie: nested map of categories"
+  [selected-atom base trie]
+  [:<>
+   (doall (for [[cat subtrie] trie
+                :let [path (conj base cat)]]
+            [:details.tree {:key path
+                            :open (vec-startswith @selected-atom path)
+                            :on-toggle #(do
+                                          (.stopPropagation %)
+                                          (if (.. % -target -open)
+                                            (reset! selected-atom path)
+                                            (when (vec-startswith @selected-atom path)
+                                              (reset! selected-atom (pop path)))))}
+             [:summary cat]
+             (when (seq subtrie)
+               [:div.detailbody
+                [category-tree selected-atom path subtrie]])]))])
+
+(defn filter-models
+  "Filter models by category path and search text.
+   models: map of model-id -> model
+   category: vector path to filter by (or [] for all)
+   search-text: string to match against model name (or \"\" for all)"
+  [models category search-text]
+  (filter (fn [[model-id model]]
+            (let [model-path (conj (or (:category model) []) (:type model "ckt"))
+                  model-name (get model :name model-id)
+                  filter-match (or (empty? search-text)
+                                   (clojure.string/includes?
+                                    (clojure.string/lower-case model-name)
+                                    (clojure.string/lower-case search-text)))]
+              (and (vec-startswith model-path category) filter-match)))
+          models))
+
+(defn model-list
+  "Render a list of models as radio buttons.
+   selected-atom: atom holding selected model id
+   models: seq of [model-id model] pairs
+   on-dblclick: optional (fn [model-id] -> event-handler) for double-click
+   on-contextmenu: optional (fn [model-id] -> event-handler) for right-click"
+  ([selected-atom models] (model-list selected-atom models nil nil))
+  ([selected-atom models on-dblclick on-contextmenu]
+   (if (seq models)
+     [radiobuttons selected-atom
+      (doall (for [[model-id model] models
+                   :let [schem? (not (:templates model))
+                         icon (if schem? schemmodel codemodel)]]
+               [[:span [icon] " " (get model :name model-id)]
+                model-id
+                (get model :name model-id)]))
+      on-dblclick
+      on-contextmenu]
+     [:div.empty "No models found"])))
 
 (defn renamable
   ([cursor] (renamable cursor nil))
@@ -373,8 +447,7 @@
         (conj-when :control (.-ctrlKey e))
         (conj-when :alt (.-altKey e))
         (conj-when :shift (.-shiftKey e))
-        (conj-when :os (.-metaKey e))
-        )))
+        (conj-when :os (.-metaKey e)))))
 
 (defn keyboard-shortcuts [shortcuts e]
   (when-not (or ;; it's a repeat event
@@ -416,7 +489,7 @@
 (defn random-name [] (str (random-uuid)))
 
 ;; Model ID utilities
-(defn model-key 
+(defn model-key
   "Convert a bare model ID to a database key with 'models:' prefix.
    Returns nil if input is nil. Asserts that non-nil input is not already prefixed."
   [bare-id]
@@ -513,7 +586,7 @@
 (defn alert [text]
   (reset! modal-content
           [:div [:p text]
-          [:button {:on-click #(reset! modal-content nil)} "Ok"]]))
+           [:button {:on-click #(reset! modal-content nil)} "Ok"]]))
 
 (defn set-context-menu [x y body]
   (reset! context-content {:x x :y y :body body}))
