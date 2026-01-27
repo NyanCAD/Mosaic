@@ -326,6 +326,8 @@
 (def external-link (r/adapt-react-class icons/BoxArrowUpRight))
 (def amp-icon (r/adapt-react-class icons/CaretRight))
 (def search (r/adapt-react-class icons/Search))
+(def history (r/adapt-react-class icons/ClockHistory))
+(def upload (r/adapt-react-class icons/Upload))
 
 (defn radiobuttons
   ([cursor m] (radiobuttons cursor m nil nil nil))
@@ -487,6 +489,17 @@
       (clojure.string/replace #"\{\{|\}\}" first)))
 
 (defn random-name [] (str (random-uuid)))
+
+(defn base64->blob-url
+  "Convert base64 string to blob URL for use with object tag"
+  [base64-data content-type]
+  (let [binary-string (js/atob base64-data)
+        len (.-length binary-string)
+        bytes (js/Uint8Array. len)]
+    (doseq [i (range len)]
+      (aset bytes i (.charCodeAt binary-string i)))
+    (let [blob (js/Blob. #js[bytes] #js{:type content-type})]
+      (.createObjectURL js/URL blob))))
 
 ;; Model ID utilities
 (defn model-key
@@ -698,7 +711,7 @@
       [[cuti] "Ctrl+X" "Cut"]
       [[pastei] "Ctrl+V" "Paste"]
       [[library] "" "Library Manager"]
-      [[save] "" "Save Snapshot"]
+      [[history] "" "Snapshot History"]
       [[external-link] "" "Pop Out Notebook"]
       [[help] "" "Keyboard Shortcuts"]
       [[login] "" "Account"]]]]

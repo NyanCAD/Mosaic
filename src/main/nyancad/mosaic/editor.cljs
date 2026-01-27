@@ -104,8 +104,10 @@
       (<! (split-wire w coords)))))
 
 (defn restore [state]
-  (let [del (reduce disj (set (keys @schematic)) (keys state))
-        norev (reduce #(update %1 %2 dissoc :_rev) state (keys state))]
+  (let [;; Ensure keys are strings (schematic uses string device IDs)
+        state-str (into {} (map (fn [[k v]] [(name k) v]) state))
+        del (reduce disj (set (keys @schematic)) (keys state-str))
+        norev (reduce #(update %1 %2 dissoc :_rev) state-str (keys state-str))]
     (go
       (<! (swap! schematic into norev)) ; update
       (<! (swap! schematic #(apply dissoc %1 %2) del)))))
@@ -1084,10 +1086,108 @@
 (defn snapshot []
   (swap! snapshots assoc (str group "$snapshots" sep (.toISOString (js/Date.)))
          {:schematic @schematic
-          :_attachments {"preview.svg" {:content_type "image/svg+xml"
-                                        :data (b64encode (str
-                                                          "<?xml-stylesheet type=\"text/css\" href=\"https://nyancad.com/css/style.css\" ?>"
-                                                          (.-outerHTML (js/document.querySelector ".mosaic-canvas"))))}}}))
+          :_attachments {:preview.svg {:content_type "image/svg+xml"
+                                       :data (b64encode (str
+                                                         "<?xml-stylesheet type=\"text/css\" href=\"https://nyancad.com/css/style.css\" ?>"
+                                                         (.-outerHTML (js/document.querySelector ".mosaic-canvas"))))}}}))
+
+(defn snapshot-timestamp
+  "Extract timestamp from snapshot key. Key format: {group}$snapshots:{timestamp}"
+  [snapshot-key]
+  (second (clojure.string/split snapshot-key #":" 2)))
+
+(defn download-snapshot [snapshot-key snapshot-data]
+  (let [clean-data (dissoc snapshot-data :_rev :_id)
+        json (js/JSON.stringify (clj->js clean-data) nil 2)
+        blob (js/Blob. #js[json] #js{:type "application/json"})
+        url (.createObjectURL js/URL blob)
+        a (.createElement js/document "a")
+        ;; Replace colons with underscores for cross-platform filename compatibility
+        filename (clojure.string/replace (snapshot-timestamp snapshot-key) ":" "_")]
+    (set! (.-href a) url)
+    (set! (.-download a) (str filename ".json"))
+    (.click a)
+    (.revokeObjectURL js/URL url)))
+
+(defn upload-snapshot [file]
+  (.then (.text file)
+         (fn [text]
+           (let [data (-> (js/JSON.parse text)
+                          (js->clj :keywordize-keys true)
+                          (dissoc :_rev :_id))
+                 filename (.-name file)
+                 ;; Normalize underscores back to colons (filenames can't have colons)
+                 timestamp (-> filename
+                               (clojure.string/replace #"\.json$" "")
+                               (clojure.string/replace "_" ":"))
+                 snapshot-key (str group "$snapshots" sep timestamp)]
+             (swap! snapshots assoc snapshot-key data)))))
+
+(defn restore-snapshot [snapshot-data]
+  (restore (:schematic snapshot-data))
+  (reset! cm/modal-content nil))
+
+(defn delete-snapshot [snapshot-key]
+  (swap! snapshots dissoc snapshot-key))
+
+(defn history-panel []
+  (let [file-input-id "snapshot-upload-input"]
+    [:div.history-panel
+     [:div.modal-header
+      [:h2 "Snapshot History"]
+      [:button.close {:on-click #(reset! cm/modal-content nil)} "\u00D7"]]
+
+     [:div.upload-section
+      [:button {:on-click snapshot}
+       [cm/save] " Take Snapshot"]
+      [:input {:type "file"
+               :id file-input-id
+               :accept ".json"
+               :style {:display "none"}
+               :on-change (fn [e]
+                            (when-let [file (-> e .-target .-files (aget 0))]
+                              (upload-snapshot file)
+                              (set! (.-value (.-target e)) "")))}]
+      [:button {:on-click #(.click (js/document.getElementById file-input-id))}
+       [cm/upload] " Upload JSON..."]]
+
+     [:div.snapshot-list
+      (let [snapshot-entries (filter (fn [[k v]]
+                                       (and (not (or (= k "_rev") (= k "_id")))
+                                            (:schematic v)))
+                                     @snapshots)]
+        (if (empty? snapshot-entries)
+          [:p.empty "No snapshots yet. Click 'Take Snapshot' to create one."]
+          (for [[k v] (reverse (sort-by key snapshot-entries))]
+            ^{:key k}
+            [:details.snapshot-item
+             [:summary
+              [:span.timestamp (snapshot-timestamp k)]
+              [:span.actions
+               [:button {:title "Download JSON"
+                         :on-click (fn [e]
+                                     (.stopPropagation e)
+                                     (download-snapshot k v))}
+                [cm/download]]
+               [:button {:title "Restore this snapshot"
+                         :on-click (fn [e]
+                                     (.stopPropagation e)
+                                     (restore-snapshot v))}
+                [cm/history]]
+               [:button {:title "Delete snapshot"
+                         :on-click (fn [e]
+                                     (.stopPropagation e)
+                                     (delete-snapshot k))}
+                [cm/delete]]]]
+             [:div.preview
+              (if-let [svg-data (get-in v [:_attachments :preview.svg :data])]
+                [:object {:data (cm/base64->blob-url svg-data "image/svg+xml")
+                          :type "image/svg+xml"}
+                 "Snapshot preview"]
+                [:p.empty "No preview"])]])))]]))
+
+(defn show-history-panel []
+  (reset! cm/modal-content [history-panel]))
 
 (defn model-selector-popup
   "Popup for selecting a device model with category tree and search"
@@ -1189,11 +1289,12 @@
         xf (map (fn [d] [(name (gensym (make-name (:type d))))
                          (update d :name gensym)]))
         devmap (into {} xf devs)]
-    (swap! schematic into devmap)
-    (swap! ui assoc
-           ::dragging ::device
-           ::selected (set (keys devmap)))
-    (post-action!)))
+    (go
+      (<! (swap! schematic into devmap))
+      (swap! ui assoc
+             ::dragging ::device
+             ::selected (set (keys devmap)))
+      (post-action!))))
 
 (defn notebook-url []
   (let [url-params (js/URLSearchParams. #js{:schem group})]
@@ -1262,9 +1363,9 @@
     [:a {:title "Keyboard shortcuts & help"
          :on-click cm/show-onboarding!}
      [cm/help]]
-    [:a {:title "Save Snapshot"
-         :on-click snapshot}
-     [cm/save]]
+    [:a {:title "Snapshot History"
+         :on-click show-history-panel}
+     [cm/history]]
     [:a {:title "Pop out notebook"
          :on-click (fn []
                      (let [nb-url (str js/window.location.origin "/" (notebook-url))

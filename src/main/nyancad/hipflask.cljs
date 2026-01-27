@@ -75,11 +75,12 @@
 
 (def sep ":")
 
-(defn get-group 
+(defn get-group
   ([db group] (get-group db group nil {}))
   ([db group limit] (get-group db group limit {}))
   ([db group limit target]
    (let [docs (alldocs db #js{:include_docs true
+                              :attachments true
                               :startkey (str group sep)
                               :endkey (str group sep "\ufff0")
                               :limit limit})]
@@ -116,7 +117,8 @@
                                 :live true
                                 :timeout 30000
                                 :heartbeat false
-                                :include_docs true})
+                                :include_docs true
+                                :attachments true})
         groups-atom (atom (into {} (map (fn [pa] [(.-group pa) (.-cache pa)]) patoms)))]
     (.on ch "change" (fn [change]
                        (let [doc (json->clj ^js (.-doc change))
