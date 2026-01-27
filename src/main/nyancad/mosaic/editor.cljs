@@ -21,7 +21,8 @@
 (def params (js/URLSearchParams. js/window.location.search))
 (def group (or (.get params "schem") (.getItem js/localStorage "schem") (cm/random-name)))
 (def sync (cm/get-sync-url))
-(defonce db (pouchdb "schematics"))
+; Use same db name locally as remote to avoid cross-user/workspace contamination
+(defonce db (pouchdb (or (cm/get-db-name) "schematics")))
 (defonce schematic (pouch-atom db group (r/atom {})))
 (set-validator! (.-cache schematic)
                 #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
@@ -1356,7 +1357,9 @@
       [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
 
    [:div.secondary
-    [:a {:href "library"
+    [:a {:href (if cm/current-workspace
+                 (str "library?ws=" cm/current-workspace)
+                 "library")
          :target "libman"
          :title "Open library manager"}
      [cm/library]]
@@ -1693,7 +1696,10 @@
 
 (defn ^:export init []
   (.setItem js/localStorage "schem" group)
-  (js/history.replaceState nil nil (str js/window.location.pathname "?schem=" group))
+  (let [url-params (if cm/current-workspace
+                     (str "?schem=" group "&ws=" cm/current-workspace)
+                     (str "?schem=" group))]
+    (js/history.replaceState nil nil (str js/window.location.pathname url-params)))
   ;; Initialize auth state from localStorage
   (cm/init-auth-state!)
   ;; Start sync (will handle 401s via "denied" event)

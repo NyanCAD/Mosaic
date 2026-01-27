@@ -535,9 +535,23 @@
 (defn str-to-hex [s]
   (apply str (map #(str (.toString (.charCodeAt % 0) 16)) s)))
 
-(defn get-sync-url []
+;; Workspace support - read from URL param
+(def url-params (js/URLSearchParams. js/window.location.search))
+(def current-workspace (.get url-params "ws"))  ; nil if not set (uses personal library)
+
+;; User's workspace list (fetched on demand)
+(defonce user-workspaces (r/atom []))
+
+(defn get-db-name []
+  "Get the database name for current context (workspace or personal library)."
   (when-let [username (get-current-user)]
-    (str couchdb-url "userdb-" (str-to-hex username))))
+    (if current-workspace
+      current-workspace                          ; ws-slug
+      (str "userdb-" (str-to-hex username)))))
+
+(defn get-sync-url []
+  (when-let [db-name (get-db-name)]
+    (str couchdb-url db-name)))
 
 ;; Reactive authentication state
 (defonce auth-state (r/atom false))

@@ -5,6 +5,7 @@ import sys
 import os
 from importlib import resources
 from urllib.parse import quote
+import re
 
 import httpx
 import uvicorn
@@ -169,6 +170,258 @@ async def logout_endpoint(request: Request):
         return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
+async def user_info_endpoint(request: Request):
+    """Get current user's info including workspaces list."""
+    session_cookie = request.cookies.get("AuthSession")
+    if not session_cookie:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    # Get username from session (using user's cookie)
+    async with httpx.AsyncClient() as client:
+        session_resp = await client.get(
+            f"{COUCHDB_URL}/_session",
+            cookies={"AuthSession": session_cookie}
+        )
+    if session_resp.status_code != 200:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    session_data = session_resp.json()
+    username = session_data.get("userCtx", {}).get("name")
+    if not username:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    # Fetch user doc with admin credentials (separate client to avoid cookie leakage)
+    async with httpx.AsyncClient() as client:
+        user_doc_url = f"{COUCHDB_URL}/_users/org.couchdb.user:{quote(username)}"
+        user_resp = await client.get(
+            user_doc_url,
+            auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+        )
+
+    if user_resp.status_code != 200:
+        return JSONResponse(
+            {"error": f"Failed to fetch user doc: {user_resp.text}"},
+            status_code=user_resp.status_code
+        )
+
+    user_doc = user_resp.json()
+    return JSONResponse({
+        "name": username,
+        "workspaces": user_doc.get("workspaces", [])
+    })
+
+
+# Workspace management endpoints
+async def get_authenticated_user(request: Request) -> str | None:
+    """Get username from CouchDB session cookie."""
+    session_cookie = request.cookies.get("AuthSession")
+    if not session_cookie:
+        return None
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{COUCHDB_URL}/_session",
+            cookies={"AuthSession": session_cookie}
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("userCtx", {}).get("name")
+    return None
+
+
+async def add_workspace_to_user(client: httpx.AsyncClient, username: str, workspace: str) -> str | None:
+    """Add workspace to user's workspace list in their CouchDB user doc.
+
+    Returns None on success, or an error message if the user doesn't exist.
+    """
+    doc_url = f"{COUCHDB_URL}/_users/org.couchdb.user:{quote(username)}"
+    resp = await client.get(doc_url, auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS))
+    if resp.status_code != 200:
+        return f"User '{username}' does not exist"
+
+    doc = resp.json()
+    workspaces = doc.get("workspaces", [])
+    if workspace not in workspaces:
+        doc["workspaces"] = workspaces + [workspace]
+        await client.put(doc_url, json=doc,
+                       auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS))
+    return None
+
+
+async def remove_workspace_from_user(client: httpx.AsyncClient, username: str, workspace: str):
+    """Remove workspace from user's workspace list in their CouchDB user doc."""
+    doc_url = f"{COUCHDB_URL}/_users/org.couchdb.user:{quote(username)}"
+    resp = await client.get(doc_url, auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS))
+    if resp.status_code == 200:
+        doc = resp.json()
+        workspaces = doc.get("workspaces", [])
+        if workspace in workspaces:
+            doc["workspaces"] = [w for w in workspaces if w != workspace]
+            await client.put(doc_url, json=doc,
+                           auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS))
+
+
+async def workspace_endpoint(request: Request):
+    """Handle workspace CRUD operations."""
+    slug = request.path_params["slug"]
+
+    # Validate slug format (lowercase alphanumeric and hyphens only)
+    if not re.match(r'^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$', slug):
+        return JSONResponse(
+            {"error": "Invalid workspace name. Use lowercase letters, numbers, and hyphens only."},
+            status_code=400
+        )
+
+    db_name = f"ws-{slug}"
+
+    # Authenticate user via session cookie
+    username = await get_authenticated_user(request)
+    if not username:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    async with httpx.AsyncClient() as client:
+        if request.method == "GET":
+            # Get workspace security info
+            resp = await client.get(
+                f"{COUCHDB_URL}/{db_name}/_security",
+                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+            )
+            if resp.status_code != 200:
+                return JSONResponse({"error": "Workspace not found"}, status_code=404)
+
+            security = resp.json()
+            members = security.get("members", {}).get("names", [])
+
+            # SECURITY: Only members can view workspace details
+            if username not in members:
+                return JSONResponse({"error": "Not a member"}, status_code=403)
+
+            return JSONResponse({
+                "workspace": db_name,
+                "members": members
+            })
+
+        elif request.method == "PUT":
+            body = await request.json()
+            new_members = body.get("members", {}).get("names", [])
+
+            # Check if db exists and get current security
+            resp = await client.get(
+                f"{COUCHDB_URL}/{db_name}/_security",
+                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+            )
+
+            # Handle unexpected errors from CouchDB
+            if resp.status_code not in (200, 404):
+                return JSONResponse(
+                    {"error": f"CouchDB error: {resp.text}"},
+                    status_code=resp.status_code
+                )
+
+            db_exists = resp.status_code == 200
+            old_members = []
+
+            if db_exists:
+                old_security = resp.json()
+                old_members = old_security.get("members", {}).get("names", [])
+
+                # SECURITY: User must be current member to modify
+                if username not in old_members:
+                    return JSONResponse(
+                        {"error": "Not a member of this workspace"},
+                        status_code=403
+                    )
+            else:
+                # Creating new workspace - ensure creator is in members
+                if username not in new_members:
+                    new_members = [username] + new_members
+                    body["members"] = {"names": new_members}
+
+            # Calculate membership changes
+            added = set(new_members) - set(old_members)
+            removed = set(old_members) - set(new_members)
+
+            # First, verify all added users exist
+            errors = []
+            for user in added:
+                err = await add_workspace_to_user(client, user, db_name)
+                if err:
+                    errors.append(err)
+
+            # If any adds failed, abort before making any other changes
+            if errors:
+                return JSONResponse({
+                    "error": "; ".join(errors)
+                }, status_code=400)
+
+            # Adds succeeded, now process removals (best effort)
+            for user in removed:
+                await remove_workspace_from_user(client, user, db_name)
+
+            # Create db if needed
+            if not db_exists:
+                create_resp = await client.put(
+                    f"{COUCHDB_URL}/{db_name}",
+                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                )
+                if create_resp.status_code not in (201, 202):
+                    return JSONResponse(
+                        {"error": f"Failed to create workspace: {create_resp.text}"},
+                        status_code=create_resp.status_code
+                    )
+
+            # Update _security
+            security_resp = await client.put(
+                f"{COUCHDB_URL}/{db_name}/_security",
+                json=body,
+                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+            )
+            if security_resp.status_code != 200:
+                return JSONResponse(
+                    {"error": f"Failed to update workspace security: {security_resp.text}"},
+                    status_code=security_resp.status_code
+                )
+
+            return JSONResponse({
+                "ok": True,
+                "workspace": db_name,
+                "created": not db_exists
+            })
+
+        elif request.method == "DELETE":
+            # Get current security to verify membership
+            resp = await client.get(
+                f"{COUCHDB_URL}/{db_name}/_security",
+                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+            )
+            if resp.status_code != 200:
+                return JSONResponse({"error": "Workspace not found"}, status_code=404)
+
+            security = resp.json()
+            members = security.get("members", {}).get("names", [])
+
+            # SECURITY: Only members can delete workspace
+            if username not in members:
+                return JSONResponse(
+                    {"error": "Not a member of this workspace"},
+                    status_code=403
+                )
+
+            # Remove workspace from all members' user docs
+            for user in members:
+                await remove_workspace_from_user(client, user, db_name)
+
+            # Delete the database
+            await client.delete(
+                f"{COUCHDB_URL}/{db_name}",
+                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+            )
+
+            return JSONResponse({
+                "ok": True,
+                "deleted": db_name
+            })
+
+
 # Whitelisted GitHub repositories for proxy access
 ALLOWED_REPOS = {
     "fossi-foundation/skywater-pdk-libs-sky130_fd_pr",
@@ -318,6 +571,9 @@ def create_app(mode: DeploymentMode = DeploymentMode.LOCAL, host: str = "localho
             Route("/auth/register", register_endpoint, methods=["POST"]),
             Route("/auth/login", login_endpoint, methods=["POST"]),
             Route("/auth/logout", logout_endpoint, methods=["POST"]),
+            Route("/auth/me", user_info_endpoint, methods=["GET"]),
+            # Workspace management
+            Route("/workspaces/{slug}", workspace_endpoint, methods=["GET", "PUT", "DELETE"]),
             # GitHub proxy
             Route("/gh/{path:path}", github_proxy_endpoint, methods=["GET"]),
             # MCP server

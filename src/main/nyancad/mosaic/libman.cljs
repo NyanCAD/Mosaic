@@ -13,8 +13,10 @@
             [nyancad.mosaic.common :as cm]))
 
 ; initialise the model database
-(defonce db (pouchdb "schematics"))
+; Use same db name locally as remote to avoid cross-user/workspace contamination
+(defonce db (pouchdb (or (cm/get-db-name) "schematics")))
 (defonce remotedb (pouchdb (str cm/couchdb-url "models")))
+(def sync-url (cm/get-sync-url))
 
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
 (set-validator! (.-cache modeldb)
@@ -109,6 +111,70 @@
 ; Initialize remote search on load
 (search-remote-models @filter-text @selcat)
 
+;; Workspace management functions
+(defn fetch-user-workspaces
+  "Fetch user's workspace list via backend endpoint."
+  []
+  (go
+    (when (cm/get-current-user)
+      (try
+        (let [resp (<p! (js/fetch "/auth/me" #js{:credentials "include"}))]
+          (when (.-ok resp)
+            (let [data (js->clj (<p! (.json resp)) :keywordize-keys true)]
+              (reset! cm/user-workspaces (or (:workspaces data) [])))))
+        (catch js/Error e
+          (js/console.warn "Failed to fetch workspaces" e))))))
+
+(defn switch-workspace
+  "Reload page with new workspace URL param."
+  [workspace-id]
+  (let [url (js/URL. js/window.location)]
+    (if workspace-id
+      (.. url -searchParams (set "ws" workspace-id))
+      (.. url -searchParams (delete "ws")))
+    (set! js/window.location url)))
+
+(defn create-workspace
+  "Create a new workspace with the given slug."
+  [slug]
+  (go
+    (let [username (cm/get-current-user)
+          resp (<p! (js/fetch (str "/workspaces/" slug)
+                              #js{:method "PUT"
+                                  :credentials "include"
+                                  :headers #js{"Content-Type" "application/json"}
+                                  :body (js/JSON.stringify
+                                         #js{:members #js{:names #js[username]}})}))]
+      (if (.-ok resp)
+        (switch-workspace (str "ws-" slug))
+        (let [err (js->clj (<p! (.json resp)) :keywordize-keys true)]
+          (cm/alert (or (:error err) "Failed to create workspace")))))))
+
+(defn add-member
+  "Add a member to the current workspace."
+  [username]
+  (go
+    (when-let [ws cm/current-workspace]
+      (let [slug (subs ws 3)  ; Remove "ws-" prefix
+            ;; GET current members via backend
+            get-resp (<p! (js/fetch (str "/workspaces/" slug)
+                                    #js{:credentials "include"}))
+            ws-info (when (.-ok get-resp)
+                      (js->clj (<p! (.json get-resp)) :keywordize-keys true))
+            current-members (or (:members ws-info) [])
+            new-members (vec (distinct (conj current-members username)))
+            ;; PUT updated members
+            resp (<p! (js/fetch (str "/workspaces/" slug)
+                                #js{:method "PUT"
+                                    :credentials "include"
+                                    :headers #js{"Content-Type" "application/json"}
+                                    :body (js/JSON.stringify
+                                           #js{:members #js{:names (clj->js new-members)}})}))]
+        (if (.-ok resp)
+          (cm/alert (str "Added " username " to workspace"))
+          (let [err (js->clj (<p! (.json resp)) :keywordize-keys true)]
+            (cm/alert (or (:error err) "Failed to add member"))))))))
+
 (defn replicate-model
   "Replicate a specific model by ID from remote to local database"
   [model-id]
@@ -128,8 +194,11 @@
     (.on replication "error" #(js/console.error "Replication error:" %))))
 
 (defn edit-url [mod]
-  (doto (js/URL. ".." js/window.location)
-    (.. -searchParams (append "schem" (cm/bare-id mod)))))
+  (let [url (js/URL. ".." js/window.location)]
+    (.. url -searchParams (set "schem" (cm/bare-id mod)))
+    (when cm/current-workspace
+      (.. url -searchParams (set "ws" cm/current-workspace)))
+    url))
 
 (defn transform-direction
   "Determine cardinal direction from transformation matrix with initial rotation offset.
@@ -395,6 +464,29 @@
       [:h3 "Model Properties"]
       [model-properties modeldb]]]))
 
+(defn workspace-selector []
+  [:div.dbprops
+   [:div.properties
+    [:label {:for "workspace"} "Workspace"]
+    [:select {:id "workspace"
+              :value (or cm/current-workspace "")
+              :on-change #(switch-workspace
+                           (let [v (.. % -target -value)]
+                             (when (seq v) v)))}
+     [:option {:value ""} "My Library"]
+     (for [ws @cm/user-workspaces]
+       ^{:key ws}
+       [:option {:value ws}
+        (subs ws 3)])]  ; Remove "ws-" prefix for display
+
+    [:label "Actions"]
+    [:div.workspace-actions
+     [:button {:on-click #(cm/prompt "Workspace name (lowercase, hyphens ok):" create-workspace)}
+      [cm/add-model] " New"]
+     (when cm/current-workspace
+       [:button {:on-click #(cm/prompt "Username to add:" add-member)}
+        [cm/login] " Invite"])]]])
+
 (defn library-manager []
   [:<>
    [:div.libraries
@@ -403,12 +495,37 @@
      (if @syncactive
        [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
        [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
-    [database-selector]]
+    [database-selector]
+    [workspace-selector]]
    [cell-view]
    [cm/contextmenu]
    [cm/modal]])
 
 (def shortcuts {})
+
+(defn handle-sync-error
+  "Handle sync errors, checking for 401 auth failures."
+  [error]
+  (if (or (= (.-status error) 401)
+          (and (.-name error)
+               (= (.toLowerCase (.-name error)) "unauthorized")))
+    (do
+      (js/console.warn "Sync error 401 (auth failure)")
+      (cm/logout!)
+      (cm/alert "Session expired. Please login again. Your changes are saved locally."))
+    (do
+      (js/console.error "Sync error:" error)
+      (cm/alert (str "Error synchronising to " sync-url
+                     ", changes are saved locally")))))
+
+(defn synchronise []
+  (when (seq sync-url)  ; pass nil to disable synchronization
+    (let [es (.sync db sync-url #js{:live true :retry true})]
+      (.on es "paused" #(reset! syncactive false))
+      (.on es "active" #(reset! syncactive true))
+      (.on es "denied" #(do (cm/logout!)
+                            (cm/alert "Session expired. Please login again.")))
+      (.on es "error" handle-sync-error))))
 
 (defn ^:dev/after-load render []
   (rd/render [library-manager]
@@ -418,4 +535,7 @@
 ;;   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (set! js/window.name "libman")
   (set! js/document.onclick #(cm/clear-context-menu))
+  (cm/init-auth-state!)
+  (fetch-user-workspaces)
+  (synchronise)
   (render))

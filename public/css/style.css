@@ -391,8 +391,29 @@ html {
 }
 
 .mosaic-libman .dbprops {
-    padding: 0;
+    padding: 1em;
     background-color: #00000007;
+    border-bottom: 1px solid #e7e7e7;
+}
+
+.mosaic-libman .dbprops .properties {
+    padding: 0;
+}
+
+.mosaic-libman .dbprops .properties select {
+    grid-column: controls;
+    width: 100%;
+    padding: 0.5em;
+}
+
+.mosaic-libman .workspace-actions {
+    grid-column: controls;
+    display: flex;
+    gap: 0.5em;
+}
+
+.mosaic-libman .workspace-actions button {
+    flex: 1;
 }
 
 .mosaic-libman .proppane {
