@@ -114,3 +114,10 @@ On tagged releases, the workflow automatically:
 - Builds both Python packages
 - Publishes to PyPI
 - Deploys nyancad-server to production
+
+## Policy on AI
+
+We highly value code quality as well as developer productivity.
+Therefore we welcome AI co-authored code, and hold it to the same high standard as human written code.
+In practice this means a lot of time is spent in the planning phase, going back and forth on the details to the point anyone could write the final code, after which it is manually reviewed and tested.
+Code written in such a fashion will be marked in the git commit with `Co-Authored-By: [model and version]` and remains the sole responsibility of the human author.
