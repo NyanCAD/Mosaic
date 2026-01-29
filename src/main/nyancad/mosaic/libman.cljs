@@ -333,7 +333,11 @@
        [:label (str (:name param "") " tooltip")]
        [cm/dbfield :input {:type "text"} cell
         #(get-in % [:props idx :tooltip] "")
-        #(swap! %1 assoc-in [:props idx :tooltip] %2)]]))])
+        #(swap! %1 assoc-in [:props idx :tooltip] %2)]
+       [:label (str (:name param "") " default")]
+       [cm/dbfield :input {:type "text" :placeholder "1k"} cell
+        #(get-in % [:props idx :default] "")
+        #(swap! %1 assoc-in [:props idx :default] %2)]]))])
 
 (defn model-properties
   "Edit properties for the selected model"

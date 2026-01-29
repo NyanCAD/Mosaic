@@ -6,6 +6,7 @@ This module communicates with CouchDB to fetch schematics, and generate SPICE ne
 
 """
 
+import math
 from collections import deque, namedtuple
 from InSpice.Spice.Netlist import Circuit, SubCircuit
 from InSpice.Spice.Parser.HighLevelParser import SpiceSource
@@ -119,21 +120,67 @@ def rotate(shape, transform, devx, devy):
     return res
 
 
-def port_perimeter(ports):
-    width = 1 + max(len(ports.get('left', [])), len(ports.get('right', [])))
-    height = 1 + max(len(ports.get('top', [])), len(ports.get('bottom', [])))
+def port_perimeter(ports, shape=None):
+    """Calculate device perimeter [width, height] based on ports.
+
+    Height is determined by left/right port counts (vertical sides).
+    Width is determined by top/bottom port counts (horizontal sides).
+    Optional shape parameter: 'amp' constrains aspect ratio.
+    """
+    left_n = len(ports.get('left', []))
+    right_n = len(ports.get('right', []))
+    top_n = len(ports.get('top', []))
+    bottom_n = len(ports.get('bottom', []))
+    raw_height = max(1, left_n, right_n)
+    raw_width = max(1, top_n, bottom_n)
+    # Widen to odd if parities differ on opposite sides
+    height = raw_height + 1 if (left_n % 2 != right_n % 2) and (raw_height % 2 == 0) else raw_height
+    base_width = raw_width + 1 if (top_n % 2 != bottom_n % 2) and (raw_width % 2 == 0) else raw_width
+    # For amp: ensure minimum width proportional to height
+    width = max(base_width, math.ceil(height / 2)) if shape == 'amp' else base_width
     return width, height
 
-def port_locations(ports):
-    width, height = port_perimeter(ports)
+def spread_ports(n, size):
+    """Spread n ports in size slots. Gap in middle if n < size."""
+    if n == size:
+        return list(range(1, n + 1))
+    elif n == 0:
+        return []
+    elif n < size:
+        mid = (size + 1) // 2
+        half = n // 2
+        first_half = list(range(1, half + 1))
+        second_half = list(range(size - half + 1, size + 1))
+        if n % 2 == 1:  # odd
+            return first_half + [mid] + second_half
+        else:
+            return first_half + second_half
+    else:
+        return list(range(1, n + 1))
+
+def port_locations(ports, shape=None):
+    """Calculate port locations as list of (x, y, port_name) tuples.
+
+    Optional shape parameter: 'amp' left-aligns top/bottom ports.
+    """
+    width, height = port_perimeter(ports, shape)
     top = ports.get('top', [])
     bottom = ports.get('bottom', [])
     left = ports.get('left', [])
     right = ports.get('right', [])
-    top_locs = [((i + 1), 0, n) for i, n in enumerate(top)]
-    bottom_locs = [((i + 1), height + 1, n) for i, n in enumerate(bottom)]
-    left_locs = [(0, (i + 1), n) for i, n in enumerate(left)]
-    right_locs = [(width + 1, (i + 1), n) for i, n in enumerate(right)]
+    left_ys = spread_ports(len(left), height)
+    right_ys = spread_ports(len(right), height)
+    # For amp: left-align top/bottom (triangle narrows to right)
+    if shape == 'amp':
+        top_xs = list(range(1, len(top) + 1))
+        bottom_xs = list(range(1, len(bottom) + 1))
+    else:
+        top_xs = spread_ports(len(top), width)
+        bottom_xs = spread_ports(len(bottom), width)
+    top_locs = [(top_xs[i], 0, n) for i, n in enumerate(top)]
+    bottom_locs = [(bottom_xs[i], height + 1, n) for i, n in enumerate(bottom)]
+    left_locs = [(0, left_ys[i], n) for i, n in enumerate(left)]
+    right_locs = [(width + 1, right_ys[i], n) for i, n in enumerate(right)]
     return top_locs + bottom_locs + left_locs + right_locs
 
 def getports(doc, models):
@@ -161,7 +208,8 @@ def getports(doc, models):
         model_id = model_key(doc.get('model'))
         if model_id and model_id in models:
             model = models[model_id]
-            return rotate(port_locations(model['ports']), tr, x, y)
+            shape = 'amp' if device_type == 'amp' else None
+            return rotate(port_locations(model['ports'], shape), tr, x, y)
         return {}
 
 
@@ -305,7 +353,6 @@ class NyanCADMixin:
             selected_template = self._select_template(templates, sim)
             model_use_x = selected_template.get('use-x', False) if selected_template else False
 
-        print(props)
         # Helper to get port by name
         def p(port_name):
             return ports[port_name]
@@ -381,7 +428,8 @@ class NyanCADMixin:
         else:  # subcircuit
             if model_id in models:
                 m = models[model_id]
-                port_locs = port_locations(m['ports'])
+                shape = 'amp' if device_type == 'amp' else None
+                port_locs = port_locations(m['ports'], shape)
                 port_list = [p(c[2]) for c in port_locs]
                 params = props.copy()
                 model_name = params.pop('model', model_id)
@@ -420,8 +468,13 @@ class NyanCircuit(NyanCADMixin, Circuit):
                 if model_id in schem:
                     # Create subcircuit for models with schematic implementations
                     docs = schem[model_id]
-                    nodes = [c[2] for c in port_locations(model_def['ports'])]
-                    subcircuit = NyanSubCircuit(model_id, nodes, docs, models, corner, sim)
+                    shape = 'amp' if model_def.get('type') == 'amp' else None
+                    nodes = [c[2] for c in port_locations(model_def['ports'], shape)]
+                    # Pass model parameter definitions as subcircuit parameters (default to 0)
+                    model_params = {p['name']: p.get('default', '0')
+                                    for p in model_def.get('props', [])
+                                    if p.get('name')}
+                    subcircuit = NyanSubCircuit(model_def['name'], nodes, docs, models, corner, sim, **model_params)
                     self.subcircuit(subcircuit)
                 else:
                     # Add SPICE code for models with templates (SPICE subcircuits)

@@ -5,7 +5,8 @@
 (ns nyancad.mosaic.anywidget
   (:require [reagent.core :as r]
             [cljs.core.async :refer [go-loop <!]]
-            [nyancad.hipflask :refer [pouch-atom pouchdb watch-changes add-watch-group done? json->clj]]))
+            [nyancad.hipflask :refer [pouch-atom pouchdb watch-changes add-watch-group done? json->clj]]
+            [nyancad.mosaic.common :as cm]))
 
 ;; Extract parameters like editor.cljs (but for schematic, not notebook)
 (def params (js/URLSearchParams. js/window.location.search))
@@ -32,7 +33,7 @@
     (when (seq devs)
       (let [dev (first devs)
             model (:model dev)
-            model-def (get @model-atom model)
+            model-def (get @model-atom (cm/model-key model))
             has-templates (:templates model-def)]
         (if (and model (not (contains? @schematic-groups model)) (seq model-def) (not has-templates))
           (let [_ (swap! schematic-cache assoc model {})
