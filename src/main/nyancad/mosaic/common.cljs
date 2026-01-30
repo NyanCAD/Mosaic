@@ -634,6 +634,9 @@
                "pmos" (rc/inline "icons/pmos.svg")
                "npn" (rc/inline "icons/npn.svg")
                "pnp" (rc/inline "icons/pnp.svg")
+               "port" (rc/inline "icons/port.svg")
+               "ground" (rc/inline "icons/ground.svg")
+               "supply" (rc/inline "icons/supply.svg")
                "")]
     [:span.device-icon {:dangerouslySetInnerHTML (r/unsafe-html icon)}]))
 
@@ -699,7 +702,7 @@
       [:kbd "X"]
       [:span.label "Subcircuit"]]
      [:div.component-item
-      [label]
+      [device-icon "port"]
       [:kbd "P"]
       [:span.label "Port"]]]
     [:p.hint "Long-press button or Shift+key for alternatives (PMOS, PNP, etc.)"]]

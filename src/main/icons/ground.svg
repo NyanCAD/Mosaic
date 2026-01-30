@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+
+<!--
+SPDX-FileCopyrightText: 2022 Pepijn de Vos
+
+SPDX-License-Identifier: CC-BY-NC-SA-4.0
+-->
+
+<svg
+   width="40"
+   height="40"
+   viewBox="0 0 40 40"
+   version="1.1"
+   xmlns="http://www.w3.org/2000/svg">
+  <defs />
+  <!-- Ground symbol: vertical line up + triangle pointing down -->
+  <!-- Vertical line as filled rect -->
+  <rect x="18.75" y="6" width="2.5" height="10" />
+  <!-- Triangle pointing down (filled) -->
+  <path d="M 20,32 L 6,16 L 34,16 Z" />
+</svg>

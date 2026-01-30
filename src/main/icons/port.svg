@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+
+<!--
+SPDX-FileCopyrightText: 2022 Pepijn de Vos
+
+SPDX-License-Identifier: CC-BY-NC-SA-4.0
+-->
+
+<svg
+   width="40"
+   height="40"
+   viewBox="0 0 40 40"
+   version="1.1"
+   xmlns="http://www.w3.org/2000/svg">
+  <defs />
+  <!-- Port label shape: pentagon pointing right, as outline path -->
+  <path
+     d="M 4,8 L 22,8 L 34,20 L 22,32 L 4,32 L 4,8 Z
+        M 6.5,10.5 L 6.5,29.5 L 20.5,29.5 L 30,20 L 20.5,10.5 L 6.5,10.5 Z"
+     fill-rule="evenodd" />
+</svg>

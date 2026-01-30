@@ -984,7 +984,15 @@ rect.select {
     fill: black;
 }
 .tetris g.wire.selected line.wire {
-    stroke-dasharray: 10px 3px; /* this is not ideal */
+    stroke-dasharray: 10px 3px;
+}
+
+.tetris g.device.selected polyline,
+.tetris g.device.selected circle.outline,
+.tetris g.device.selected rect.outline,
+.tetris g.device.selected polygon.outline,
+.tetris g.device.selected path {
+    stroke-dasharray: 10px 3px;
 }
 
 .tetris circle.nc {
@@ -1520,7 +1528,9 @@ rect.select {
 
 .mosaic-app .history-panel .modal-header h2 {
     margin: 0;
-    font: 500 20px/25px "Roboto", sans-serif;
+    font:
+        500 20px/25px "Roboto",
+        sans-serif;
     color: #222222;
 }
 

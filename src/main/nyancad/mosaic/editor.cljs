@@ -1436,7 +1436,7 @@
     [:button {:title "Add port [p]"
               :class (device-active "port")
               :on-mouse-up #(add-device "port" (viewbox-coord %))}
-     [cm/label]]
+     [cm/device-icon "port"]]
     [:button {:title "Add wire label [t]"
               :class (device-active "port")
               :on-mouse-up #(add-label (viewbox-coord %))}
@@ -1444,11 +1444,11 @@
     [:button {:title "Add ground [g]"
               :class (device-active "port")
               :on-mouse-up #(add-gnd (viewbox-coord %))}
-     "GND"]
+     [cm/device-icon "ground"]]
     [:button {:title "Add power supply [shift+p]"
               :class (device-active "port")
               :on-mouse-up #(add-supply (viewbox-coord %))}
-     "VDD"]
+     [cm/device-icon "supply"]]
     [:button {:title "Add text area [shift+t]"
               :class (device-active "port")
               :on-mouse-up #(add-device "text" (viewbox-coord %))}
