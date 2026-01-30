@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.4"
+__generated_with = "0.19.6"
 app = marimo.App()
 
 
@@ -283,6 +283,27 @@ def _(mo, spice, widget_state):
         tran_stop,
         tran_uic,
     )
+
+
+@app.cell(hide_code=True)
+def _(mo, reader):
+    _docs = reader.schematic_data.get(reader.name, {})
+    _has_ground = any(
+        doc.get('type') == 'port' and doc.get('variant') == 'ground'
+        for doc in _docs.values()
+        if isinstance(doc, dict)
+    )
+
+    ground_warning = None if _has_ground else mo.callout(
+        mo.md("""
+    **No ground reference**
+
+    Add a ground port (GND) to establish the reference voltage for simulation.
+    """),
+        kind="warn"
+    )
+    ground_warning
+    return
 
 
 @app.cell(hide_code=True)
