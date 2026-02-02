@@ -841,13 +841,15 @@ g.toolstaging g.device {
     transition: all 70ms ease-out;
 }
 
-line.wirebb {
+polyline.wirebb {
     stroke: transparent;
     transition: stroke 200ms;
     stroke-width: 25px;
     fill: none;
+    pointer-events: stroke;
+    stroke-linejoin: round;
 }
-line.wirebb:hover {
+g.wire:hover polyline.wirebb {
     stroke: #00000008;
 }
 
@@ -975,15 +977,16 @@ rect.select {
     fill: none;
 }
 
-.tetris line.wire {
+.tetris polyline.wire {
     stroke: black;
     stroke-width: 2px;
     fill: none;
+    stroke-linejoin: round;
 }
 .tetris circle.wire {
     fill: black;
 }
-.tetris g.wire.selected line.wire {
+.tetris g.wire.selected polyline.wire {
     stroke-dasharray: 10px 3px;
 }
 
@@ -1115,11 +1118,12 @@ rect.select {
     fill: none;
 }
 
-.eyesore line.wire {
+.eyesore polyline.wire {
     stroke: #39bfff;
     stroke-width: 1px;
     fill: none;
     vector-effect: non-scaling-stroke;
+    stroke-linejoin: round;
 }
 .eyesore circle.wire {
     fill: #39bfff;

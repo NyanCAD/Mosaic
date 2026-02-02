@@ -9,6 +9,7 @@
             [nyancad.hipflask :refer [pouch-atom pouchdb update-keys sep watch-changes done?]]
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go go-loop <!]]
+            [clojure.math :as math]
             clojure.edn
             clojure.set
             clojure.string
@@ -165,23 +166,20 @@
                          (+ x size) (- y size)])}])
 
 (defn wire-sym [key wire]
-  (let [name (or (:name wire) key)
-        x (:x wire)
-        y (:y wire)
-        rx (:rx wire)
-        ry (:ry wire)]
+  (let [{:keys [x y rx ry variant]} wire
+        x1 (* (+ x 0.5) grid-size)
+        y1 (* (+ y 0.5) grid-size)
+        x2 (* (+ x rx 0.5) grid-size)
+        y2 (* (+ y ry 0.5) grid-size)
+        [mx my] (case variant "hv" [x2 y1] "vh" [x1 y2] nil)
+        pts (if mx
+              (str x1 "," y1 " " mx "," my " " x2 "," y2)
+              (str x1 "," y1 " " x2 "," y2))]
     [:g.wire {:on-mouse-down #(drag-start key %)
               :on-mouse-move #(eraser-drag key %)
               :class (when (contains? @selected key) :selected)}
-     ; TODO drag-start ::wire nodes (with reverse)
-     [:line.wirebb {:x1 (* (+ x 0.5) grid-size)
-                    :y1 (* (+ y 0.5) grid-size)
-                    :x2 (* (+ x rx 0.5) grid-size)
-                    :y2 (* (+ y ry 0.5) grid-size)}]
-     [:line.wire {:x1 (* (+ x 0.5) grid-size)
-                  :y1 (* (+ y 0.5) grid-size)
-                  :x2 (* (+ x rx 0.5) grid-size)
-                  :y2 (* (+ y ry 0.5) grid-size)}]]))
+     [:polyline.wirebb {:points pts}]
+     [:polyline.wire {:points pts}]]))
 
 (defn schem-template [dev fmt]
   (let [res (if-let [l (last @simulations)] (val l) {})
@@ -238,7 +236,7 @@
               [0 0.7]
               [0.3 0.7]
               [0.5 0.5]]]])
-   [:text {:text-anchor (case (js/Math.round (first (:transform label)))
+   [:text {:text-anchor (case (math/round (first (:transform label)))
                           1 "end"
                           -1 "start"
                           "middle")
@@ -634,19 +632,28 @@
                  y (- py mid)
                  nx (+ (* a x) (* c y) e)
                  ny (+ (* b x) (* d y) f)]
-             [(js/Math.round (+ devx nx mid))
-              (js/Math.round (+ devy ny mid))])) shape)))
+             [(math/round (+ devx nx mid))
+              (math/round (+ devy ny mid))])) shape)))
 
 (defn exrange [start width]
   (next (take-while #(not= % (+ start width))
                     (iterate #(+ % (cm/sign width)) start))))
 
-(defn wire-locations [{:keys [:_id :x :y :rx :ry]}]
-  [[[x y] [(+ x rx) (+ y ry)]]
-   (cond
-     (= rx 0) (map #(vector x %) (exrange y ry))
-     (= ry 0) (map #(vector % y) (exrange x rx))
-     :else [])])
+(defn wire-locations [{:keys [x y rx ry variant]}]
+  (let [x2 (+ x rx) y2 (+ y ry)]
+    [[[x y] [x2 y2]]  ; conn: start and end
+     (case variant
+       "hv" (concat (map #(vector % y) (exrange x rx))     ; horizontal leg
+                    [[x2 y]]                               ; corner
+                    (map #(vector x2 %) (exrange y ry)))   ; vertical leg
+       "vh" (concat (map #(vector x %) (exrange y ry))     ; vertical leg
+                    [[x y2]]                               ; corner
+                    (map #(vector % y2) (exrange x rx)))   ; horizontal leg
+       ;; "d" or nil: straight or diagonal
+       (cond
+         (zero? rx) (map #(vector x %) (exrange y ry))     ; vertical
+         (zero? ry) (map #(vector % y) (exrange x rx))     ; horizontal
+         :else []))]))
 
 (defn builtin-locations [{:keys [:_id :x :y :type :transform]}]
   (let [mod (get models type)
@@ -697,23 +704,46 @@
               result))
           {} bodyidx))
 
+(defn wire-corner
+  "Compute the corner position of an elbow wire, or nil for straight/diagonal."
+  [{:keys [x y rx ry variant]}]
+  (case variant
+    "hv" [(+ x rx) y]
+    "vh" [x (+ y ry)]
+    nil))
+
 (defn split-wire [wirename coords]
-  (let [{:keys [:x :y :rx :ry]} (get @schematic wirename)
+  (let [{:keys [x y rx ry variant] :as wire} (get @schematic wirename)
         x2 (+ x rx)
         y2 (+ y ry)
-        allcoords (cm/ssconj coords [x y] [x2 y2])
-        widx (first @location-index)
+        [_ body] (wire-locations wire)
+        ;; body is already in path order (including corner for elbows)
+        split-set (set coords)
+        ordered (concat [[x y]] (filter split-set body) [[x2 y2]])
+        ;; Corner of the segment being created (computed per segment in loop)
+        ;; Check if two points share a non-wire device, or a wire with same corner
+        shared-device? (fn [p1 p2 seg-corner]
+                         (let [connidx (first @location-index)
+                               shared (clojure.set/intersection (get connidx p1) (get connidx p2))]
+                           (some #(let [dev (get @schematic %)]
+                                    (or (not= "wire" (:type dev))
+                                        (= seg-corner (wire-corner dev))))
+                                 shared)))
         wires (loop [w wirename
-                     [[x1 y1] & [[x2 y2] & _ :as other]] allcoords
+                     [[x1 y1] & [[x2 y2] & _ :as other]] ordered
                      schem {}]
                 (if other
-                  (recur (name (gensym wirename)) other
-                        ;; if the start and end point cover the same device, skip
-                         (if (empty? (clojure.set/intersection (get widx [x1 y1]) (get widx [x2 y2])))
-                           (assoc schem w
-                                  {:type "wire" :transform cm/IV
-                                   :x x1 :y y1 :rx (- x2 x1) :ry (- y2 y1)})
-                           schem))
+                  (let [;; Compute corner of the segment being created
+                        seg-corner (case variant
+                                     "hv" [x2 y1]
+                                     "vh" [x1 y2]
+                                     nil)]
+                    (recur (name (gensym wirename)) other
+                           (if (shared-device? [x1 y1] [x2 y2] seg-corner)
+                             schem  ; skip - points already connected by a device
+                             (assoc schem w
+                                    {:type "wire" :transform cm/IV :variant variant
+                                     :x x1 :y y1 :rx (- x2 x1) :ry (- y2 y1)}))))
                   schem))]
     (swap! schematic (partial merge-with merge) wires)))
 
@@ -807,17 +837,28 @@
     (swap! staging
            (fn [d]
              (let [rx (- x (:x d) 0.5)
-                   ry (- y (:y d) 0.5)]
+                   ry (- y (:y d) 0.5)
+                   diagonal? (.-ctrlKey e)
+                   straight? (or (< (abs rx) 0.5)
+                                 (< (abs ry) 0.5))]
                (cond
-                 (.-ctrlKey e) (assoc d :rx rx :ry ry)
-                 (> (js/Math.abs rx) (js/Math.abs ry)) (assoc d :rx rx :ry 0)
-                 :else (assoc d :rx 0 :ry ry)))))))
+                 ;; Ctrl held: diagonal
+                 diagonal? (assoc d :rx rx :ry ry :variant "d")
+                 ;; Axis-aligned: snap to dominant axis
+                 straight? (if (> (abs rx) (abs ry))
+                             (assoc d :rx rx :ry 0 :variant "d")
+                             (assoc d :rx 0 :ry ry :variant "d"))
+                 ;; Elbow mode: lock direction on first significant movement
+                 :else
+                 (let [variant (or (#{"hv" "vh"} (:variant d))
+                                   (if (> (abs rx) (abs ry)) "hv" "vh"))]
+                   (assoc d :rx rx :ry ry :variant variant))))))))
 
 (defn drag-staged-device [e]
   (let [[x y] (viewbox-coord e)
         [width height] (get-in models [(:type @staging) ::bg])
-        xm (js/Math.round (- x width 0.5))
-        ym (js/Math.round (- y height 0.5))]
+        xm (math/round (- x width 0.5))
+        ym (math/round (- y height 0.5))]
     (swap! staging assoc :x xm :y ym)))
 
 (defn wire-drag [e]
@@ -859,22 +900,23 @@
 (defn add-wire-segment [[x y]]
   (swap! ui assoc
          ::staging {:type "wire"
-                    :x (js/Math.floor x)
-                    :y (js/Math.floor y)
-                    :rx 0 :ry 0}
+                    :x (math/floor x)
+                    :y (math/floor y)
+                    :rx 0 :ry 0
+                    :variant "d"}
          ::dragging ::wire))
 
 (defn add-wire [[x y] first?]
   (if first?
     (add-wire-segment [x y]) ; just add a new wire, else finish old wire
-    (let [dev (update-keys @staging #{:rx :ry} js/Math.round)
+    (let [dev (update-keys @staging #{:rx :ry} math/round)
           {rx :rx ry :ry} dev
-          x (js/Math.round (+ (:x dev) rx)) ; use end pos of previous wire instead
-          y (js/Math.round (+ (:y dev) ry))
+          x (math/round (+ (:x dev) rx)) ; use end pos of previous wire instead
+          y (math/round (+ (:y dev) ry))
           [conn body] @location-index
           on-port (or (contains? conn [x y])
                       (contains? body [x y]))
-          same-tile (and (< (js/Math.abs rx) 0.5) (< (js/Math.abs ry) 0.5))]
+          same-tile (and (< (abs rx) 0.5) (< (abs ry) 0.5))]
       (cond
         same-tile (swap! ui assoc ; the dragged wire stayed at the same tile, exit
                          ::staging nil
@@ -1021,8 +1063,8 @@
                 (clean-selected @schematic)))
           (round-coords [{x :x y :y :as dev}]
             (assoc dev
-                   :x (js/Math.round (+ x dx))
-                   :y (js/Math.round (+ y dy))))]
+                   :x (math/round (+ x dx))
+                   :y (math/round (+ y dy))))]
     (swap! ui endfn)
     (swap! schematic update-keys selected round-coords)
     (post-action!)))
@@ -1030,10 +1072,10 @@
 (defn drag-end-box []
   (let [[x y] (::mouse-start @ui)
         {dx :x dy :y} (::delta @ui)
-        x1 (js/Math.floor (js/Math.min x (+ x dx)))
-        y1 (js/Math.floor (js/Math.min y (+ y dy)))
-        x2 (js/Math.floor (js/Math.max x (+ x dx)))
-        y2 (js/Math.floor (js/Math.max y (+ y dy)))
+        x1 (math/floor (min x (+ x dx)))
+        y1 (math/floor (min y (+ y dy)))
+        x2 (math/floor (max x (+ x dx)))
+        y2 (math/floor (max y (+ y dy)))
         [connidx bodyidx] @location-index
         sel (apply clojure.set/union
                    (for [x (range x1 (inc x2))
@@ -1065,8 +1107,8 @@
 (defn add-device [cell [x y] & args]
   (let [kwargs (apply array-map args)
         [width height] (get-in models [cell ::bg])
-        mx (js/Math.round (- x (/ width 2) 1))
-        my (js/Math.round (- y (/ height 2) 1))]
+        mx (math/round (- x (/ width 2) 1))
+        my (math/round (- y (/ height 2) 1))]
     (swap! ui assoc
            ::staging (into {:transform cm/IV, :type cell :x mx :y my} kwargs)
            ::tool ::device)))
@@ -1538,8 +1580,8 @@
          tool ::tool
          {x :x y :y} ::delta
          [sx sy] ::mouse-start} @ui
-        vx (* grid-size (js/Math.round x))
-        vy (* grid-size (js/Math.round y))]
+        vx (* grid-size (math/round x))
+        vy (* grid-size (math/round y))]
     (cond
       ;; Only render staging when actively placing a device or drawing a wire
       (and v (or (= tool ::device)
@@ -1551,8 +1593,8 @@
       (= dr ::box) [:rect.select
                     {:x (* (min sx (+ sx x)) grid-size)
                      :y (* (min sy (+ sy y)) grid-size)
-                     :width (js/Math.abs (* x grid-size))
-                     :height (js/Math.abs (* y grid-size))}]
+                     :width (abs (* x grid-size))
+                     :height (abs (* y grid-size))}]
       (and sel dr) [:g.staging {:style {:transform (str "translate(" vx "px, " vy "px)")}}
                     [schematic-elements
                      (let [schem @schematic]

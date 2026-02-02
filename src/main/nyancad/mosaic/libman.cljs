@@ -211,8 +211,8 @@
         x (.-x point)
         y (.-y point)
         ; Determine closest cardinal direction
-        abs-x (js/Math.abs x)
-        abs-y (js/Math.abs y)]
+        abs-x (abs x)
+        abs-y (abs y)]
     (if (> abs-x abs-y)
       (if (< x 0) :right :left)
       (if (< y 0) :bottom :top))))
