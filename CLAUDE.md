@@ -230,3 +230,15 @@ The Collaborative Work Statement demonstrates that:
 - The work reflects genuine understanding, not just prompting
 
 This accountability benefits both NLnet's review process and the long-term maintainability of the codebase.
+
+### Preserving History During Long Sessions
+
+When a conversation runs long and context is compacted/summarized, decision history can be lost. To prevent this:
+
+**When writing the compaction summary:** Include a draft Collaborative Work Statement section that captures:
+- Design decisions and alternatives considered
+- Rejected approaches and why they were rejected
+- Bugs caught during review
+- The iteration history and who contributed what
+
+This ensures the commit message accurately reflects the full collaborative process, not just what remained after compaction.
