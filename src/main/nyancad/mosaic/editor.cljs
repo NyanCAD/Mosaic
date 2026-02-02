@@ -24,11 +24,11 @@
 ; Use same db name locally as remote to avoid cross-user/workspace contamination
 (defonce db (pouchdb (or (cm/get-db-name) "schematics")))
 (defonce schematic (pouch-atom db group (r/atom {})))
-(set-validator! (.-cache schematic)
+(set-validator! schematic
                 #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
 
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
-(set-validator! (.-cache modeldb)
+(set-validator! modeldb
                 #(or (s/valid? :nyancad.mosaic.common/modeldb %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/modeldb %))))
 (defonce snapshots (pouch-atom db (str group "$snapshots") (r/atom {})))
 (defonce simulations (pouch-atom db (str group "$result") (r/atom (sorted-map))))

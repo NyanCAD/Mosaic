@@ -136,7 +136,7 @@
 (defn add-watch-group [groups patom]
   (swap! groups assoc (.-group patom) (.-cache patom)))
 
-(defn- pouch-swap! [db cache done? f x & args]
+(defn- pouch-swap! [db cache done? validator f x & args]
   (letfn [(prepare [old new] ; get the new values, filling in _id, _ref, _deleted
             (for [[id {rev :_rev}] old]
               (if-let [newdoc (get new id)]
@@ -169,6 +169,8 @@
       (<! done?) ; sequentialize operations to avoid needless conflicts, over twice as fast
       (loop [docs (into {} (map (let [c @cache] #(vector % (get c %)))) (keyset x))]
         (let [updocs (apply f docs (if (set? x) (keys docs) x) args)] ; apply f
+          (when (and validator (not (validator updocs)))
+            (throw (ex-info "Validator rejected reference state" {:docs updocs})))
           (if (= docs updocs)
             @cache ; nothing changed, no need to do anything
             (let [prepdocs (prepare docs updocs) ; prepare for sending to PouchDB
@@ -185,7 +187,7 @@
                 (let [p (alldocs db (clj->js {:include_docs true :keys (keys errdocs)}))]
                   (recur (docs-into {} (<p! p)))))))))))) ; recur with remaining documents
 
-(deftype PAtom [db group cache ^:mutable done?]
+(deftype PAtom [db group cache ^:mutable done? ^:mutable validator]
   IAtom
 
   IDeref
@@ -193,9 +195,9 @@
 
   ISwap
   (-swap! [_a _f]         (throw (js/Error "Pouch atom assumes first argument is a key")))
-  (-swap! [_a f x]        (set! done? (pouch-swap! db cache done? f x)))
-  (-swap! [_a f x y]      (set! done? (pouch-swap! db cache done? f x y)))
-  (-swap! [_a f x y more] (set! done? (apply pouch-swap! db cache done? f x y more)))
+  (-swap! [_a f x]        (set! done? (pouch-swap! db cache done? validator f x)))
+  (-swap! [_a f x y]      (set! done? (pouch-swap! db cache done? validator f x y)))
+  (-swap! [_a f x y more] (set! done? (apply pouch-swap! db cache done? validator f x y more)))
 
   IWatchable
   (-notify-watches [_this old new] (-notify-watches cache old new))
@@ -206,6 +208,7 @@
   ([db group] (pouch-atom db group (atom {})))
   ([db group cache]
    (PAtom. db group cache
-           (init-cache db group cache))))
+           (init-cache db group cache)
+           nil)))
 
 (defn done? [^PAtom pa] (.-done? pa))
