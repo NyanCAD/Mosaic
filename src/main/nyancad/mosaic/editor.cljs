@@ -55,9 +55,14 @@
     "amp" "U"
     "X"))
 
+(defn make-names
+  "Returns a lazy sequence of available names for a device type (e.g. R1, R2, R3...)"
+  [base]
+  (let [names (map #(str (initial base) %) (next (range)))]
+    (remove #(@schematic (str group sep %)) names)))
+
 (defn make-name [base]
-  (let [ids (map #(str group sep (initial base) %) (next (range)))]
-    (first (remove @schematic ids))))
+  (first (make-names base)))
 
 (defonce ui (r/atom {::zoom [0 0 500 500]
                      ::theme "tetris"
@@ -794,8 +799,8 @@
 
 (defn commit-staged [dev]
   (when (s/valid? :nyancad.mosaic.common/device dev)
-    (let [id (make-name (:type dev))
-          name (last (clojure.string/split id sep))]
+    (let [name (make-name (:type dev))
+          id (str group sep name)]
       (swap! schematic assoc id
              (if (:name dev)
                dev
@@ -1328,10 +1333,16 @@
   (delete-selected))
 
 (defn paste []
-  (let [devs (get-in @local [(str "local" sep "clipboard") :data])
-        xf (map (fn [d] [(name (gensym (make-name (:type d))))
-                         (update d :name gensym)]))
-        devmap (into {} xf devs)]
+  (let [devmap (->> (get-in @local [(str "local" sep "clipboard") :data])
+                    (group-by :type)
+                    (map (fn [[typ devices]]
+                           (map (fn [name dev]
+                                  (let [id (str group sep name)
+                                        display-name (if (= typ "port") (:name dev) name)]
+                                    [id (assoc dev :name display-name)]))
+                                (make-names typ)
+                                devices)))
+                    (into {} cat))]
     (go
       (<! (swap! schematic into devmap))
       (swap! ui assoc
