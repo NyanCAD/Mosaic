@@ -129,3 +129,13 @@ public/wheels
 
 .calva
 .clj-kondo
+.clinerules
+
+# Generated files
+public/design-doc.json
+public/docs
+
+# Server-generated user data
+notebooks
+
+package-lock.json
