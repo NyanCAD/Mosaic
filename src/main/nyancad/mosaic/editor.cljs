@@ -959,13 +959,14 @@
 ; this has been shown to peg the CPU
 (def inflight-deletions (atom #{}))
 (defn eraser-drag [k e]
-  (when (and (= (.-buttons e) 1)
+  (when (and (> (.-buttons e) 0)
              (.-isPrimary e)
              (< (count (::pointer-cache @ui)) 2)
              (= @tool ::eraser)
-             (not (contains? @inflight-deletions k)))
-    (go (swap! inflight-deletions conj k)
-        (<! (swap! schematic dissoc k))
+             (not (contains? @inflight-deletions k))
+             (contains? @schematic k))
+    (swap! inflight-deletions conj k)
+    (go (<! (swap! schematic dissoc k))
         (swap! inflight-deletions disj k))))
 
 (defn drag [e]
@@ -1103,7 +1104,6 @@
 (defn drag-start-background [e]
   (reset! last-coord [(.-clientX e) (.-clientY e)])
   (cond
-    (= (.-button e) 1) (swap! ui assoc ::dragging ::view)
     (and (= (.-button e) 0)
          (= nil (::dragging @ui))
          (= ::cursor @tool)) (drag-start-box e)
@@ -1134,9 +1134,14 @@
         (= 2 (count cache))
         (cancel)
 
-        ;; Pen eraser: momentary eraser (reuse ::prev-tool)
+        ;; Pen eraser: momentary eraser
         (pen-eraser? e)
         (swap! ui #(assoc % ::prev-tool (::tool %) ::tool ::eraser))
+
+        ;; Middle click: momentary pan
+        (= (.-button e) 1)
+        (do (reset! last-coord [(.-clientX e) (.-clientY e)])
+            (swap! ui #(assoc % ::prev-tool (::tool %) ::tool ::pan)))
 
         ;; Primary pointer: normal interaction
         (.-isPrimary e)
@@ -1152,16 +1157,17 @@
         (apply-pinch-delta
          (pointer-distance old-cache) (pointer-distance new-cache)
          (pointer-center old-cache) (pointer-center new-cache))))
-    ;; Update cache
-    (swap! ui assoc-in [::pointer-cache id] entry)
+    ;; Only update cache for pointers we're already tracking
+    (when (contains? old-cache id)
+      (swap! ui assoc-in [::pointer-cache id] entry))
     ;; Single pointer: normal drag
     (when (and (.-isPrimary e) (< (count old-cache) 2))
       (drag e))))
 
 (defn on-pointer-up-bg [e]
   (swap! ui update ::pointer-cache dissoc (.-pointerId e))
-  ;; Pen eraser release: restore tool
-  (when (pen-eraser? e)
+  ;; Restore tool from momentary switch (pen eraser or middle-click pan)
+  (when (or (pen-eraser? e) (= (.-button e) 1))
     (swap! ui #(assoc % ::tool (::prev-tool %))))
   ;; Primary pointer: normal drag end (only if not in gesture)
   (when (and (.-isPrimary e) (< (count (::pointer-cache @ui)) 2))
@@ -1186,8 +1192,14 @@
       (= 2 (count (::pointer-cache @ui)))
       (cancel)
 
+      ;; Pen eraser: momentary eraser
       (pen-eraser? e)
       (swap! ui #(assoc % ::prev-tool (::tool %) ::tool ::eraser))
+
+      ;; Middle click: momentary pan
+      (= (.-button e) 1)
+      (do (reset! last-coord [(.-clientX e) (.-clientY e)])
+          (swap! ui #(assoc % ::prev-tool (::tool %) ::tool ::pan)))
 
       (.-isPrimary e)
       (drag-start k e))))
@@ -1201,7 +1213,8 @@
         (apply-pinch-delta
          (pointer-distance old-cache) (pointer-distance new-cache)
          (pointer-center old-cache) (pointer-center new-cache))))
-    (swap! ui assoc-in [::pointer-cache id] entry)
+    (when (contains? old-cache id)
+      (swap! ui assoc-in [::pointer-cache id] entry))
     (when (and (.-isPrimary e) (< (count old-cache) 2))
       (eraser-drag k e))))
 
