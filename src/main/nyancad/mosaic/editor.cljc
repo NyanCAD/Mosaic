@@ -118,7 +118,8 @@
 (declare build-wire-split-index split-wire location-index)
 
 (defn post-action!
-  "Record undo checkpoint and split wires after a user action completes."
+  "Record undo checkpoint and split wires after a user action completes.
+   Returns a channel that completes when done."
   []
   (go
     (<! (done? schematic))
@@ -128,7 +129,8 @@
       (<! (done? schematic)))))
 
 (defn restore [state]
-  (let [state-str (into {} (map (fn [[k v]] [(name k) v]) state))
+  (let [;; Ensure keys are strings (schematic uses string device IDs)
+        state-str (into {} (map (fn [[k v]] [(name k) v]) state))
         del (reduce disj (set (keys @schematic)) (keys state-str))
         norev (reduce #(update %1 %2 dissoc :_rev) state-str (keys state-str))]
     (go
@@ -1516,13 +1518,10 @@
                       :default-value (get-in @schematic [key :template] (::template (get models @device-type)))
                       :on-change (debounce #(do (swap! schematic assoc-in [key :template] (.. % -target -value)) (post-action!)))}]]]))))
 
-(defonce clipboard (atom nil))
-
 (defn copy []
   (let [sel @selected
         sch @schematic
         devs (map (comp #(dissoc % :_rev :_id) sch) sel)]
-    (reset! clipboard devs)
     (swap! local assoc (str "local" sep "clipboard") {:data devs})))
 
 (defn cut []
@@ -1530,24 +1529,23 @@
   (delete-selected))
 
 (defn paste []
-  (when-let [devs (or @clipboard (get-in @local [(str "local" sep "clipboard") :data]))]
-    (let [devmap (->> devs
-                      (group-by :type)
-                      (map (fn [[typ devices]]
-                             (map (fn [name dev]
-                                    (let [id (str group sep name)
-                                          display-name (if (= typ "port") (:name dev) name)]
-                                      [id (assoc dev :name display-name)]))
-                                  (make-names typ)
-                                  devices)))
-                      (into {} cat))]
-      (go
-        (swap! schematic into devmap)
-        (<! (done? schematic))
-        (swap! ui assoc
-               ::dragging ::device
-               ::selected (set (keys devmap)))
-        (post-action!)))))
+  (let [devmap (->> (get-in @local [(str "local" sep "clipboard") :data])
+                    (group-by :type)
+                    (map (fn [[typ devices]]
+                           (map (fn [name dev]
+                                  (let [id (str group sep name)
+                                        display-name (if (= typ "port") (:name dev) name)]
+                                    [id (assoc dev :name display-name)]))
+                                (make-names typ)
+                                devices)))
+                    (into {} cat))]
+    (go
+      (swap! schematic into devmap)
+      (<! (done? schematic))
+      (swap! ui assoc
+             ::dragging ::device
+             ::selected (set (keys devmap)))
+      (post-action!))))
 
 (defn notebook-url []
   (let [url-params (js/URLSearchParams. #js{:schem group})]
