@@ -75,7 +75,7 @@
    (reset! cache (doc->state doc))
    (let [ja (JsAtom. (atom doc) (atom 1) cache)]
      (.addEventListener js/window "message"
-       (fn [event]
+       (fn [^js event]
          (when (and (= (.. event -data -type) "update")
                     (> (.. event -data -version) @(.-version ja)))
            (if-let [full-doc (.. event -data -fullDocument)]

@@ -44,33 +44,40 @@
 </body>
 </html>")))
 
-(deftype SchematicEditorProvider [context]
+(defn- apply-updates
+  "Apply JSON edit operations to a VSCode WorkspaceEdit.
+   Extracted from go-loop so ^js hints survive (go macro strips them)."
+  [^js document ^js edit updates]
+  (doseq [^js up updates]
+    (let [offset (.-offset up)
+          length (.-length up)
+          content (.-content up)
+          old-content (.-oldcontent up)
+          start (.positionAt document offset)
+          end (.positionAt document (+ offset (if old-content
+                                                (.-length old-content)
+                                                length)))]
+      (.replace edit (.-uri document) (vscode/Range. start end) (or content "")))))
+
+(deftype SchematicEditorProvider [^js context]
   Object
-  (resolveCustomTextEditor [this ^js document ^js webviewpanel token]
-    (let [^js webview (.-webview webviewpanel)
+  (resolveCustomTextEditor [^js this ^js document ^js webviewpanel token]
+    (let [^js ctx (.-context this)
+          ^js webview (.-webview webviewpanel)
           edit-queue (chan 32)
           version (atom 1)]
       ;; Configure webview
       (set! (.-options webview)
             #js{:enableScripts true
-                :localResourceRoots #js[(.joinPath vscode/Uri (.-extensionUri (.-context this)) "out")]})
-      (set! (.-html webview) (get-html (.-context this) document webview))
+                :localResourceRoots #js[(.joinPath vscode/Uri (.-extensionUri ctx) "out")]})
+      (set! (.-html webview) (get-html ctx document webview))
 
       ;; Process edit queue sequentially to avoid conflicts
       (go-loop []
         (let [{:keys [update ver]} (<! edit-queue)]
           (when update
             (let [edit (vscode/WorkspaceEdit.)]
-              (doseq [up update]
-                (let [offset (.-offset up)
-                      length (.-length up)
-                      content (.-content up)
-                      old-content (.-oldcontent up)
-                      start (.positionAt document offset)
-                      end (.positionAt document (+ offset (if old-content
-                                                            (.-length old-content)
-                                                            length)))]
-                  (.replace edit (.-uri document) (vscode/Range. start end) (or content ""))))
+              (apply-updates document edit update)
               (<p! (.. vscode/workspace (applyEdit edit)))
               ;; Notify webview of the version
               (.postMessage webview #js{:type "applied" :version ver}))

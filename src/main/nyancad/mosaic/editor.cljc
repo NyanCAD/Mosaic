@@ -160,7 +160,7 @@
   (when-let [st (cm/redo undotree)]
     (restore st)))
 
-#?(:cljs (defonce syncactive (r/atom false)))
+#?(:vscode nil :cljs (defonce syncactive (r/atom false)))
 
 (declare drag-start drag-end eraser-drag models on-pointer-down-element on-pointer-move-element on-pointer-up-bg double-click)
 
@@ -1538,7 +1538,7 @@
         sch @schematic
         devs (map (comp #(dissoc % :_rev :_id) sch) sel)]
     (reset! clipboard devs)
-    #?(:cljs (swap! local assoc (str "local" sep "clipboard") {:data devs}))))
+    #?(:vscode nil :cljs (swap! local assoc (str "local" sep "clipboard") {:data devs}))))
 
 (defn cut []
   (copy)
@@ -1636,13 +1636,13 @@
      [cm/redoi]]]
    [:div.status
     [cm/renamable (r/cursor modeldb [(cm/model-key group) :name]) "Untitled"]
-    #?(:cljs
+    #?(:vscode nil :cljs
        (if @syncactive
          [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
          [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]]))]
 
    [:div.secondary
-    #?(:cljs
+    #?(:vscode nil :cljs
        [:a {:href (if cm/current-workspace
                     (str "library?ws=" cm/current-workspace)
                     "library")
@@ -1655,7 +1655,7 @@
     [:a {:title "Snapshot History"
          :on-click show-history-panel}
      [cm/history]]
-    #?(:cljs
+    #?(:vscode nil :cljs
        [:a {:title "Pop out notebook"
             :on-click (fn []
                         (let [nb-url (str js/window.location.origin "/" (notebook-url))
@@ -1665,7 +1665,7 @@
                             (set! (.-onbeforeunload popup)
                                   #(swap! ui assoc ::notebook-popped-out false)))))}
         [cm/external-link]])
-    #?(:cljs
+    #?(:vscode nil :cljs
        [:a {:href "/auth/"
             :title "Login / Account"}
         [cm/login]])]])
@@ -1885,7 +1885,7 @@
       [schematic-elements @schematic]
       [schematic-dots]
       [tool-elements]]]
-    #?(:cljs
+    #?(:vscode nil :cljs
        (when-not @notebook-popped-out
          [:div#mosaic_notebook_wrapper
           [:div.resize-handle
@@ -1948,7 +1948,8 @@
 (def immediate-shortcuts
   {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))})
 
-#?(:cljs
+#?(:vscode nil
+   :cljs
    (do
      (defn handle-auth-failure
        "Handle authentication failure - immediate logout."
@@ -1960,7 +1961,7 @@
      (defn handle-sync-error
        "Handle sync errors, checking for 401 auth failures.
        PouchDB fires 'error' event for 401, not 'denied' (with retry: true)."
-       [error]
+       [^js error]
        (if (or (= (.-status error) 401)
                (and (.-name error)
                     (= (.toLowerCase (.-name error)) "unauthorized")))
@@ -1976,7 +1977,7 @@
 
      (defn synchronise []
        (when (seq sync) ; pass nil to disable synchronization
-         (let [es (.sync db sync #js{:live true :retry true})]
+         (let [^js es (.sync db sync #js{:live true :retry true})]
            (.on es "paused" #(reset! syncactive false))
            (.on es "active" #(reset! syncactive true))
            (.on es "denied" handle-auth-failure)
