@@ -20,3 +20,9 @@
   (sh! "bash" "src/bash/jekyll-build.sh")
   (shadow/release :couchdb)
   (sh! "bash" "src/bash/couchdb-export.sh"))
+
+(defn release-vscode
+  "Build VSCode extension (webview frontend + extension host)"
+  []
+  (shadow/release :vscode-webview)
+  (shadow/release :vscode-ext))

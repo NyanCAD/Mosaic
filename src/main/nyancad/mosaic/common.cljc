@@ -3,11 +3,13 @@
 ; SPDX-License-Identifier: MPL-2.0
 
 (ns nyancad.mosaic.common
+  (:refer-clojure :exclude [update-keys])
   (:require [reagent.core :as r]
             [react-bootstrap-icons :as icons]
             [clojure.spec.alpha :as s]
             reagent.ratom
-            nyancad.hipflask
+            #?@(:vscode []
+                :cljs [nyancad.hipflask])
             clojure.edn
             clojure.set
             clojure.string
@@ -16,8 +18,36 @@
             goog.functions
             [shadow.resource :as rc]))
 
-; allow taking a cursor of a pouch atom
-(extend-type ^js nyancad.hipflask/PAtom reagent.ratom/IReactiveAtom)
+; allow taking a cursor of a pouch/json atom
+#?(:vscode nil
+   :cljs (extend-type ^js nyancad.hipflask/PAtom reagent.ratom/IReactiveAtom))
+
+(def sep ":")
+
+(defn update-keys
+  "Apply f to values at specified keys"
+  ([m keys f] (into m (map #(vector % (f (get m %)))) keys))
+  ([m keys f & args] (into m (map #(vector % (apply f (get m %) args))) keys)))
+
+(defn json->clj
+  "Convert JavaScript objects to Clojure data, safe for single-char keys under advanced compilation."
+  [data]
+  (cond
+    (nil? data)
+    nil
+
+    (js/Array.isArray data)
+    (mapv #(json->clj %) data)
+
+    (= (.-constructor data) js/Object)
+    (into {}
+          (map (fn [[k v]]
+                 [(keyword k)
+                  (json->clj v)]))
+          (js/Object.entries data))
+
+    :else
+    data))
 
 (def grid-size 50)
 (def debounce #(goog.functions/debounce % 1000))
@@ -478,7 +508,7 @@
            (let [key-names (map name (keys state))
                  values (map clj->js (vals state))
                  func (apply js/Function (concat key-names [(str "return (" code ")")]))
-                 result (nyancad.hipflask/json->clj (apply func values))
+                 result (json->clj (apply func values))
                  fres (js/parseFloat result)]
              (case type
                "e" (.toExponential fres (js/parseInt precision))
