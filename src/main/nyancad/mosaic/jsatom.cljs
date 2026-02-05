@@ -8,6 +8,7 @@
    Top-level keys are strings (matching PouchDB format), inner values use keyword keys."
   (:require ["jsonc-parser" :as jsonc]
             [nyancad.mosaic.common :refer [json->clj]]
+            [cljs.core.async :refer [go]]
             reagent.ratom
             goog.functions))
 
@@ -90,3 +91,10 @@
                (reset! (.-version ja) (.. event -data -version))
                (reset! cache (doc->state @(.-document ja))))))))
      ja)))
+
+(defn done?
+  "Returns a channel that completes immediately.
+   JsAtom edits are synchronous, so there is never anything to wait for.
+   This matches the hipflask/done? API so editor code can use done? uniformly."
+  [_ja]
+  (go nil))

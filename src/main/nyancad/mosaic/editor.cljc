@@ -6,7 +6,7 @@
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
             [shadow.resource :as rc]
-            #?@(:vscode [[nyancad.mosaic.jsatom :refer [json-atom]]]
+            #?@(:vscode [[nyancad.mosaic.jsatom :refer [json-atom done?]]]
                 :cljs [[nyancad.hipflask :refer [pouch-atom pouchdb watch-changes done?]]])
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go go-loop <!]]
@@ -117,40 +117,25 @@
 
 (declare build-wire-split-index split-wire location-index)
 
-#?(:vscode
-   (defn post-action!
-     "Record undo checkpoint and split wires after a user action completes."
-     []
-     (cm/newdo undotree @schematic)
-     (doseq [[w coords] (build-wire-split-index @location-index)]
-       (split-wire w coords)))
-   :cljs
-   (defn post-action!
-     "Record undo checkpoint and split wires after a user action completes.
-      Returns a channel that completes when done."
-     []
-     (go
-       (<! (done? schematic))
-       (cm/newdo undotree @schematic)
-       (doseq [[w coords] (build-wire-split-index @location-index)]
-         (<! (split-wire w coords))))))
+(defn post-action!
+  "Record undo checkpoint and split wires after a user action completes."
+  []
+  (go
+    (<! (done? schematic))
+    (cm/newdo undotree @schematic)
+    (doseq [[w coords] (build-wire-split-index @location-index)]
+      (split-wire w coords)
+      (<! (done? schematic)))))
 
-#?(:vscode
-   (defn restore [state]
-     (let [state-str (into {} (map (fn [[k v]] [(name k) v]) state))
-           del (reduce disj (set (keys @schematic)) (keys state-str))
-           norev (reduce #(update %1 %2 dissoc :_rev) state-str (keys state-str))]
-       (swap! schematic into norev)
-       (swap! schematic #(apply dissoc %1 %2) del)))
-   :cljs
-   (defn restore [state]
-     (let [;; Ensure keys are strings (schematic uses string device IDs)
-           state-str (into {} (map (fn [[k v]] [(name k) v]) state))
-           del (reduce disj (set (keys @schematic)) (keys state-str))
-           norev (reduce #(update %1 %2 dissoc :_rev) state-str (keys state-str))]
-       (go
-         (<! (swap! schematic into norev)) ; update
-         (<! (swap! schematic #(apply dissoc %1 %2) del))))))
+(defn restore [state]
+  (let [state-str (into {} (map (fn [[k v]] [(name k) v]) state))
+        del (reduce disj (set (keys @schematic)) (keys state-str))
+        norev (reduce #(update %1 %2 dissoc :_rev) state-str (keys state-str))]
+    (go
+      (swap! schematic into norev)
+      (<! (done? schematic))
+      (swap! schematic #(apply dissoc %1 %2) del)
+      (<! (done? schematic)))))
 
 (defn undo-schematic []
   (when-let [st (cm/undo undotree)]
@@ -160,7 +145,7 @@
   (when-let [st (cm/redo undotree)]
     (restore st)))
 
-#?(:vscode nil :cljs (defonce syncactive (r/atom false)))
+(defonce syncactive (r/atom false))
 
 (declare drag-start drag-end eraser-drag models on-pointer-down-element on-pointer-move-element on-pointer-up-bg double-click)
 
@@ -1538,48 +1523,31 @@
         sch @schematic
         devs (map (comp #(dissoc % :_rev :_id) sch) sel)]
     (reset! clipboard devs)
-    #?(:vscode nil :cljs (swap! local assoc (str "local" sep "clipboard") {:data devs}))))
+    (swap! local assoc (str "local" sep "clipboard") {:data devs})))
 
 (defn cut []
   (copy)
   (delete-selected))
 
-#?(:vscode
-   (defn paste []
-     (when-let [devs @clipboard]
-       (let [devmap (->> devs
-                         (group-by :type)
-                         (map (fn [[typ devices]]
-                                (map (fn [name dev]
-                                       (let [id (str group sep name)
-                                             display-name (if (= typ "port") (:name dev) name)]
-                                         [id (assoc dev :name display-name)]))
-                                     (make-names typ)
-                                     devices)))
-                         (into {} cat))]
-         (swap! schematic into devmap)
-         (swap! ui assoc
-                ::dragging ::device
-                ::selected (set (keys devmap)))
-         (post-action!))))
-   :cljs
-   (defn paste []
-     (let [devmap (->> (or @clipboard (get-in @local [(str "local" sep "clipboard") :data]))
-                       (group-by :type)
-                       (map (fn [[typ devices]]
-                              (map (fn [name dev]
-                                     (let [id (str group sep name)
-                                           display-name (if (= typ "port") (:name dev) name)]
-                                       [id (assoc dev :name display-name)]))
-                                   (make-names typ)
-                                   devices)))
-                       (into {} cat))]
-       (go
-         (<! (swap! schematic into devmap))
-         (swap! ui assoc
-                ::dragging ::device
-                ::selected (set (keys devmap)))
-         (post-action!)))))
+(defn paste []
+  (when-let [devs (or @clipboard (get-in @local [(str "local" sep "clipboard") :data]))]
+    (let [devmap (->> devs
+                      (group-by :type)
+                      (map (fn [[typ devices]]
+                             (map (fn [name dev]
+                                    (let [id (str group sep name)
+                                          display-name (if (= typ "port") (:name dev) name)]
+                                      [id (assoc dev :name display-name)]))
+                                  (make-names typ)
+                                  devices)))
+                      (into {} cat))]
+      (go
+        (swap! schematic into devmap)
+        (<! (done? schematic))
+        (swap! ui assoc
+               ::dragging ::device
+               ::selected (set (keys devmap)))
+        (post-action!)))))
 
 (defn notebook-url []
   (let [url-params (js/URLSearchParams. #js{:schem group})]
@@ -1636,39 +1604,35 @@
      [cm/redoi]]]
    [:div.status
     [cm/renamable (r/cursor modeldb [(cm/model-key group) :name]) "Untitled"]
-    #?(:vscode nil :cljs
-       (if @syncactive
-         [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
-         [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]]))]
+    (if @syncactive
+      [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
+      [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
 
    [:div.secondary
-    #?(:vscode nil :cljs
-       [:a {:href (if cm/current-workspace
-                    (str "library?ws=" cm/current-workspace)
-                    "library")
-            :target "libman"
-            :title "Open library manager"}
-        [cm/library]])
+    [:a {:href (if cm/current-workspace
+                 (str "library?ws=" cm/current-workspace)
+                 "library")
+         :target "libman"
+         :title "Open library manager"}
+     [cm/library]]
     [:a {:title "Keyboard shortcuts & help"
          :on-click cm/show-onboarding!}
      [cm/help]]
     [:a {:title "Snapshot History"
          :on-click show-history-panel}
      [cm/history]]
-    #?(:vscode nil :cljs
-       [:a {:title "Pop out notebook"
-            :on-click (fn []
-                        (let [nb-url (str js/window.location.origin "/" (notebook-url))
-                              popup (.open js/window nb-url "mosaic_notebook" "width=1200,height=800")]
-                          (when popup
-                            (swap! ui assoc ::notebook-popped-out true)
-                            (set! (.-onbeforeunload popup)
-                                  #(swap! ui assoc ::notebook-popped-out false)))))}
-        [cm/external-link]])
-    #?(:vscode nil :cljs
-       [:a {:href "/auth/"
-            :title "Login / Account"}
-        [cm/login]])]])
+    [:a {:title "Pop out notebook"
+         :on-click (fn []
+                     (let [nb-url (str js/window.location.origin "/" (notebook-url))
+                           popup (.open js/window nb-url "mosaic_notebook" "width=1200,height=800")]
+                       (when popup
+                         (swap! ui assoc ::notebook-popped-out true)
+                         (set! (.-onbeforeunload popup)
+                               #(swap! ui assoc ::notebook-popped-out false)))))}
+     [cm/external-link]]
+    [:a {:href "/auth/"
+         :title "Login / Account"}
+     [cm/login]]]])
 
 (defn device-active [cell]
   (when (= cell (:type @staging))
