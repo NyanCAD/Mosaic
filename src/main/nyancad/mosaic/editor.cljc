@@ -1668,7 +1668,7 @@
     #?(:cljs
        [:a {:href "/auth/"
             :title "Login / Account"}
-        [cm/login]])]))
+        [cm/login]])]])
 
 (defn device-active [cell]
   (when (= cell (:type @staging))
