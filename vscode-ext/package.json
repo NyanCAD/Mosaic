@@ -1,0 +1,36 @@
+{
+  "name": "mosaic-schematic",
+  "displayName": "Mosaic Schematic Editor",
+  "description": "Visual schematic editor for analog IC design",
+  "version": "0.0.1",
+  "publisher": "nyancad",
+  "license": "MPL-2.0",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "main": "./out/main.js",
+  "activationEvents": [],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "Mosaic.schematic",
+        "displayName": "Mosaic Schematic",
+        "selector": [
+          {
+            "filenamePattern": "*.nyancir"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "Mosaic.schematic.new",
+        "title": "Mosaic: Create New Schematic"
+      }
+    ]
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.2.0"
+  }
+}
