@@ -11,7 +11,7 @@
  :dependencies
  [[reagent "1.3.0"]]
 
- :dev-http {8080 "public"}
+ :dev-http {8080 {:root "public" :host "0.0.0.0"}}
  :builds
  {:frontend
   {:target :esm

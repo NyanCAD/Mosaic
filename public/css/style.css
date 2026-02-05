@@ -823,6 +823,7 @@ html {
 .mosaic-editor svg {
     overflow: visible;
     stroke-linecap: round;
+    touch-action: none;
 }
 
 .mosaic-editor g.staging,
@@ -839,6 +840,12 @@ g.device {
 g.staging,
 g.toolstaging g.device {
     transition: all 70ms ease-out;
+}
+
+@media (hover: none) {
+    .device g.toolstaging {
+        display: none;
+    }
 }
 
 polyline.wirebb {

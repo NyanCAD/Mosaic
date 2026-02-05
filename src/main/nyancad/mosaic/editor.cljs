@@ -70,7 +70,8 @@
                      ::selected #{}
                      ::mouse [0 0]
                      ::mouse-start [0 0]
-                     ::notebook-popped-out false}))
+                     ::notebook-popped-out false
+                     ::pointer-cache {}}))
 
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme #{"tetris" "eyesore"})
@@ -79,7 +80,10 @@
 (s/def ::dragging (s/nilable #{::wire ::device ::view ::box}))
 (s/def ::staging (s/nilable :nyancad.mosaic.common/device))
 (s/def ::notebook-popped-out boolean?)
-(s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-popped-out]
+(s/def ::x number?)
+(s/def ::y number?)
+(s/def ::pointer-cache (s/map-of int? (s/keys :req-un [::x ::y])))
+(s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-popped-out ::pointer-cache]
                     :opt [::dragging ::staging]))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
@@ -91,6 +95,7 @@
 (defonce delta (r/cursor ui [::delta]))
 (defonce staging (r/cursor ui [::staging]))
 (defonce notebook-popped-out (r/cursor ui [::notebook-popped-out]))
+(defonce pointer-cache (r/cursor ui [::pointer-cache]))
 
 ; Model selector popup state
 (defonce model-popup-filter (r/atom ""))
@@ -129,12 +134,13 @@
 
 (defonce syncactive (r/atom false))
 
-(declare drag-start eraser-drag models)
+(declare drag-start drag-end eraser-drag models on-pointer-down-element on-pointer-move-element on-pointer-up-bg double-click)
 
 (defn device [size k v & elements]
   (assert (js/isFinite size))
-  (into [:g.device {:on-mouse-down (fn [e] (drag-start k e))
-                    :on-mouse-move (fn [e] (eraser-drag k e))
+  (into [:g.device {:on-pointer-down (fn [e] (on-pointer-down-element k e))
+                    :on-pointer-move (fn [e] (on-pointer-move-element k e))
+                    :on-pointer-up on-pointer-up-bg
                     :style {:transform (.toString (.translate (transform (:transform v cm/IV)) (* (:x v) grid-size) (* (:y v) grid-size)))
                             :transform-origin (str (* (+ (:x v) (/ size 2)) grid-size) "px "
                                                    (* (+ (:y v) (/ size 2)) grid-size) "px")}
@@ -180,8 +186,9 @@
         pts (if mx
               (str x1 "," y1 " " mx "," my " " x2 "," y2)
               (str x1 "," y1 " " x2 "," y2))]
-    [:g.wire {:on-mouse-down #(drag-start key %)
-              :on-mouse-move #(eraser-drag key %)
+    [:g.wire {:on-pointer-down #(on-pointer-down-element key %)
+              :on-pointer-move #(on-pointer-move-element key %)
+              :on-pointer-up on-pointer-up-bg
               :class (when (contains? @selected key) :selected)}
      [:polyline.wirebb {:points pts}]
      [:polyline.wire {:points pts}]]))
@@ -202,8 +209,9 @@
   (let [x (:x text)
         y (:y text)
         content (schem-template text (get text :template (get-in models ["text" ::template])))]
-    [:g.text {:on-mouse-down #(drag-start key %)
-              :on-mouse-move #(eraser-drag key %)
+    [:g.text {:on-pointer-down #(on-pointer-down-element key %)
+              :on-pointer-move #(on-pointer-move-element key %)
+              :on-pointer-up on-pointer-up-bg
               :class (when (contains? @selected key) :selected)
               :transform (str "translate(" (* (+ x 0.1) grid-size) ", " (* (+ y 0.3) grid-size) ")")}
      [:text
@@ -760,6 +768,27 @@
     [(/ (.-x tp) grid-size) (/ (.-y tp) grid-size)]))
 
 (def last-coord (atom [0 0]))
+
+;; Double-click detection for pointer events (which don't have detail property)
+(def last-pointerdown (atom {:time 0 :x 0 :y 0}))
+(def dblclick-threshold-ms 400)
+(def dblclick-threshold-px 10)
+
+(defn check-double-click
+  "Check if this pointerdown is a double-click based on timing and position.
+   Returns true if double-click detected, and updates the tracking state."
+  [e]
+  (let [now (js/Date.now)
+        cx (.-clientX e)
+        cy (.-clientY e)
+        prev @last-pointerdown
+        dt (- now (:time prev))
+        dist (math/hypot (- cx (:x prev)) (- cy (:y prev)))
+        is-dblclick (and (< dt dblclick-threshold-ms)
+                         (< dist dblclick-threshold-px))]
+    (reset! last-pointerdown {:time now :x cx :y cy})
+    is-dblclick))
+
 (defn viewbox-movement [e]
   (let [^js el (js/document.querySelector ".mosaic-canvas")
         m (.inverse (.getScreenCTM el))
@@ -786,6 +815,51 @@
               (- y (* dy ry))
               (+ w dx)
               (+ h dy)]))))
+
+;; Pointer event helpers for touch gestures
+
+(defn pointer-distance
+  "Calculate distance between two pointers"
+  [cache]
+  (let [[{x1 :x y1 :y} {x2 :x y2 :y}] (vals cache)]
+    (math/hypot (- x1 x2) (- y1 y2))))
+
+(defn pointer-center
+  "Calculate center point between two pointers (screen coords)"
+  [cache]
+  (let [[{x1 :x y1 :y} {x2 :x y2 :y}] (vals cache)]
+    [(/ (+ x1 x2) 2) (/ (+ y1 y2) 2)]))
+
+(defn apply-pinch-delta
+  "Apply incremental pan and zoom from two-finger gesture"
+  [old-dist new-dist old-center new-center]
+  (let [[ocx ocy] old-center
+        [ncx ncy] new-center
+        scale (/ old-dist new-dist)
+        el (js/document.querySelector ".mosaic-canvas")
+        m (.inverse (.getScreenCTM el))
+        ;; Transform centers to viewbox coords
+        op (.matrixTransform (point ocx ocy) m)
+        np (.matrixTransform (point ncx ncy) m)
+        ;; Pan delta in viewbox coords
+        pdx (- (.-x op) (.-x np))
+        pdy (- (.-y op) (.-y np))]
+    (swap! ui update ::zoom
+           (fn [[x y w h]]
+             (let [;; Zoom around old center
+                   cx (.-x op)
+                   cy (.-y op)
+                   nw (* w scale)
+                   nh (* h scale)
+                   nx (+ cx (* (- x cx) scale) pdx)
+                   ny (+ cy (* (- y cy) scale) pdy)]
+               [nx ny nw nh])))))
+
+(defn pen-eraser?
+  "Check if event is from pen eraser button"
+  [e]
+  (and (= "pen" (.-pointerType e))
+       (= 5 (.-button e))))
 
 (defn scroll-zoom [e]
   (let [[x y] (viewbox-coord e)]
@@ -886,6 +960,8 @@
 (def inflight-deletions (atom #{}))
 (defn eraser-drag [k e]
   (when (and (= (.-buttons e) 1)
+             (.-isPrimary e)
+             (< (count (::pointer-cache @ui)) 2)
              (= @tool ::eraser)
              (not (contains? @inflight-deletions k)))
     (go (swap! inflight-deletions conj k)
@@ -901,6 +977,11 @@
     ::pan (when (> (.-buttons e) 0) (drag-view e))
     ::device (if (= (::dragging @ui) ::view) (drag-view e) (drag-staged-device e))
     (cursor-drag e)))
+
+(defn same-tile?
+  "Check if wire staging endpoint is on the starting tile."
+  [dev]
+  (and (< (abs (:rx dev)) 0.5) (< (abs (:ry dev)) 0.5)))
 
 (defn add-wire-segment [[x y]]
   (swap! ui assoc
@@ -920,12 +1001,11 @@
           y (math/round (+ (:y dev) ry))
           [conn body] @location-index
           on-port (or (contains? conn [x y])
-                      (contains? body [x y]))
-          same-tile (and (< (abs rx) 0.5) (< (abs ry) 0.5))]
+                      (contains? body [x y]))]
       (cond
-        same-tile (swap! ui assoc ; the dragged wire stayed at the same tile, exit
-                         ::staging nil
-                         ::dragging nil)
+        (same-tile? dev) (swap! ui assoc ; the dragged wire stayed at the same tile, exit
+                                ::staging nil
+                                ::dragging nil)
         on-port (go (<! (commit-staged dev)) ; the wire landed on a port or wire, commit and exit
                     (swap! ui assoc
                            ::staging nil
@@ -1005,19 +1085,14 @@
     ; only when primary mouse click
     (when (and (not= (::tool uiv) ::device)
                (= (.-button e) 0))
-      (.stopPropagation e) ; prevent bg drag
-      (if (= (.-detail e) 1)
-        (case (::tool uiv)
-          ::wire (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
-          ::eraser (eraser-drag k e)
-          ::probe (probe-element k)
-          (swap! ui (fn [ui]
-                      (-> ui
-                          (update ::selected update-selection)
-                          (drag-type)))))
-        (case (::tool uiv)
-          ::cursor (select-connected)
-          ::wire (cancel))))))
+      (case (::tool uiv)
+        ::wire (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
+        ::eraser (eraser-drag k e)
+        ::probe (probe-element k)
+        (swap! ui (fn [ui]
+                    (-> ui
+                        (update ::selected update-selection)
+                        (drag-type))))))))
 
 (defn drag-start-box [e]
   (swap! ui assoc
@@ -1040,6 +1115,95 @@
             (not= (::tool @ui) ::cursor))
     (cancel)
     (.preventDefault e)))
+
+(defn double-click [_k _e]
+  (when (= (::tool @ui) ::cursor)
+    (select-connected)))
+
+;; Pointer event handlers for touch/stylus support
+
+(defn on-pointer-down-bg [e]
+  (let [id (.-pointerId e)
+        entry {:x (.-clientX e) :y (.-clientY e)}]
+    ;; Update double-click tracking state (consumed by element handler)
+    (when (.-isPrimary e) (check-double-click e))
+    (swap! ui assoc-in [::pointer-cache id] entry)
+    (let [cache (::pointer-cache @ui)]
+      (cond
+        ;; Second finger: cancel current operation, start gesture
+        (= 2 (count cache))
+        (cancel)
+
+        ;; Pen eraser: momentary eraser (reuse ::prev-tool)
+        (pen-eraser? e)
+        (swap! ui #(assoc % ::prev-tool (::tool %) ::tool ::eraser))
+
+        ;; Primary pointer: normal interaction
+        (.-isPrimary e)
+        (drag-start-background e)))))
+
+(defn on-pointer-move-bg [e]
+  (let [old-cache (::pointer-cache @ui)
+        id (.-pointerId e)
+        entry {:x (.-clientX e) :y (.-clientY e)}]
+    ;; Two-finger gesture: incremental pan/zoom
+    (when (and (= 2 (count old-cache)) (contains? old-cache id))
+      (let [new-cache (assoc old-cache id entry)]
+        (apply-pinch-delta
+         (pointer-distance old-cache) (pointer-distance new-cache)
+         (pointer-center old-cache) (pointer-center new-cache))))
+    ;; Update cache
+    (swap! ui assoc-in [::pointer-cache id] entry)
+    ;; Single pointer: normal drag
+    (when (and (.-isPrimary e) (< (count old-cache) 2))
+      (drag e))))
+
+(defn on-pointer-up-bg [e]
+  (swap! ui update ::pointer-cache dissoc (.-pointerId e))
+  ;; Pen eraser release: restore tool
+  (when (pen-eraser? e)
+    (swap! ui #(assoc % ::tool (::prev-tool %))))
+  ;; Primary pointer: normal drag end (only if not in gesture)
+  (when (and (.-isPrimary e) (< (count (::pointer-cache @ui)) 2))
+    (drag-end e)))
+
+(defn remove-pointer
+  "Remove pointer from cache. Used for pointercancel."
+  [e]
+  (swap! ui update ::pointer-cache dissoc (.-pointerId e)))
+
+(defn on-pointer-down-element [k e]
+  (.stopPropagation e)
+  (let [id (.-pointerId e)
+        entry {:x (.-clientX e) :y (.-clientY e)}
+        is-dblclick (and (.-isPrimary e) (check-double-click e))]
+    (swap! ui assoc-in [::pointer-cache id] entry)
+    (cond
+      ;; Double-click: handle and skip normal processing
+      is-dblclick
+      (double-click k e)
+
+      (= 2 (count (::pointer-cache @ui)))
+      (cancel)
+
+      (pen-eraser? e)
+      (swap! ui #(assoc % ::prev-tool (::tool %) ::tool ::eraser))
+
+      (.-isPrimary e)
+      (drag-start k e))))
+
+(defn on-pointer-move-element [k e]
+  (let [old-cache (::pointer-cache @ui)
+        id (.-pointerId e)
+        entry {:x (.-clientX e) :y (.-clientY e)}]
+    (when (and (= 2 (count old-cache)) (contains? old-cache id))
+      (let [new-cache (assoc old-cache id entry)]
+        (apply-pinch-delta
+         (pointer-distance old-cache) (pointer-distance new-cache)
+         (pointer-center old-cache) (pointer-center new-cache))))
+    (swap! ui assoc-in [::pointer-cache id] entry)
+    (when (and (.-isPrimary e) (< (count old-cache) 2))
+      (eraser-drag k e))))
 
 (defn get-model [layer model k v]
   (let [m (-> models
@@ -1105,7 +1269,11 @@
       (and (= (::tool @ui) ::device)
            (= (.-button e) 0)) (commit-staged @staging)
       (= (::dragging @ui) ::box) (drag-end-box)
-      (= (::dragging @ui) ::wire) nil
+      (= (::dragging @ui) ::wire)
+      (let [dev (update-keys @staging #{:rx :ry} math/round)]
+        (when-not (same-tile? dev)
+          (commit-staged dev)
+          (swap! ui assoc ::staging nil ::dragging nil)))
       (= (::tool @ui) ::eraser) (post-action!)
       :else (end-ui bg? selected dx dy))))
 
@@ -1446,17 +1614,17 @@
       (let [varwraps (map-indexed
                       (fn [i var]
                         [:span {:key i
-                                :on-mouse-up #(reset! active i)}
+                                :on-pointer-up #(reset! active i)}
                          var]) variants)]
         [:details
          {;:on-toggle js/console.log
-          :on-mouse-down
+          :on-pointer-down
           (fn [e]
             (let [ct (.-currentTarget e)]
               (reset! timeout (js/setTimeout
                                #(set! (.-open ct) true)
                                300))))
-          :on-mouse-up
+          :on-pointer-up
           (fn [e]
             (js/clearTimeout @timeout)
             (set! (.. e -currentTarget -open) false))}
@@ -1488,74 +1656,74 @@
    [variant-tray
     [:button {:title "Add port [p]"
               :class (device-active "port")
-              :on-mouse-up #(add-device "port" (viewbox-coord %))}
+              :on-pointer-up #(add-device "port" (viewbox-coord %))}
      [cm/device-icon "port"]]
     [:button {:title "Add wire label [t]"
               :class (device-active "port")
-              :on-mouse-up #(add-label (viewbox-coord %))}
+              :on-pointer-up #(add-label (viewbox-coord %))}
      [cm/namei]]
     [:button {:title "Add ground [g]"
               :class (device-active "port")
-              :on-mouse-up #(add-gnd (viewbox-coord %))}
+              :on-pointer-up #(add-gnd (viewbox-coord %))}
      [cm/device-icon "ground"]]
     [:button {:title "Add power supply [shift+p]"
               :class (device-active "port")
-              :on-mouse-up #(add-supply (viewbox-coord %))}
+              :on-pointer-up #(add-supply (viewbox-coord %))}
      [cm/device-icon "supply"]]
     [:button {:title "Add text area [shift+t]"
               :class (device-active "port")
-              :on-mouse-up #(add-device "text" (viewbox-coord %))}
+              :on-pointer-up #(add-device "text" (viewbox-coord %))}
      [cm/text]]]
    [:button {:title "Add resistor [r]"
              :class (device-active "resistor")
-             :on-mouse-up #(add-device "resistor" (viewbox-coord %))}
+             :on-pointer-up #(add-device "resistor" (viewbox-coord %))}
     [cm/device-icon "resistor"]]
    [:button {:title "Add inductor [l]"
              :class (device-active "inductor")
-             :on-mouse-up #(add-device "inductor" (viewbox-coord %))}
+             :on-pointer-up #(add-device "inductor" (viewbox-coord %))}
     [cm/device-icon "inductor"]]
    [:button {:title "Add capacitor [c]"
              :class (device-active "capacitor")
-             :on-mouse-up #(add-device "capacitor" (viewbox-coord %))}
+             :on-pointer-up #(add-device "capacitor" (viewbox-coord %))}
     [cm/device-icon "capacitor"]]
    [:button {:title "Add diode [d]"
              :class (device-active "diode")
-             :on-mouse-up #(add-device "diode" (viewbox-coord %))}
+             :on-pointer-up #(add-device "diode" (viewbox-coord %))}
     [cm/device-icon "diode"]]
    [variant-tray
     [:button {:title "Add voltage source [v]"
               :class (device-active "vsource")
-              :on-mouse-up #(add-device "vsource" (viewbox-coord %))}
+              :on-pointer-up #(add-device "vsource" (viewbox-coord %))}
      [cm/device-icon "vsource"]]
     [:button {:title "Add current source [i]"
               :class (device-active "isource")
-              :on-mouse-up #(add-device "isource" (viewbox-coord %))}
+              :on-pointer-up #(add-device "isource" (viewbox-coord %))}
      [cm/device-icon "isource"]]]
    [variant-tray
     [:button {:title "Add N-channel mosfet [m]"
               :class (device-active "nmos")
-              :on-mouse-up #(add-device "nmos" (viewbox-coord %))}
+              :on-pointer-up #(add-device "nmos" (viewbox-coord %))}
      [cm/device-icon "nmos"]]
     [:button {:title "Add P-channel mosfet [shift+m]"
               :class (device-active "pmos")
-              :on-mouse-up #(add-device "pmos" (viewbox-coord %))}
+              :on-pointer-up #(add-device "pmos" (viewbox-coord %))}
      [cm/device-icon "pmos"]]
     [:button {:title "Add NPN BJT [b]"
               :class (device-active "npn")
-              :on-mouse-up #(add-device "npn" (viewbox-coord %))}
+              :on-pointer-up #(add-device "npn" (viewbox-coord %))}
      [cm/device-icon "npn"]]
     [:button {:title "Add PNP BJT [shift+b]"
               :class (device-active "pnp")
-              :on-mouse-up #(add-device "pnp" (viewbox-coord %))}
+              :on-pointer-up #(add-device "pnp" (viewbox-coord %))}
      [cm/device-icon "pnp"]]]
    [variant-tray
     [:button {:title "Add subcircuit [x]"
               :class (device-active "ckt")
-              :on-mouse-up #(add-device "ckt" (viewbox-coord %))}
+              :on-pointer-up #(add-device "ckt" (viewbox-coord %))}
      [cm/chip]]
     [:button {:title "Add amplifier [a]"
               :class (device-active "amp")
-              :on-mouse-up #(add-device "amp" (viewbox-coord %))}
+              :on-pointer-up #(add-device "amp" (viewbox-coord %))}
      [cm/amp-icon]]]])
 
 (defn schematic-elements [schem]
@@ -1629,9 +1797,10 @@
                           :class [@theme @tool] ; for export
                           :view-box @zoom
                           :on-wheel scroll-zoom
-                          :on-mouse-down drag-start-background
-                          :on-mouse-up drag-end
-                          :on-mouse-move drag
+                          :on-pointer-down on-pointer-down-bg
+                          :on-pointer-up on-pointer-up-bg
+                          :on-pointer-move on-pointer-move-bg
+                          :on-pointer-cancel remove-pointer
                           :on-context-menu context-menu}
       [:defs
        [:pattern {:id "gridfill",
@@ -1641,7 +1810,7 @@
         [:line.grid {:x1 0 :y1 0 :x2 grid-size :y2 0}]
         [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]]
       [:rect {:fill "url(#gridfill)"
-              :on-mouse-up drag-end
+              :on-pointer-up on-pointer-up-bg
               :x (* -500 grid-size)
               :y (* -500 grid-size)
               :width (* 1000 grid-size)
@@ -1652,9 +1821,10 @@
     (when-not @notebook-popped-out
       [:div#mosaic_notebook_wrapper
        [:div.resize-handle
-        {:on-mouse-down
+        {:on-pointer-down
          (fn [e]
            (.preventDefault e)
+           (.setPointerCapture (.-target e) (.-pointerId e))
            (let [wrapper (js/document.getElementById "mosaic_notebook_wrapper")
                  start-x (.-clientX e)
                  start-width (.-offsetWidth wrapper)
@@ -1662,13 +1832,14 @@
                            (let [delta (- start-x (.-clientX e))
                                  new-width (+ start-width delta)]
                              (set! (.. wrapper -style -width) (str new-width "px"))))
-                 on-up (fn on-up []
+                 on-up (fn on-up [e]
                          (.remove (.-classList wrapper) "resizing")
-                         (.removeEventListener js/document "mousemove" on-move)
-                         (.removeEventListener js/document "mouseup" on-up))]
+                         (.releasePointerCapture (.-target e) (.-pointerId e))
+                         (.removeEventListener js/document "pointermove" on-move)
+                         (.removeEventListener js/document "pointerup" on-up))]
              (.add (.-classList wrapper) "resizing")
-             (.addEventListener js/document "mousemove" on-move)
-             (.addEventListener js/document "mouseup" on-up)))}]
+             (.addEventListener js/document "pointermove" on-move)
+             (.addEventListener js/document "pointerup" on-up)))}]
        [:iframe#mosaic_notebook {:src (notebook-url)}]])]
    [cm/contextmenu]
    [cm/modal]])
