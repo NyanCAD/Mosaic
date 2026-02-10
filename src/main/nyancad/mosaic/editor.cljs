@@ -169,10 +169,16 @@
                       :class [(:type v) (:variant v) (when (contains? @selected k) :selected)]}]
           elements)))
 
-(defn port [x y]
-  [:circle.port {:cx (+ x (/ grid-size 2))
-                 :cy (+ y (/ grid-size 2))
-                 :r (/ grid-size 10)}])
+(defn port [x y sx sy]
+  (let [cx (+ x (/ grid-size 2))
+        cy (+ y (/ grid-size 2))]
+    [:circle.port {:cx cx :cy cy
+                   :r (/ grid-size 10)
+                   :transform (when (or (not= sx 1) (not= sy 1))
+                                (.toString (-> (js/DOMMatrix.)
+                                               (.translate cx cy)
+                                               (.scale (/ 1 sx) (/ 1 sy))
+                                               (.translate (- cx) (- cy)))))}]))
 
 (defn draw-background [[width height] k v]
   [device (+ 2 (max width height)) k v
@@ -181,9 +187,10 @@
                   :height (* height grid-size)}]])
 
 (defn draw-pattern [size pattern prim k v]
-  [apply device size k v
-   (for [[x y _] pattern]
-     ^{:key [x y]} [prim (* x grid-size) (* y grid-size)])])
+  (let [[sx sy] (layout-device-scale v)]
+    [apply device size k v
+     (for [[x y _] pattern]
+       ^{:key [x y]} [prim (* x grid-size) (* y grid-size) sx sy])]))
 
 (defn lines [arcs]
   [:<>
@@ -240,16 +247,18 @@
       content]]))
 
 (defn device-template [dev width]
-  (when-let [text (get dev :template
-                       (::template (get models (:type dev))))]
-    [:text.identifier
-     {:transform (-> (:transform dev)
-                     transform
-                     (.translate (* grid-size (/ width -2)) (* grid-size (/ width -2)))
-                     .inverse
-                     (.translate (* grid-size 0.6) (* grid-size -0.25))
-                     .toString)}
-     (schem-template dev text)]))
+  (let [[sx sy] (layout-device-scale dev)]
+    (when-let [text (get dev :template
+                         (::template (get models (:type dev))))]
+      [:text.identifier
+       {:transform (-> (:transform dev)
+                       transform
+                       (.scale sx sy)
+                       (.translate (* grid-size (/ width -2)) (* grid-size (/ width -2)))
+                       .inverse
+                       (.translate (* grid-size 0.6) (* grid-size -0.25))
+                       .toString)}
+       (schem-template dev text)])))
 
 (defn port-sym [key label]
   [device 1 key label
@@ -426,12 +435,13 @@
 (defn ckt-url [model]
   (str "?" (.toString (js/URLSearchParams. #js{:schem model}))))
 
-;; Helper: counter-rotation transform for text that should stay upright
+;; Helper: counter-rotation and counter-scale transform for text that should stay upright
 (defn counter-rotate [v x y]
-  (.toString (-> (js/DOMMatrix.)
-                 (.translate x y)
-                 (.multiply (.inverse (transform (:transform v))))
-                 (.translate (- x) (- y)))))
+  (let [[sx sy] (layout-device-scale v)]
+    (.toString (-> (js/DOMMatrix.)
+                   (.translate x y)
+                   (.multiply (.inverse (.scale (transform (:transform v)) sx sy)))
+                   (.translate (- x) (- y))))))
 
 ;; Helper: render designator at screen-space top-right corner
 (defn circuit-designator [v size width height]
@@ -449,13 +459,15 @@
         desig-offset-x (+ dx 0.1)
         desig-offset-y (+ dy 0.25)]
     (when-let [text (get v :template "{self.name}")]
-      [:text.identifier
-       {:transform (-> (:transform v) transform
-                       (.translate (* grid-size (/ size -2)) (* grid-size (/ size -2)))
-                       .inverse
-                       (.translate (* grid-size desig-offset-x) (* grid-size desig-offset-y))
-                       .toString)}
-       (schem-template v text)])))
+      (let [[sx sy] (layout-device-scale v)]
+        [:text.identifier
+         {:transform (-> (:transform v) transform
+                         (.scale sx sy)
+                         (.translate (* grid-size (/ size -2)) (* grid-size (/ size -2)))
+                         .inverse
+                         (.translate (* grid-size desig-offset-x) (* grid-size desig-offset-y))
+                         .toString)}
+         (schem-template v text)]))))
 
 ;; Helper: render port label with counter-rotation
 (defn port-label [v x y anchor baseline pname]
