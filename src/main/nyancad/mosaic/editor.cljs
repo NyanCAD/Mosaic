@@ -71,7 +71,9 @@
                      ::mouse [0 0]
                      ::mouse-start [0 0]
                      ::notebook-popped-out false
-                     ::pointer-cache {}}))
+                     ::pointer-cache {}
+                     ::layout-scale 1e6
+                     ::layout-exponent 0}))
 
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme #{"tetris" "eyesore"})
@@ -83,7 +85,10 @@
 (s/def ::x number?)
 (s/def ::y number?)
 (s/def ::pointer-cache (s/map-of int? (s/keys :req-un [::x ::y])))
-(s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-popped-out ::pointer-cache]
+(s/def ::layout-scale number?)
+(s/def ::layout-exponent number?)
+(s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-popped-out ::pointer-cache
+                          ::layout-scale ::layout-exponent]
                     :opt [::dragging ::staging]))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
@@ -96,6 +101,8 @@
 (defonce staging (r/cursor ui [::staging]))
 (defonce notebook-popped-out (r/cursor ui [::notebook-popped-out]))
 (defonce pointer-cache (r/cursor ui [::pointer-cache]))
+(defonce layout-scale (r/cursor ui [::layout-scale]))
+(defonce layout-exponent (r/cursor ui [::layout-exponent]))
 
 ; Model selector popup state
 (defonce model-popup-filter (r/atom ""))
@@ -136,16 +143,31 @@
 
 (declare drag-start drag-end eraser-drag models on-pointer-down-element on-pointer-move-element on-pointer-up-bg double-click)
 
+(defn layout-device-scale
+  "Compute [sx sy] visual scale factors from device w/l props and layout settings."
+  [v]
+  (let [scale @layout-scale
+        exp @layout-exponent
+        w (some-> (get-in v [:props :w]) js/parseFloat)
+        l (some-> (get-in v [:props :l]) js/parseFloat)]
+    (if (and (pos? exp) (or (and w (js/isFinite w)) (and l (js/isFinite l))))
+      (let [compute #(max 1 (math/round (math/pow (* % scale) exp)))
+            sx (if (and w (js/isFinite w)) (compute w) (if (and l (js/isFinite l)) (compute l) 1))
+            sy (if (and l (js/isFinite l)) (compute l) (if (and w (js/isFinite w)) (compute w) 1))]
+        [sx sy])
+      [1 1])))
+
 (defn device [size k v & elements]
   (assert (js/isFinite size))
-  (into [:g.device {:on-pointer-down (fn [e] (on-pointer-down-element k e))
-                    :on-pointer-move (fn [e] (on-pointer-move-element k e))
-                    :on-pointer-up on-pointer-up-bg
-                    :style {:transform (.toString (.translate (transform (:transform v cm/IV)) (* (:x v) grid-size) (* (:y v) grid-size)))
-                            :transform-origin (str (* (+ (:x v) (/ size 2)) grid-size) "px "
-                                                   (* (+ (:y v) (/ size 2)) grid-size) "px")}
-                    :class [(:type v) (:variant v) (when (contains? @selected k) :selected)]}]
-        elements))
+  (let [[sx sy] (layout-device-scale v)]
+    (into [:g.device {:on-pointer-down (fn [e] (on-pointer-down-element k e))
+                      :on-pointer-move (fn [e] (on-pointer-move-element k e))
+                      :on-pointer-up on-pointer-up-bg
+                      :style {:transform (.toString (.translate (.scale (transform (:transform v cm/IV)) sx sy) (* (:x v) grid-size) (* (:y v) grid-size)))
+                              :transform-origin (str (* (+ (:x v) (/ size 2)) grid-size) "px "
+                                                     (* (+ (:y v) (/ size 2)) grid-size) "px")}
+                      :class [(:type v) (:variant v) (when (contains? @selected k) :selected)]}]
+          elements)))
 
 (defn port [x y]
   [:circle.port {:cx (+ x (/ grid-size 2))
@@ -668,25 +690,43 @@
          (zero? ry) (map #(vector % y) (exrange x rx))     ; horizontal
          :else []))]))
 
-(defn builtin-locations [{:keys [:_id :x :y :type :transform]}]
+(defn scale-locations
+  "Scale grid positions outward from center [cx cy] by [sx sy]."
+  [locs cx cy sx sy]
+  (map (fn [[gx gy]]
+         [(math/round (+ cx (* sx (- gx cx))))
+          (math/round (+ cy (* sy (- gy cy))))])
+       locs))
+
+(defn builtin-locations [{:keys [:_id :x :y :type :transform] :as dev}]
   (let [mod (get models type)
         conn (::conn mod)
-        [w h] (::bg mod)]
-    [(rotate-shape conn transform x y)
-     (rotate-shape (for [x (range w) y (range h)]
-                     [(inc x) (inc y) "%"])
-                   transform x y)]))
+        [w h] (::bg mod)
+        size (+ 2 (max w h))
+        cx (+ x (- (/ size 2) 0.5))
+        cy (+ y (- (/ size 2) 0.5))
+        [sx sy] (layout-device-scale dev)]
+    [(scale-locations (rotate-shape conn transform x y) cx cy sx sy)
+     (scale-locations (rotate-shape (for [x (range w) y (range h)]
+                                      [(inc x) (inc y) "%"])
+                                    transform x y)
+                      cx cy sx sy)]))
 
-(defn circuit-locations [{:keys [:_id :x :y :model :transform :type]}]
+(defn circuit-locations [{:keys [:_id :x :y :model :transform :type] :as dev}]
   (let [mod (get @modeldb (cm/model-key model))
         ports (:ports mod)
         shape (when (= type "amp") :amp)
         conn (if ports (apply concat (cm/port-locations ports shape)) [])
-        [w h] (if ports (cm/port-perimeter ports shape) [1 1])]
-    [(rotate-shape conn transform x y)
-     (rotate-shape (for [x (range w) y (range h)]
-                     [(inc x) (inc y) "%"])
-                   transform x y)]))
+        [w h] (if ports (cm/port-perimeter ports shape) [1 1])
+        size (+ 2 (max w h))
+        cx (+ x (- (/ size 2) 0.5))
+        cy (+ y (- (/ size 2) 0.5))
+        [sx sy] (layout-device-scale dev)]
+    [(scale-locations (rotate-shape conn transform x y) cx cy sx sy)
+     (scale-locations (rotate-shape (for [x (range w) y (range h)]
+                                      [(inc x) (inc y) "%"])
+                                    transform x y)
+                      cx cy sx sy)]))
 
 (defn device-locations [dev]
   (let [cell (:type dev)]
@@ -1792,6 +1832,18 @@
                      (let [schem @schematic]
                        (map #(vector % (get schem %)) sel))]])))
 
+(defn layout-scale-controls []
+  [:div.sidebar.layout-controls
+   [:h1 "Layout Scale"]
+   [:div.properties
+    [:label {:for "layout-scale"} "scale"]
+    [:input {:id "layout-scale" :type "number" :default-value @layout-scale
+             :on-change (debounce #(reset! layout-scale (js/parseFloat (.. % -target -value))))}]
+    [:label {:for "layout-exp"} "exponent"]
+    [:input {:id "layout-exp" :type "range" :min 0 :max 1 :step 0.01
+             :value @layout-exponent
+             :on-change #(reset! layout-exponent (js/parseFloat (.. % -target -value)))}]]])
+
 (defn schematic-ui []
   [:div.mosaic-container {:class @theme}
    [:div.menu.chrome
@@ -1800,6 +1852,7 @@
     [:div.content
      [:div.devicetray.chrome
       [device-tray]]
+     [layout-scale-controls]
      (when-let [sel (seq @selected)]
        [:div.sidebar
         (doall (for [key sel]

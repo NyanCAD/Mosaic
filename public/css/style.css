@@ -684,6 +684,12 @@ html {
     padding: 20px;
 }
 
+.mosaic-container .sidebar.layout-controls {
+    top: auto;
+    bottom: 25px;
+    width: 200px;
+}
+
 .mosaic-container .chrome a,
 .mosaic-container .chrome button,
 .mosaic-container .chrome label {
