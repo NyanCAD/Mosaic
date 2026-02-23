@@ -1,13 +1,21 @@
 {
   "name": "mosaic-schematic",
   "displayName": "Mosaic Schematic Editor",
-  "description": "Visual schematic editor for analog IC design",
+  "description": "Visual schematic editor for analog IC design, built with ClojureScript",
   "version": "0.0.1",
   "publisher": "nyancad",
   "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NyanCAD/Mosaic"
+  },
   "engines": {
     "vscode": "^1.74.0"
   },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
   "main": "./out/main.js",
   "activationEvents": [],
   "contributes": {
@@ -30,7 +38,16 @@
       }
     ]
   },
+  "scripts": {
+    "vscode:prepublish": "cd .. && npm run vscode:build",
+    "package": "vsce package --no-dependencies",
+    "publish": "vsce publish --no-dependencies"
+  },
   "dependencies": {
     "jsonc-parser": "^3.2.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@vscode/vsce": "^3.2.0"
   }
 }

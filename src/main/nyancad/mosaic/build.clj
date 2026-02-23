@@ -22,7 +22,16 @@
   (sh! "bash" "src/bash/couchdb-export.sh"))
 
 (defn release-vscode
-  "Build VSCode extension (webview frontend + extension host)"
+  "Build VSCode extension (webview frontend + extension host).
+   Compiles both shadow-cljs targets and copies webview assets."
   []
   (shadow/release :vscode-webview)
-  (shadow/release :vscode-ext))
+  (shadow/release :vscode-ext)
+  (sh! "bash" "src/bash/copy-vscode-assets.sh"))
+
+(defn package-vscode
+  "Build and package the VSCode extension into a .vsix file.
+   Requires @vscode/vsce: npm install in vscode-ext/ first."
+  []
+  (release-vscode)
+  (sh! "npx" "vsce" "package" "--no-dependencies" :dir "vscode-ext"))

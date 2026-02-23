@@ -2,6 +2,13 @@
   "name": "mosaic",
   "version": "0.0.1",
   "private": true,
+  "scripts": {
+    "vscode:compile": "npx shadow-cljs release vscode-webview vscode-ext",
+    "vscode:assets": "bash src/bash/copy-vscode-assets.sh",
+    "vscode:build": "npm run vscode:compile && npm run vscode:assets",
+    "vscode:package": "npm run vscode:build && cd vscode-ext && npx vsce package --no-dependencies",
+    "vscode:watch": "npx shadow-cljs watch vscode-webview vscode-ext"
+  },
   "devDependencies": {
     "shadow-cljs": "^3.1.4"
   },
