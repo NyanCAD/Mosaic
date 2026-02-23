@@ -1,0 +1,18 @@
+# Source and build tooling (not needed in VSIX)
+.shadow-cljs/
+.lsp/
+.vscode/
+node_modules/
+src/
+
+# Development files
+*.cljs
+*.cljc
+*.clj
+*.edn
+*.md
+.gitignore
+
+# Build output that isn't the final bundle
+out/cljs-runtime/
+out/manifest.edn

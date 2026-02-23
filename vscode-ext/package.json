@@ -5,9 +5,17 @@
   "version": "0.0.1",
   "publisher": "nyancad",
   "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NyanCAD/Mosaic"
+  },
   "engines": {
     "vscode": "^1.74.0"
   },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
   "main": "./out/main.js",
   "activationEvents": [],
   "contributes": {

@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "devDependencies": {
+    "@vscode/vsce": "^3.2.0",
     "shadow-cljs": "^3.1.4"
   },
   "dependencies": {
