@@ -27,10 +27,12 @@
      (defonce schematic (json-atom
                          (js/decodeURIComponent (.-value (js/document.getElementById "document")))
                          (r/atom {})))
+     (set-validator! schematic
+                     #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
      (defonce modeldb (r/atom {}))
      (defonce snapshots (r/atom {}))
      (defonce simulations (r/atom (sorted-map)))
-     (defonce local (atom {})))
+     (defonce local (r/atom {})))
    :cljs
    (do
      (def params (js/URLSearchParams. js/window.location.search))

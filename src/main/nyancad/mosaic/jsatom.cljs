@@ -25,28 +25,33 @@
             (js/Object.entries parsed))
       {})))
 
-(defn- pouch-swap! [ja f x & args]
-  (let [data (apply swap! (.-cache ja) f x args)
-        msg (fn [path value]
-              (swap! (.-version ja) inc)
-              (let [update (jsonc/modify @(.-document ja)
-                                         (clj->js path)
-                                         (or (clj->js value) js/undefined)
-                                         #js{})]
-                (doseq [up update]
-                  (set! (.-oldcontent ^js up)
-                        (subs @(.-document ja)
-                              (.-offset up)
-                              (+ (.-offset up) (.-length up)))))
-                (.postMessage vscode #js{:type "update" :update update})
-                (swap! (.-document ja) jsonc/applyEdits update)))]
-    (cond
-      (set? x) (doseq [k x] (msg [k] (get data k)))
-      (map? x) (doseq [k (keys x)] (msg [k] (get data k)))
-      (coll? x) (msg x (get-in data x))
-      :else (msg [x] (get data x)))))
+(defn- pouch-swap! [^js ja f x & args]
+  (let [old @(.-cache ja)
+        data (apply f old x args)]
+    (when-let [v (.-validator ja)]
+      (when-not (v data)
+        (throw (ex-info "Validator rejected reference state" {:val data}))))
+    (reset! (.-cache ja) data)
+    (let [msg (fn [path value]
+                (swap! (.-version ja) inc)
+                (let [update (jsonc/modify @(.-document ja)
+                                           (clj->js path)
+                                           (or (clj->js value) js/undefined)
+                                           #js{})]
+                  (doseq [up update]
+                    (set! (.-oldcontent ^js up)
+                          (subs @(.-document ja)
+                                (.-offset up)
+                                (+ (.-offset up) (.-length up)))))
+                  (.postMessage vscode #js{:type "update" :update update})
+                  (swap! (.-document ja) jsonc/applyEdits update)))]
+      (cond
+        (set? x) (doseq [k x] (msg [k] (get data k)))
+        (map? x) (doseq [k (keys x)] (msg [k] (get data k)))
+        (coll? x) (msg x (get-in data x))
+        :else (msg [x] (get data x))))))
 
-(deftype JsAtom [document version cache]
+(deftype JsAtom [document version cache ^:mutable validator]
   IAtom
 
   IDeref
@@ -69,7 +74,7 @@
   ([doc] (json-atom doc (atom {})))
   ([doc cache]
    (reset! cache (doc->state doc))
-   (let [ja (JsAtom. (atom doc) (atom 1) cache)]
+   (let [ja (JsAtom. (atom doc) (atom 1) cache nil)]
      (.addEventListener js/window "message"
        (fn [^js event]
          (when (and (= (.. event -data -type) "update")
