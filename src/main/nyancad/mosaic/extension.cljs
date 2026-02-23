@@ -31,16 +31,15 @@
     (str "<!DOCTYPE html>
 <html>
 <head>
-  <meta charset='UTF-8'>
-  <meta http-equiv='Content-Security-Policy' content='" csp "'>
-  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-  <link rel='stylesheet' href='" (js-uri "style.css") "'>
+  <meta charset=\"UTF-8\">
+  <meta http-equiv=\"Content-Security-Policy\" content=\"" csp "\">
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+  <link rel=\"stylesheet\" href=\"" (js-uri "style.css") "\">
 </head>
 <body>
-  <input type='hidden' id='document' value='" (js/encodeURIComponent (.getText document)) "'>
-  <div class='mosaic-app mosaic-editor'></div>
-  <script nonce='" nonce "' src='" (js-uri "common.js") "'></script>
-  <script nonce='" nonce "' src='" (js-uri "editor.js") "'></script>
+  <input type=\"hidden\" id=\"document\" value=\"" (js/encodeURIComponent (.getText document)) "\">
+  <div class=\"mosaic-app mosaic-editor\"></div>
+  <script nonce=\"" nonce "\" src=\"" (js-uri "editor.js") "\"></script>
 </body>
 </html>")))
 
@@ -104,9 +103,9 @@
                               :version ver
                               :fullDocument (.getText document)}))))))]
         ;; Clean up on panel dispose
-        (.. webviewpanel -onDidDispose
-            (fn []
-              (.dispose disposable)))))))
+        (.onDidDispose webviewpanel
+          (fn []
+            (.dispose disposable)))))))
 
 (defn register-schematic-provider [^js context]
   (.registerCustomEditorProvider

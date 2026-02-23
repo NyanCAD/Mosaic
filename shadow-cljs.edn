@@ -32,8 +32,7 @@
   :vscode-webview
   {:target :browser
    :output-dir "vscode-ext/out"
-   :modules {:common {}
-             :editor {:init-fn nyancad.mosaic.editor/init :depends-on #{:common}}}
+   :modules {:editor {:init-fn nyancad.mosaic.editor/init}}
    :compiler-options {:output-feature-set :es2018
                       :reader-features #{:vscode}}
    :js-options {:entry-keys ["module" "browser" "main"]}}
