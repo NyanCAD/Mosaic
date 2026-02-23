@@ -20,9 +20,9 @@
    Injects the document content via a hidden input element."
   [^js context ^js document ^js webview]
   (let [ext-uri (.-extensionUri context)
-        js-uri (fn [file]
-                 (.asWebviewUri webview
-                   (.joinPath vscode/Uri ext-uri "out" file)))
+        res-uri (fn [& path]
+                  (.asWebviewUri webview
+                    (apply (.-joinPath vscode/Uri) ext-uri path)))
         nonce (get-nonce)
         csp (str "default-src 'none';"
                  " style-src " (.-cspSource webview) " 'unsafe-inline';"
@@ -34,13 +34,13 @@
   <meta charset=\"UTF-8\">
   <meta http-equiv=\"Content-Security-Policy\" content=\"" csp "\">
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
-  <link rel=\"stylesheet\" href=\"" (js-uri "style.css") "\">
+  <link rel=\"stylesheet\" href=\"" (res-uri "css" "style.css") "\">
   <style>html, body { width: 100%; height: 100%; overflow: hidden; margin: 0; padding: 0; }</style>
 </head>
 <body>
   <input type=\"hidden\" id=\"document\" value=\"" (js/encodeURIComponent (.getText document)) "\">
   <div class=\"mosaic-app mosaic-editor\"></div>
-  <script nonce=\"" nonce "\" src=\"" (js-uri "editor.js") "\"></script>
+  <script nonce=\"" nonce "\" src=\"" (res-uri "out" "editor.js") "\"></script>
 </body>
 </html>")))
 
@@ -69,7 +69,8 @@
       ;; Configure webview
       (set! (.-options webview)
             #js{:enableScripts true
-                :localResourceRoots #js[(.joinPath vscode/Uri (.-extensionUri ctx) "out")]})
+                :localResourceRoots #js[(.joinPath vscode/Uri (.-extensionUri ctx) "out")
+                                        (.joinPath vscode/Uri (.-extensionUri ctx) "css")]})
       (set! (.-html webview) (get-html ctx document webview))
 
       ;; Process edit queue sequentially to avoid conflicts

@@ -15,8 +15,9 @@
             clojure.set
             clojure.string
             goog.functions
+            [nyancad.hipflask.util :refer [update-keys sep]]
             [nyancad.mosaic.common :as cm
-             :refer [grid-size debounce sconj update-keys sep json->clj
+             :refer [grid-size debounce sconj
                      point transform transform-vec
                      mosfet-shape bjt-conn]]))
 

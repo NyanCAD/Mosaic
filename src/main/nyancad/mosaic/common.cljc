@@ -3,12 +3,12 @@
 ; SPDX-License-Identifier: MPL-2.0
 
 (ns nyancad.mosaic.common
-  (:refer-clojure :exclude [update-keys])
   (:require [reagent.core :as r]
             [react-bootstrap-icons :as icons]
             [clojure.spec.alpha :as s]
             reagent.ratom
-            #?@(:vscode []
+            [nyancad.hipflask.util :refer [json->clj]]
+            #?@(:vscode [nyancad.mosaic.jsatom]
                 :cljs [nyancad.hipflask])
             clojure.edn
             clojure.set
@@ -19,35 +19,8 @@
             [shadow.resource :as rc]))
 
 ; allow taking a cursor of a pouch/json atom
-#?(:vscode nil
+#?(:vscode (extend-type ^js nyancad.mosaic.jsatom/JsAtom reagent.ratom/IReactiveAtom)
    :cljs (extend-type ^js nyancad.hipflask/PAtom reagent.ratom/IReactiveAtom))
-
-(def sep ":")
-
-(defn update-keys
-  "Apply f to values at specified keys"
-  ([m keys f] (into m (map #(vector % (f (get m %)))) keys))
-  ([m keys f & args] (into m (map #(vector % (apply f (get m %) args))) keys)))
-
-(defn json->clj
-  "Convert JavaScript objects to Clojure data, safe for single-char keys under advanced compilation."
-  [data]
-  (cond
-    (nil? data)
-    nil
-
-    (js/Array.isArray data)
-    (mapv #(json->clj %) data)
-
-    (= (.-constructor data) js/Object)
-    (into {}
-          (map (fn [[k v]]
-                 [(keyword k)
-                  (json->clj v)]))
-          (js/Object.entries data))
-
-    :else
-    data))
 
 (def grid-size 50)
 (def debounce #(goog.functions/debounce % 1000))

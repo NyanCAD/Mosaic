@@ -5,7 +5,8 @@
 (ns nyancad.mosaic.filestore
   (:require [reagent.core :as r]
             [cljs.core.async :refer [take! go <!]]
-            [nyancad.hipflask :refer [pouch-atom pouchdb watch-changes done? sep]]))
+            [nyancad.hipflask :refer [pouch-atom pouchdb watch-changes done?]]
+            [nyancad.hipflask.util :refer [sep]]))
 
 ; Extract parameters similar to editor.cljs
 (def params (js/URLSearchParams. js/window.location.search))

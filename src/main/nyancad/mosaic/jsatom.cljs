@@ -7,12 +7,9 @@
    Uses jsonc-parser to apply edits and sync state with the extension host.
    Top-level keys are strings (matching PouchDB format), inner values use keyword keys."
   (:require ["jsonc-parser" :as jsonc]
-            [nyancad.mosaic.common :refer [json->clj]]
+            [nyancad.hipflask.util :refer [json->clj]]
             [cljs.core.async :refer [go]]
-            reagent.ratom
-            goog.functions))
-
-(def debounce #(goog.functions/debounce % 100))
+            reagent.ratom))
 
 (defonce vscode (js/acquireVsCodeApi))
 
@@ -65,8 +62,6 @@
   (-notify-watches [_this old new] (-notify-watches cache old new))
   (-add-watch [this key f]         (-add-watch cache key (fn [key _ old new] (f key this old new))))
   (-remove-watch [_this key]       (-remove-watch cache key)))
-
-(extend-type ^js JsAtom reagent.ratom/IReactiveAtom)
 
 (defn json-atom
   "Create a JsAtom from a JSON document string.

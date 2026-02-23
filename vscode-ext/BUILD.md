@@ -93,8 +93,7 @@ vscode-ext/
   .vscodeignore         # Files excluded from VSIX
   out/
     main.js             # Extension host (node-library)
-    common.js           # Webview: shared ClojureScript modules
-    editor.js           # Webview: schematic editor
+    editor.js           # Webview: schematic editor (single bundle)
     style.css           # Webview: copied from public/css/
     icons/              # Webview: cursor icons
     fonts/              # Webview: web fonts (if present)
