@@ -1,6 +1,7 @@
 # Source and build tooling (not needed in VSIX)
 .shadow-cljs/
 .lsp/
+.vscode/
 node_modules/
 src/
 
@@ -9,6 +10,7 @@ src/
 *.cljc
 *.clj
 *.edn
+*.md
 .gitignore
 
 # Build output that isn't the final bundle

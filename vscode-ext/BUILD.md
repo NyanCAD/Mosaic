@@ -33,60 +33,55 @@ between browser and VSCode environments. For example, the editor uses `JsAtom`
 ## Prerequisites
 
 - **Java 11+** (for shadow-cljs / ClojureScript compiler)
-- **Node.js 18+**
-- **npm**
+- **Node.js 18+** and **npm**
+
+On macOS: `brew install node openjdk`
 
 ## Setup
 
 From the repository root:
 
 ```sh
-# Install root dependencies (shadow-cljs, Reagent deps, etc.)
 npm install
-
-# Install extension-specific dependencies
-cd vscode-ext && npm install && cd ..
 ```
+
+This installs shadow-cljs, the JS dependencies used by the ClojureScript code,
+and `@vscode/vsce` for packaging. The extension's own `jsonc-parser` dependency
+is resolved from the root `node_modules` during compilation.
 
 ## Build Commands
 
-All commands run from the **repository root**.
+All commands run from the **repository root** via shadow-cljs.
 
 ### Development (watch mode)
 
 ```sh
-npm run vscode:watch
+npx shadow-cljs watch vscode-webview vscode-ext
 ```
 
-This starts shadow-cljs in watch mode for both `:vscode-webview` and `:vscode-ext`
-targets, with hot-reload support. To test the extension, open the `vscode-ext/`
-folder in VSCode and press **F5** to launch the Extension Development Host.
+This starts shadow-cljs in watch mode for both targets with hot-reload support.
+To test, open the `vscode-ext/` folder in VSCode and press **F5** to launch
+the Extension Development Host. You need to manually copy assets once first
+(see release build below), or just run a full release build first.
 
 ### Release build
 
 ```sh
-npm run vscode:build
+npx shadow-cljs clj-run nyancad.mosaic.build/release-vscode
 ```
 
-This runs `shadow-cljs release` for both targets with `:simple` optimizations
-(extension host) and copies webview assets (CSS, icons, fonts) into `vscode-ext/out/`.
+This compiles both targets with `:simple` optimizations and copies webview
+assets (CSS, icons, fonts) from `public/css/` into `vscode-ext/out/`.
 
 ### Package as VSIX
 
 ```sh
-npm run vscode:package
+npx shadow-cljs clj-run nyancad.mosaic.build/package-vscode
 ```
 
-This performs a release build and then runs `vsce package` inside `vscode-ext/`
-to produce a `.vsix` file that can be installed in VSCode or published to the
+This performs a release build and then runs `vsce package` to produce a `.vsix`
+file in `vscode-ext/` that can be installed in VSCode or published to the
 marketplace.
-
-### Via shadow-cljs REPL (Clojure build API)
-
-```sh
-npx shadow-cljs clj-run nyancad.mosaic.build/release-vscode   # compile + copy assets
-npx shadow-cljs clj-run nyancad.mosaic.build/package-vscode    # compile + copy + vsce package
-```
 
 ## Output Layout
 
@@ -107,15 +102,17 @@ vscode-ext/
 
 ## Testing Locally
 
-1. Build in watch mode: `npm run vscode:watch`
+1. Build: `npx shadow-cljs clj-run nyancad.mosaic.build/release-vscode`
 2. Open `vscode-ext/` as the workspace root in VSCode
 3. Press **F5** to launch the Extension Development Host
 4. Create or open a `.nyancir` file — the Mosaic schematic editor should appear
 
-For a pre-built test:
+To install a packaged build:
 
-1. Build and package: `npm run vscode:package`
-2. Install: `code --install-extension vscode-ext/mosaic-schematic-0.0.1.vsix`
+```sh
+npx shadow-cljs clj-run nyancad.mosaic.build/package-vscode
+code --install-extension vscode-ext/mosaic-schematic-0.0.1.vsix
+```
 
 ## File Format
 
@@ -126,8 +123,8 @@ undo/redo and text diff work natively with the schematic data.
 
 ## Troubleshooting
 
-- **`vsce` not found**: Run `npm install` inside `vscode-ext/`.
 - **Java not found**: shadow-cljs requires a JDK. Install OpenJDK 11+.
-- **Webview blank**: Check that `vscode-ext/out/style.css` exists. Run `npm run vscode:assets`.
-- **Type warnings during compile**: The `:vscode-ext` target uses `:simple` optimizations;
-  add `^js` type hints to interop calls on VSCode API objects.
+- **Webview blank**: Check that `vscode-ext/out/style.css` exists. The release
+  build copies it automatically; for watch mode you need one release build first.
+- **Type warnings during compile**: The `:vscode-ext` target uses `:simple`
+  optimizations; add `^js` type hints to interop calls on VSCode API objects.
