@@ -26,7 +26,7 @@
         nonce (get-nonce)
         csp (str "default-src 'none';"
                  " style-src " (.-cspSource webview) " 'unsafe-inline';"
-                 " script-src 'nonce-" nonce "';"
+                 " script-src 'nonce-" nonce "' 'unsafe-eval';"
                  " img-src " (.-cspSource webview) " data:;")]
     (str "<!DOCTYPE html>
 <html>
@@ -35,6 +35,7 @@
   <meta http-equiv=\"Content-Security-Policy\" content=\"" csp "\">
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
   <link rel=\"stylesheet\" href=\"" (js-uri "style.css") "\">
+  <style>html, body { width: 100%; height: 100%; overflow: hidden; margin: 0; padding: 0; }</style>
 </head>
 <body>
   <input type=\"hidden\" id=\"document\" value=\"" (js/encodeURIComponent (.getText document)) "\">

@@ -683,7 +683,7 @@
          (zero? ry) (map #(vector % y) (exrange x rx))     ; horizontal
          :else []))]))
 
-(defn builtin-locations [{:keys [:_id :x :y :type :transform]}]
+(defn builtin-locations [{:keys [:x :y :type :transform]}]
   (let [mod (get models type)
         conn (::conn mod)
         [w h] (::bg mod)]
@@ -692,7 +692,7 @@
                      [(inc x) (inc y) "%"])
                    transform x y)]))
 
-(defn circuit-locations [{:keys [:_id :x :y :model :transform :type]}]
+(defn circuit-locations [{:keys [:x :y :model :transform :type]}]
   (let [mod (get @modeldb (cm/model-key model))
         ports (:ports mod)
         shape (when (= type "amp") :amp)
@@ -712,10 +712,10 @@
       :else (circuit-locations dev))))
 
 (defn build-location-index [sch]
-  (loop [connidx {} bodyidx {} [dev & other] (vals sch)]
+  (loop [connidx {} bodyidx {} [[id dev] & other] (seq sch)]
     (let [[connloc bodyloc] (device-locations dev)
-          nconnidx (reduce #(update %1 %2 sconj (:_id dev)) connidx connloc)
-          nbodyidx (reduce #(update %1 %2 sconj (:_id dev)) bodyidx bodyloc)]
+          nconnidx (reduce #(update %1 %2 sconj id) connidx connloc)
+          nbodyidx (reduce #(update %1 %2 sconj id) bodyidx bodyloc)]
       (if other
         (recur nconnidx nbodyidx other)
         [nconnidx nbodyidx]))))
@@ -1032,7 +1032,8 @@
 
 (defn select-connected []
   (let [schem @schematic
-        wire (some schem @selected)
+        wire-key (first (filter schem @selected))
+        wire (get schem wire-key)
         wire? (fn [wirename] (let [wire (get schem wirename)]
                                (and (= (:type wire) "wire") wire)))
         wire-ports (fn [init wire]
@@ -1042,7 +1043,7 @@
                        init))]
     (when wire
       (loop [ports (wire-ports #{} wire)
-             sel #{(:_id wire)}]
+             sel #{wire-key}]
         (if (seq ports)
           (let [[connidx _] @location-index
                 newsel (clojure.set/difference
