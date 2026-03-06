@@ -5,7 +5,8 @@
 (ns nyancad.mosaic.jsatom
   "Reactive atom backed by a VSCode text document buffer.
    Uses jsonc-parser to apply edits and sync state with the extension host.
-   Top-level keys are strings (matching PouchDB format), inner values use keyword keys."
+   Top-level keys are strings (matching PouchDB format), inner values use keyword keys.
+   Each JsAtom has a group field for message routing in multi-atom webviews."
   (:require ["jsonc-parser" :as jsonc]
             [nyancad.hipflask.util :refer [json->clj]]
             [cljs.core.async :refer [go]]
@@ -32,7 +33,8 @@
       (when-not (v data)
         (throw (ex-info "Validator rejected reference state" {:val data}))))
     (reset! (.-cache ja) data)
-    (let [msg (fn [path value]
+    (let [grp (.-group ja)
+          msg (fn [path value]
                 (swap! (.-version ja) inc)
                 (let [update (jsonc/modify @(.-document ja)
                                            (clj->js path)
@@ -43,7 +45,7 @@
                           (subs @(.-document ja)
                                 (.-offset up)
                                 (+ (.-offset up) (.-length up)))))
-                  (.postMessage vscode #js{:type "update" :update update})
+                  (.postMessage vscode #js{:type "update" :group grp :update update})
                   (swap! (.-document ja) jsonc/applyEdits update)))]
       (cond
         (set? x) (doseq [k x] (msg [k] (get data k)))
@@ -51,7 +53,7 @@
         (coll? x) (msg x (get-in data x))
         :else (msg [x] (get data x))))))
 
-(deftype JsAtom [document version cache ^:mutable validator]
+(deftype JsAtom [group document version cache ^:mutable validator]
   IAtom
 
   IDeref
@@ -69,27 +71,21 @@
   (-remove-watch [_this key]       (-remove-watch cache key)))
 
 (defn json-atom
-  "Create a JsAtom from a JSON document string.
-   Listens for update messages from the VSCode extension host."
-  ([doc] (json-atom doc (atom {})))
-  ([doc cache]
+  "Create a JsAtom from a JSON document string, tagged with a group name.
+   Listens for update messages from the VSCode extension host,
+   filtering by group to support multiple atoms in one webview."
+  ([group doc] (json-atom group doc (atom {})))
+  ([group doc cache]
    (reset! cache (doc->state doc))
-   (let [ja (JsAtom. (atom doc) (atom 1) cache nil)]
+   (let [ja (JsAtom. group (atom doc) (atom 1) cache nil)]
      (.addEventListener js/window "message"
        (fn [^js event]
          (when (and (= (.. event -data -type) "update")
+                    (= (.. event -data -group) group)
                     (> (.. event -data -version) @(.-version ja)))
-           (if-let [full-doc (.. event -data -fullDocument)]
-             ;; Full document replacement (from external edits, undo/redo)
-             (do
-               (reset! (.-document ja) full-doc)
-               (reset! (.-version ja) (.. event -data -version))
-               (reset! cache (doc->state full-doc)))
-             ;; Incremental edits from extension host
-             (do
-               (swap! (.-document ja) jsonc/applyEdits (.. event -data -update))
-               (reset! (.-version ja) (.. event -data -version))
-               (reset! cache (doc->state @(.-document ja))))))))
+           (swap! (.-document ja) jsonc/applyEdits (.. event -data -update))
+           (reset! (.-version ja) (.. event -data -version))
+           (reset! cache (doc->state @(.-document ja))))))
      ja)))
 
 (defn done?

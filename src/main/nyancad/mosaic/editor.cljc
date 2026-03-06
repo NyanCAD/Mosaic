@@ -8,10 +8,12 @@
             [shadow.resource :as rc]
             #?@(:vscode [[nyancad.mosaic.editor.platform-vscode
                            :refer [group schematic modeldb snapshots simulations local
-                                   done? syncactive notebook-panel secondary-menu-items init-extra!]]]
+                                   done? syncactive notebook-panel secondary-menu-items
+                                   open-schematic init-extra!]]]
                 :cljs [[nyancad.mosaic.editor.platform-web
                          :refer [group schematic modeldb snapshots simulations local
-                                 done? syncactive notebook-panel secondary-menu-items init-extra!]]])
+                                 done? syncactive notebook-panel secondary-menu-items
+                                 open-schematic init-extra!]]])
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go go-loop <!]]
             [clojure.math :as math]
@@ -389,8 +391,6 @@
     (draw-pattern (+ 2 (max width height)) pattern
                   port k v)))
 
-(defn ckt-url [model]
-  (str "?" (.toString (js/URLSearchParams. #js{:schem model}))))
 
 ;; Helper: counter-rotation transform for text that should stay upright
 (defn counter-rotate [v x y]
@@ -1452,7 +1452,7 @@
          [:h1 (or @name key)]
          [:div.properties
           (when (and (seq @model) (not (:templates model-def)))
-            [:a {:href (ckt-url @model)} "Edit"])
+            [:a {:href "#" :on-click #(do (.preventDefault %) (open-schematic @model))} "Edit"])
           [:label {:for "name" :title "Instance name"} "name"]
           [:input {:id "name"
                    :type "text"

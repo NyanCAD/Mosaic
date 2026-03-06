@@ -122,6 +122,14 @@
         :title "Login / Account"}
     [cm/login]]])
 
+;; --- Functions ---
+
+(defn open-schematic
+  "Navigate to a subcircuit's schematic in a new browser tab."
+  [model-id]
+  (let [url (str "?" (.toString (js/URLSearchParams. #js{:schem model-id})))]
+    (js/window.open url model-id)))
+
 ;; --- Init ---
 
 (defn init-extra! []

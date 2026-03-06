@@ -653,6 +653,7 @@ html {
     max-width: 5em;
     box-sizing: border-box;
     user-select: none;
+    -webkit-user-select: none;
 }
 
 .mosaic-container .sidebar {
@@ -835,6 +836,7 @@ g.device {
     transform-box: view-box;
     transform-origin: center;
     user-select: none;
+    -webkit-user-select: none;
 }
 
 g.staging,
@@ -862,6 +864,7 @@ g.wire:hover polyline.wirebb {
 
 text {
     user-select: none;
+    -webkit-user-select: none;
     white-space: pre;
 }
 

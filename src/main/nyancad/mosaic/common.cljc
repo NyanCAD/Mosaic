@@ -108,6 +108,20 @@
 (def I (js/DOMMatrixReadOnly.))
 (def IV (transform-vec I))
 
+(defn transform-direction
+  "Determine cardinal direction from transformation matrix.
+  Returns one of: :left, :right, :top, :bottom based on the final orientation."
+  [{tfm :transform}]
+  (let [matrix (transform tfm)
+        pt (.transformPoint matrix (point 1 0))
+        x (.-x pt)
+        y (.-y pt)
+        abs-x (abs x)
+        abs-y (abs y)]
+    (if (> abs-x abs-y)
+      (if (< x 0) :right :left)
+      (if (< y 0) :bottom :top))))
+
 (extend-type js/DOMMatrixReadOnly
   IPrintWithWriter
   (-pr-writer [obj writer _opts]

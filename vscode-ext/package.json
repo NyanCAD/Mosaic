@@ -29,6 +29,16 @@
           }
         ],
         "priority": "default"
+      },
+      {
+        "viewType": "Mosaic.library",
+        "displayName": "Mosaic Library",
+        "selector": [
+          {
+            "filenamePattern": "models.nyanlib"
+          }
+        ],
+        "priority": "default"
       }
     ],
     "commands": [
