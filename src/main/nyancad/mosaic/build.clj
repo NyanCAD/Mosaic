@@ -23,10 +23,12 @@
 
 (defn release-vscode
   "Build VSCode extension (webview frontend + extension host).
-   Compiles both shadow-cljs targets. Assets are served via symlink (vscode-ext/css)."
+   Compiles both shadow-cljs targets and copies webview assets into out/."
   []
   (shadow/release :vscode-webview)
-  (shadow/release :vscode-ext))
+  (shadow/release :vscode-ext)
+  (sh! "cp" "public/css/style.css" "vscode-ext/out/style.css")
+  (sh! "rsync" "-a" "--delete" "public/css/icons/" "vscode-ext/out/icons/"))
 
 (defn package-vscode
   "Build and package the VSCode extension into a .vsix file.
