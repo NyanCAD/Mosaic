@@ -1,0 +1,22 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "shadow-cljs: watch vscode",
+      "type": "shell",
+      "command": "npx shadow-cljs watch vscode-webview vscode-ext",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "shadow-cljs",
+        "pattern": {
+          "regexp": "^--.*$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Compiling \\.\\.\\.",
+          "endsPattern": "Build (completed|failed)"
+        }
+      }
+    }
+  ]
+}

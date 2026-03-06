@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/vscode-ext"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/vscode-ext/out/**/*.js"
+      ],
+      "preLaunchTask": "shadow-cljs: watch vscode"
+    },
+    {
+      "name": "Run Extension (no build)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/vscode-ext"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/vscode-ext/out/**/*.js"
+      ]
+    }
+  ]
+}
