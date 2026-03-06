@@ -7,7 +7,8 @@
             [reagent.core :as r]
             [reagent.dom :as rd]
             [clojure.spec.alpha :as s]
-            [nyancad.hipflask :refer [pouch-atom pouchdb sep watch-changes get-group alldocs get-view-group get-mango-group json->clj]]
+            [nyancad.hipflask :refer [pouch-atom pouchdb watch-changes get-group alldocs get-view-group get-mango-group]]
+            [nyancad.hipflask.util :refer [sep json->clj]]
             [cljs.core.async :refer [go <! timeout]]
             [cljs.core.async.interop :refer-macros [<p!]]
             [nyancad.mosaic.common :as cm]))

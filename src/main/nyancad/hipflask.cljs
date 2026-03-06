@@ -7,27 +7,9 @@
             ["pouchdb-find" :as PouchDBFind]
             [cljs.core.async :refer [go go-loop <!]]
             [cljs.core.async.interop :refer-macros [<p!]]
-            [clojure.string :refer [starts-with? split]])
-  (:refer-clojure :exclude [update-keys find]))
-
-; like json->clj but safe for single character keys with advanced compilation
-(defn json->clj [data]
-  (cond
-    (nil? data)
-    nil
-
-    (js/Array.isArray data)
-    (mapv #(json->clj %) data)
-
-    (= (.-constructor data) js/Object)
-    (into {}
-          (map (fn [[k v]]
-                 [(keyword k)
-                  (json->clj v)]))
-          (js/Object.entries data))
-
-    :else
-    data))
+            [clojure.string :refer [starts-with? split]]
+            [nyancad.hipflask.util :refer [json->clj sep]])
+  (:refer-clojure :exclude [find]))
 
 ; Install the find plugin
 (.plugin PouchDB PouchDBFind)
@@ -38,11 +20,6 @@
 (defn alldocs [db options] ^js (.allDocs db options))
 (defn query [db view options] ^js (.query db view options))
 (defn find [db selector] ^js (.find db selector))
-
-(defn update-keys
-  "Apply f to every valen in keys"
-  ([m keys f] (into m (map #(vector % (f (get m %)))) keys))
-  ([m keys f & args] (into m (map #(vector % (apply f (get m %) args))) keys)))
 
 (defn- tombstone-conj [m [k v]]
   (if (nil? v)
@@ -72,8 +49,6 @@
   ([m ^js docs key]
    (into m (map #(vector (get % :id) (get % key)))
          (json->clj (.-rows docs)))))
-
-(def sep ":")
 
 (defn get-group
   ([db group] (get-group db group nil {}))

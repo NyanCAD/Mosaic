@@ -6,7 +6,12 @@
   (:require [reagent.core :as r]
             [reagent.dom :as rd]
             [shadow.resource :as rc]
-            [nyancad.hipflask :refer [pouch-atom pouchdb update-keys sep watch-changes done?]]
+            #?@(:vscode [[nyancad.mosaic.editor.platform-vscode
+                           :refer [group schematic modeldb snapshots simulations local
+                                   done? syncactive notebook-panel secondary-menu-items init-extra!]]]
+                :cljs [[nyancad.mosaic.editor.platform-web
+                         :refer [group schematic modeldb snapshots simulations local
+                                 done? syncactive notebook-panel secondary-menu-items init-extra!]]])
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go go-loop <!]]
             [clojure.math :as math]
@@ -14,29 +19,11 @@
             clojure.set
             clojure.string
             goog.functions
+            [nyancad.hipflask.util :refer [update-keys sep]]
             [nyancad.mosaic.common :as cm
              :refer [grid-size debounce sconj
                      point transform transform-vec
                      mosfet-shape bjt-conn]]))
-
-(def params (js/URLSearchParams. js/window.location.search))
-(def group (or (.get params "schem") (.getItem js/localStorage "schem") (cm/random-name)))
-(def sync (cm/get-sync-url))
-; Use same db name locally as remote to avoid cross-user/workspace contamination
-(defonce db (pouchdb (or (cm/get-db-name) "schematics")))
-(defonce schematic (pouch-atom db group (r/atom {})))
-(set-validator! schematic
-                #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
-
-(defonce modeldb (pouch-atom db "models" (r/atom {})))
-(set-validator! modeldb
-                #(or (s/valid? :nyancad.mosaic.common/modeldb %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/modeldb %))))
-(defonce snapshots (pouch-atom db (str group "$snapshots") (r/atom {})))
-(defonce simulations (pouch-atom db (str group "$result") (r/atom (sorted-map))))
-(defonce watcher (watch-changes db schematic modeldb snapshots simulations))
-(def ldb (pouchdb "local"))
-(defonce local (pouch-atom ldb "local"))
-(defonce lwatcher (watch-changes ldb local))
 
 (defn initial [device-type]
   (case device-type
@@ -113,7 +100,8 @@
     (<! (done? schematic))
     (cm/newdo undotree @schematic)
     (doseq [[w coords] (build-wire-split-index @location-index)]
-      (<! (split-wire w coords)))))
+      (split-wire w coords)
+      (<! (done? schematic)))))
 
 (defn restore [state]
   (let [;; Ensure keys are strings (schematic uses string device IDs)
@@ -121,8 +109,10 @@
         del (reduce disj (set (keys @schematic)) (keys state-str))
         norev (reduce #(update %1 %2 dissoc :_rev) state-str (keys state-str))]
     (go
-      (<! (swap! schematic into norev)) ; update
-      (<! (swap! schematic #(apply dissoc %1 %2) del)))))
+      (swap! schematic into norev)
+      (<! (done? schematic))
+      (swap! schematic #(apply dissoc %1 %2) del)
+      (<! (done? schematic)))))
 
 (defn undo-schematic []
   (when-let [st (cm/undo undotree)]
@@ -131,8 +121,6 @@
 (defn redo-schematic []
   (when-let [st (cm/redo undotree)]
     (restore st)))
-
-(defonce syncactive (r/atom false))
 
 (declare drag-start drag-end eraser-drag models on-pointer-down-element on-pointer-move-element on-pointer-up-bg double-click)
 
@@ -668,7 +656,7 @@
          (zero? ry) (map #(vector % y) (exrange x rx))     ; horizontal
          :else []))]))
 
-(defn builtin-locations [{:keys [:_id :x :y :type :transform]}]
+(defn builtin-locations [{:keys [:x :y :type :transform]}]
   (let [mod (get models type)
         conn (::conn mod)
         [w h] (::bg mod)]
@@ -677,7 +665,7 @@
                      [(inc x) (inc y) "%"])
                    transform x y)]))
 
-(defn circuit-locations [{:keys [:_id :x :y :model :transform :type]}]
+(defn circuit-locations [{:keys [:x :y :model :transform :type]}]
   (let [mod (get @modeldb (cm/model-key model))
         ports (:ports mod)
         shape (when (= type "amp") :amp)
@@ -697,10 +685,10 @@
       :else (circuit-locations dev))))
 
 (defn build-location-index [sch]
-  (loop [connidx {} bodyidx {} [dev & other] (vals sch)]
+  (loop [connidx {} bodyidx {} [[id dev] & other] (seq sch)]
     (let [[connloc bodyloc] (device-locations dev)
-          nconnidx (reduce #(update %1 %2 sconj (:_id dev)) connidx connloc)
-          nbodyidx (reduce #(update %1 %2 sconj (:_id dev)) bodyidx bodyloc)]
+          nconnidx (reduce #(update %1 %2 sconj id) connidx connloc)
+          nbodyidx (reduce #(update %1 %2 sconj id) bodyidx bodyloc)]
       (if other
         (recur nconnidx nbodyidx other)
         [nconnidx nbodyidx]))))
@@ -1017,7 +1005,8 @@
 
 (defn select-connected []
   (let [schem @schematic
-        wire (some schem @selected)
+        wire-key (first (filter schem @selected))
+        wire (get schem wire-key)
         wire? (fn [wirename] (let [wire (get schem wirename)]
                                (and (= (:type wire) "wire") wire)))
         wire-ports (fn [init wire]
@@ -1027,7 +1016,7 @@
                        init))]
     (when wire
       (loop [ports (wire-ports #{} wire)
-             sel #{(:_id wire)}]
+             sel #{wire-key}]
         (if (seq ports)
           (let [[connidx _] @location-index
                 newsel (clojure.set/difference
@@ -1525,15 +1514,12 @@
                                 devices)))
                     (into {} cat))]
     (go
-      (<! (swap! schematic into devmap))
+      (swap! schematic into devmap)
+      (<! (done? schematic))
       (swap! ui assoc
              ::dragging ::device
              ::selected (set (keys devmap)))
       (post-action!))))
-
-(defn notebook-url []
-  (let [url-params (js/URLSearchParams. #js{:schem group})]
-    (str "notebook/?" (.toString url-params))))
 
 (defn menu-items []
   [:<>
@@ -1591,30 +1577,13 @@
       [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
 
    [:div.secondary
-    [:a {:href (if cm/current-workspace
-                 (str "library?ws=" cm/current-workspace)
-                 "library")
-         :target "libman"
-         :title "Open library manager"}
-     [cm/library]]
+    [secondary-menu-items notebook-popped-out]
     [:a {:title "Keyboard shortcuts & help"
          :on-click cm/show-onboarding!}
      [cm/help]]
     [:a {:title "Snapshot History"
          :on-click show-history-panel}
-     [cm/history]]
-    [:a {:title "Pop out notebook"
-         :on-click (fn []
-                     (let [nb-url (str js/window.location.origin "/" (notebook-url))
-                           popup (.open js/window nb-url "mosaic_notebook" "width=1200,height=800")]
-                       (when popup
-                         (swap! ui assoc ::notebook-popped-out true)
-                         (set! (.-onbeforeunload popup)
-                               #(swap! ui assoc ::notebook-popped-out false)))))}
-     [cm/external-link]]
-    [:a {:href "/auth/"
-         :title "Login / Account"}
-     [cm/login]]]])
+     [cm/history]]]])
 
 (defn device-active [cell]
   (when (= cell (:type @staging))
@@ -1831,29 +1800,7 @@
       [schematic-elements @schematic]
       [schematic-dots]
       [tool-elements]]]
-    (when-not @notebook-popped-out
-      [:div#mosaic_notebook_wrapper
-       [:div.resize-handle
-        {:on-pointer-down
-         (fn [e]
-           (.preventDefault e)
-           (.setPointerCapture (.-target e) (.-pointerId e))
-           (let [wrapper (js/document.getElementById "mosaic_notebook_wrapper")
-                 start-x (.-clientX e)
-                 start-width (.-offsetWidth wrapper)
-                 on-move (fn on-move [e]
-                           (let [delta (- start-x (.-clientX e))
-                                 new-width (+ start-width delta)]
-                             (set! (.. wrapper -style -width) (str new-width "px"))))
-                 on-up (fn on-up [e]
-                         (.remove (.-classList wrapper) "resizing")
-                         (.releasePointerCapture (.-target e) (.-pointerId e))
-                         (.removeEventListener js/document "pointermove" on-move)
-                         (.removeEventListener js/document "pointerup" on-up))]
-             (.add (.-classList wrapper) "resizing")
-             (.addEventListener js/document "pointermove" on-move)
-             (.addEventListener js/document "pointerup" on-up)))}]
-       [:iframe#mosaic_notebook {:src (notebook-url)}]])]
+    [notebook-panel notebook-popped-out]]
    [cm/contextmenu]
    [cm/modal]])
 
@@ -1893,38 +1840,6 @@
 (def immediate-shortcuts
   {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))})
 
-(defn handle-auth-failure
-  "Handle authentication failure - immediate logout."
-  []
-  (js/console.warn "Authentication failure detected - 401 from sync")
-  (cm/logout!)
-  (cm/alert "Session expired. Please login again. Your changes are saved locally."))
-
-(defn handle-sync-error
-  "Handle sync errors, checking for 401 auth failures.
-  PouchDB fires 'error' event for 401, not 'denied' (with retry: true)."
-  [error]
-  (if (or (= (.-status error) 401)
-          (and (.-name error)
-               (= (.toLowerCase (.-name error)) "unauthorized")))
-    ;; Authentication failure
-    (do
-      (js/console.warn "Sync error 401 (auth failure)")
-      (handle-auth-failure))
-    ;; Generic error - NOT auth related
-    (do
-      (js/console.error "Sync error:" error)
-      (cm/alert (str "Error synchronising to " sync
-                     ", changes are saved locally")))))
-
-(defn synchronise []
-  (when (seq sync) ; pass nil to disable synchronization
-    (let [es (.sync db sync #js{:live true :retry true})]
-      (.on es "paused" #(reset! syncactive false))
-      (.on es "active" #(reset! syncactive true))
-      (.on es "denied" handle-auth-failure)
-      (.on es "error" handle-sync-error))))
-
 (defn ^:dev/after-load ^:export  render []
   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (set! js/document.onkeydown (partial cm/keyboard-shortcuts immediate-shortcuts))
@@ -1932,19 +1847,8 @@
              (.querySelector js/document ".mosaic-app.mosaic-editor")))
 
 (defn ^:export init []
-  (.setItem js/localStorage "schem" group)
-  (let [url-params (if cm/current-workspace
-                     (str "?schem=" group "&ws=" cm/current-workspace)
-                     (str "?schem=" group))]
-    (js/history.replaceState nil nil (str js/window.location.pathname url-params)))
-  ;; Initialize auth state from localStorage
-  (cm/init-auth-state!)
-  ;; Start sync (will handle 401s via "denied" event)
-  (synchronise)
-  (render)
-  ;; Show onboarding for first-time users
-  (when-not (cm/onboarding-shown?)
-    (cm/show-onboarding!)))
+  (init-extra!)
+  (render))
 
 (defn ^:export clear []
   (swap! schematic #(apply dissoc %1 %2) (set (keys @schematic))))

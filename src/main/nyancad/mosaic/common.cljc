@@ -7,7 +7,9 @@
             [react-bootstrap-icons :as icons]
             [clojure.spec.alpha :as s]
             reagent.ratom
-            nyancad.hipflask
+            [nyancad.hipflask.util :refer [json->clj]]
+            #?@(:vscode [nyancad.mosaic.jsatom]
+                :cljs [nyancad.hipflask])
             clojure.edn
             clojure.set
             clojure.string
@@ -16,8 +18,9 @@
             goog.functions
             [shadow.resource :as rc]))
 
-; allow taking a cursor of a pouch atom
-(extend-type ^js nyancad.hipflask/PAtom reagent.ratom/IReactiveAtom)
+; allow taking a cursor of a pouch/json atom
+#?(:vscode (extend-type ^js nyancad.mosaic.jsatom/JsAtom reagent.ratom/IReactiveAtom)
+   :cljs (extend-type ^js nyancad.hipflask/PAtom reagent.ratom/IReactiveAtom))
 
 (def grid-size 50)
 (def debounce #(goog.functions/debounce % 1000))
@@ -478,7 +481,7 @@
            (let [key-names (map name (keys state))
                  values (map clj->js (vals state))
                  func (apply js/Function (concat key-names [(str "return (" code ")")]))
-                 result (nyancad.hipflask/json->clj (apply func values))
+                 result (json->clj (apply func values))
                  fres (js/parseFloat result)]
              (case type
                "e" (.toExponential fres (js/parseInt precision))

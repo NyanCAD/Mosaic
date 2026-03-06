@@ -5,7 +5,8 @@
 (ns nyancad.mosaic.anywidget
   (:require [reagent.core :as r]
             [cljs.core.async :refer [go-loop <!]]
-            [nyancad.hipflask :refer [pouch-atom pouchdb watch-changes add-watch-group done? json->clj]]
+            [nyancad.hipflask :refer [pouch-atom pouchdb watch-changes add-watch-group done?]]
+            [nyancad.hipflask.util :refer [json->clj]]
             [nyancad.mosaic.common :as cm]))
 
 ;; Extract parameters like editor.cljs (but for schematic, not notebook)
