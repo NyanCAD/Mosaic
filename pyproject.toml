@@ -10,3 +10,8 @@ allow_dirty = true
 filename = "pyproject.toml"
 search = 'current_version = "{current_version}"'
 replace = 'current_version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "vscode-ext/package.json"
+search = '"version": "{current_version}"'
+replace = '"version": "{new_version}"'

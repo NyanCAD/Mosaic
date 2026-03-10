@@ -110,7 +110,7 @@ To install a packaged build:
 
 ```sh
 npx shadow-cljs clj-run nyancad.mosaic.build/package-vscode
-code --install-extension vscode-ext/mosaic-schematic-0.0.1.vsix
+code --install-extension vscode-ext/mosaic-schematic-*.vsix
 ```
 
 ## File Format
