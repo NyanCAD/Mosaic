@@ -7,14 +7,14 @@
             [reagent.core :as r]
             [reagent.dom :as rd]
             #?@(:vscode [[nyancad.mosaic.libman.platform-vscode
-                           :refer [modeldb syncactive remotemodeldb remote-search-loading
+                           :refer [modeldb syncactive
                                    preview-url get-preview search-remote-models
-                                   replicate-model replicate-filtered-models
+                                   remote-models-section
                                    edit-url import-ports workspace-selector init-extra!]]]
                 :cljs    [[nyancad.mosaic.libman.platform-web
-                           :refer [modeldb syncactive remotemodeldb remote-search-loading
+                           :refer [modeldb syncactive
                                    preview-url get-preview search-remote-models
-                                   replicate-model replicate-filtered-models
+                                   remote-models-section
                                    edit-url import-ports workspace-selector init-extra!]]])
             [nyancad.mosaic.common :as cm]))
 
@@ -78,32 +78,8 @@
        (fn [model-id]
          #(model-context-menu % db model-id))]]
 
-     ;; Available models section (hidden when no remote DB)
-     (when (or (seq @remotemodeldb) @remote-search-loading)
-       [:div.available-section
-        [:div.section-header-with-button
-         [:h4.section-header "Available"]
-         (when (seq @remotemodeldb)
-           [:button.download-btn.all {:on-click #(replicate-filtered-models @selcat @filter-text)
-                                      :title "Download all matching models"}
-            [cm/download] "Download All"])]
-        (cond
-          @remote-search-loading
-          [:div.loading-spinner "Loading..."]
-
-          (seq @remotemodeldb)
-          [:div.remote-models
-           (doall (for [[model-id model] @remotemodeldb
-                        :let [schem? (not (:templates model))
-                              icon (if schem? cm/schemmodel cm/codemodel)]]
-                    [:label.remote-model {:key model-id}
-                     [icon] " " (get model :name model-id)
-                     [:button.download-btn {:on-click #(replicate-model model-id)
-                                            :title "Download this model"}
-                      [cm/download]]]))]
-
-          :else
-          [:div.empty "No remote models found"])])]))
+     ;; Available models section (platform-specific: web shows remote DB, VS Code is no-op)
+     [remote-models-section selcat filter-text]]))
 
 (defn port-editor [cell side]
   (let [path [:ports side]]

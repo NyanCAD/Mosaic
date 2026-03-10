@@ -48,10 +48,12 @@
                                       :descending true
                                       :limit 1}))
             rows (json->clj (.-rows docs))]
+        (when @preview-url (js/URL.revokeObjectURL @preview-url))
         (if-let [preview-attachment (get-in rows [0 :doc :_attachments :preview.svg :data])]
           (reset! preview-url (js/URL.createObjectURL preview-attachment))
           (reset! preview-url nil))))
-    (reset! preview-url nil)))
+    (do (when @preview-url (js/URL.revokeObjectURL @preview-url))
+        (reset! preview-url nil))))
 
 ;; --- Remote search ---
 
@@ -107,6 +109,36 @@
     (println selector)
     (.on replication "complete" #(js/console.log "Filtered models replicated"))
     (.on replication "error" #(js/console.error "Replication error:" %))))
+
+;; --- Remote models section ---
+
+(defn remote-models-section
+  "Reagent component for the 'Available' remote models section."
+  [selcat filter-text]
+  [:div.available-section
+   [:div.section-header-with-button
+    [:h4.section-header "Available"]
+    (when (seq @remotemodeldb)
+      [:button.download-btn.all {:on-click #(replicate-filtered-models @selcat @filter-text)
+                                  :title "Download all matching models"}
+       [cm/download] "Download All"])]
+   (cond
+     @remote-search-loading
+     [:div.loading-spinner "Loading..."]
+
+     (seq @remotemodeldb)
+     [:div.remote-models
+      (doall (for [[model-id model] @remotemodeldb
+                    :let [schem? (not (:templates model))
+                          icon (if schem? cm/schemmodel cm/codemodel)]]
+                [:label.remote-model {:key model-id}
+                 [icon] " " (get model :name model-id)
+                 [:button.download-btn {:on-click #(replicate-model model-id)
+                                        :title "Download this model"}
+                  [cm/download]]]))]
+
+     :else
+     [:div.empty "No remote models found"])])
 
 ;; --- Edit & Import ---
 

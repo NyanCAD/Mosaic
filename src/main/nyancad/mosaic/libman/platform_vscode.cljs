@@ -54,12 +54,18 @@
     (go
       (let [bare-id (cm/bare-id new-model)
             svg-content (<! (send-request! (str bare-id ".svg")))]
+        (when @preview-url (js/URL.revokeObjectURL @preview-url))
         (if svg-content
           (let [blob (js/Blob. #js[svg-content] #js{:type "image/svg+xml"})
                 url (js/URL.createObjectURL blob)]
             (reset! preview-url url))
           (reset! preview-url nil))))
-    (reset! preview-url nil)))
+    (do (when @preview-url (js/URL.revokeObjectURL @preview-url))
+        (reset! preview-url nil))))
+
+;; --- Remote models section (stub — no remote DB in VS Code) ---
+
+(defn remote-models-section [_selcat _filter-text] nil)
 
 ;; --- Remote search (stubs — no remote DB in VS Code) ---
 
