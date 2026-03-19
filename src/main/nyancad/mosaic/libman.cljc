@@ -90,28 +90,12 @@
       #(swap! %1 assoc-in path (clojure.string/split %2 #"[, ]+" -1))]]))
 
 (defn parameters-editor [cell]
-  [:<>
-   [:label {:for "parameters"} "Names"]
-   [cm/dbfield :input {:id "parameters", :type "text" :placeholder "resistance dtemp"} cell
-    #(clojure.string/join " " (map :name (get % :props [])))
-    (fn [atom-ref param-string]
-      (let [param-names (clojure.string/split param-string #"[, ]+" -1)]
-        (swap! atom-ref update :props
-               #(mapv (fn [current new-name]
-                        (assoc current :name new-name))
-                      (concat % (repeat {}))
-                      param-names))))]
-   (doall
-    (for [[idx param] (map-indexed vector (get @cell :props []))]
-      [:<> {:key idx}
-       [:label (str (:name param "") " tooltip")]
-       [cm/dbfield :input {:type "text"} cell
-        #(get-in % [:props idx :tooltip] "")
-        #(swap! %1 assoc-in [:props idx :tooltip] %2)]
-       [:label (str (:name param "") " default")]
-       [cm/dbfield :input {:type "text" :placeholder "1k"} cell
-        #(get-in % [:props idx :default] "")
-        #(swap! %1 assoc-in [:props idx :default] %2)]]))])
+  [cm/recursive-editor
+   [{:name "props" :tooltip "Parameters"
+     :children [{:name "name" :tooltip "Parameter name"}
+                {:name "tooltip" :tooltip "Description"}
+                {:name "default" :tooltip "Default value"}]}]
+   cell])
 
 (defn model-properties
   "Edit properties for the selected model."

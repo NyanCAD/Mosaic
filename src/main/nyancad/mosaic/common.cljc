@@ -51,6 +51,59 @@
               [:option {:key i :value i} (valfn item)])
             (listfn @vector-cursor)))]])
 
+(declare recursive-editor dissjoc x-circle x-circle-fill plus-circle plus-circle-fill)
+
+(defn- leaf-editor
+  "Render a single leaf field: label + input/textarea/select/csv."
+  [{:keys [name tooltip type options placeholder] :or {type :input}} cursor]
+  (let [k (keyword name)
+        ph (or placeholder "")]
+    [:<>
+     [:label {:for name :title tooltip} name]
+     (case type
+       :textarea [dbfield :textarea {:id name :rows 4 :placeholder ph} cursor
+                  #(get % k "") #(swap! %1 assoc k %2)]
+       :select   [:select {:id name :value (get @cursor k "")
+                           :on-change #(swap! cursor assoc k (.. % -target -value))}
+                  (for [{:keys [value label]} options]
+                    [:option {:key value :value value} label])]
+       :csv      [dbfield :input {:id name :type "text" :placeholder ph} cursor
+                  #(clojure.string/join " " (get % k []))
+                  #(swap! %1 assoc k (clojure.string/split %2 #"[, ]+" -1))]
+       ;; default: text input
+                 [dbfield :input {:id name :type "text" :placeholder ph} cursor
+                  #(get % k "") #(swap! %1 assoc k %2)])]))
+
+(defn- list-editor
+  "Render a list of maps: fieldset per item with add/remove, recurse per item."
+  [{:keys [tooltip children]} list-cursor]
+  [:<>
+   [:label tooltip]
+   (doall
+    (for [[idx _] (map-indexed vector (or @list-cursor []))]
+      (let [item-cursor (r/cursor list-cursor [idx])]
+        [:fieldset.fieldset-item {:key idx}
+         [:legend (if (seq (:name @item-cursor)) (:name @item-cursor) "untitled")
+          [:button.remove-btn {:on-click #(swap! list-cursor dissjoc idx)
+                               :title "Remove"} [x-circle] [x-circle-fill]]]
+         [recursive-editor children item-cursor]])))
+   [:button.add-btn {:on-click #(swap! list-cursor (fnil conj [])
+                                      (into {} (map (fn [{:keys [name]}] [(keyword name) ""]) children)))}
+    [plus-circle] [plus-circle-fill] " Add"]])
+
+(defn recursive-editor
+  "Render editors for nested data. Each field is either a leaf or a list of maps.
+   fields: [{:name :tooltip :type :children ...}]
+   cursor: cursor to a map"
+  [fields cursor]
+  [:<>
+   (doall
+    (for [{:keys [name children] :as field} fields]
+      [:<> {:key name}
+       (if children
+         [list-editor field (r/cursor cursor [(keyword name)])]
+         [leaf-editor field cursor])]))])
+
 (defn sign [n] (if (> n 0) 1 -1))
 
 ; like conj but coerces to set
@@ -346,6 +399,10 @@
 (def external-link (r/adapt-react-class icons/BoxArrowUpRight))
 (def amp-icon (r/adapt-react-class icons/CaretRight))
 (def search (r/adapt-react-class icons/Search))
+(def x-circle (r/adapt-react-class icons/XCircle))
+(def x-circle-fill (r/adapt-react-class icons/XCircleFill))
+(def plus-circle (r/adapt-react-class icons/PlusCircle))
+(def plus-circle-fill (r/adapt-react-class icons/PlusCircleFill))
 (def history (r/adapt-react-class icons/ClockHistory))
 (def upload (r/adapt-react-class icons/Upload))
 
