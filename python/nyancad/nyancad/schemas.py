@@ -129,10 +129,47 @@ class Component(DeviceBase):
     template: Optional[str] = Field(None, description="Custom SPICE template")
 
 
+class ModelEntry(BaseModel):
+    """A single model/template entry within a component model definition.
+
+    Each entry describes one implementation variant (e.g., a SPICE model for NgSpice,
+    a Spectre model, etc.). The flat list replaces the old nested templates dict.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+
+    language: str = Field(..., description="Entry language: 'spice', 'spectre', 'verilog', 'vhdl'")
+    implementation: Optional[str] = Field(
+        None, description="Simulator/tool name this entry targets (e.g., 'NgSpice', 'Xyce')"
+    )
+    name: Optional[str] = Field(
+        None, description="Model reference name override (used instead of parent model name)"
+    )
+    spice_type: Optional[str] = Field(
+        None, alias='spice-type',
+        description="SPICE element type letter (R, C, M, X, SUBCKT, etc.)"
+    )
+    library: Optional[str] = Field(
+        None, description="Path or URL to external library file"
+    )
+    sections: Optional[list[str]] = Field(
+        None, description="Available corner/section names in the library"
+    )
+    code: Optional[str] = Field(
+        None, description="Inline SPICE/HDL code for this model"
+    )
+    port_order: Optional[list[str]] = Field(
+        None, alias='port-order',
+        description="Explicit port connection order for SPICE netlist generation"
+    )
+    params: Optional[Dict[str, str]] = Field(
+        None, description="Default parameter values for this model entry"
+    )
+
+
 class ModelMetadata(BaseModel):
     """Component model metadata from the library.
 
-    Models define reusable component types with their ports, parameters, SPICE templates,
+    Models define reusable component types with their ports, parameters, model entries,
     and schematic symbols. Used for subcircuits (type='ckt') and built-in components.
 
     Models are read-only through the MCP API.
@@ -146,13 +183,13 @@ class ModelMetadata(BaseModel):
     # Model metadata
     name: str = Field(..., description="Human-readable display name (NOT the ID)")
     type: Optional[str] = Field(None, description="Component type (resistor, capacitor, ckt, etc.)")
-    category: list[str] = Field(default_factory=list, description="Hierarchical category path")
+    tags: list[str] = Field(default_factory=list, description="Flat tag list (replaces hierarchical category)")
 
-    # Template information
-    has_templates: bool = Field(..., description="Whether templates exist for netlist generation")
-    templates: Optional[Dict[str, list[Dict[str, Any]]]] = Field(
+    # Model entries (flat list replacing nested templates dict)
+    has_models: bool = Field(..., description="Whether model entries exist for netlist generation")
+    models: Optional[list[ModelEntry]] = Field(
         None,
-        description="Templates by language: spice, spectre, verilog, vhdl"
+        description="Flat list of model/template entries by language and implementation"
     )
 
     # Port and parameter definitions

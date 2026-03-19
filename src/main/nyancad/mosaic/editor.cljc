@@ -1451,7 +1451,7 @@
         [:<>
          [:h1 (or @name key)]
          [:div.properties
-          (when (and (seq @model) (not (:templates model-def)))
+          (when (and (seq @model) (not (cm/has-code-models? model-def)))
             [:a {:href "#" :on-click #(do (.preventDefault %) (open-schematic @model))} "Edit"])
           [:label {:for "name" :title "Instance name"} "name"]
           [:input {:id "name"

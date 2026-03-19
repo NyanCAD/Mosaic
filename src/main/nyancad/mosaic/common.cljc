@@ -227,7 +227,7 @@
 (s/def ::schematic (s/map-of string? ::device))
 
 ; Model specs for modeldb
-(s/def ::category (s/coll-of string? :kind vector?))
+(s/def ::tags (s/coll-of string? :kind vector?))
 (s/def ::port-list (s/coll-of string? :kind vector?))
 (s/def ::ports (s/keys :opt-un [::top ::bottom ::left ::right]))
 (s/def ::top ::port-list)
@@ -235,10 +235,18 @@
 (s/def ::left ::port-list)
 (s/def ::right ::port-list)
 (s/def ::code string?)
-(s/def ::use-x boolean?)
-(s/def ::template (s/keys :opt-un [::name ::code ::use-x]))
-(s/def ::template-list (s/coll-of ::template :kind vector?))
-(s/def ::templates (s/map-of keyword? ::template-list))
+(s/def ::language string?)
+(s/def ::spice-type string?)
+(s/def ::implementation string?)
+(s/def ::library string?)
+(s/def ::sections (s/coll-of string? :kind vector?))
+(s/def ::port-order (s/coll-of string? :kind vector?))
+(s/def ::params (s/map-of string? string?))
+(s/def ::model-entry (s/keys :req-un [::language]
+                              :opt-un [::name ::implementation ::spice-type
+                                       ::library ::sections ::code
+                                       ::port-order ::params]))
+(s/def ::models (s/coll-of ::model-entry :kind vector?))
 
 ; Parameter specs for unified props system
 (s/def ::tooltip string?)
@@ -247,8 +255,13 @@
 (s/def ::props (s/coll-of ::parameter :kind vector?))
 
 (s/def ::model-def (s/keys :req-un [::name]
-                           :opt-un [::type ::category ::ports ::templates ::props]))
+                           :opt-un [::type ::tags ::ports ::models ::props]))
 (s/def ::modeldb (s/map-of string? ::model-def))
+
+(defn has-code-models?
+  "Check if a model definition has code model entries (vs. schematic-only)."
+  [model]
+  (boolean (seq (:models model))))
 
 ; https://clojure.atlassian.net/browse/CLJS-3207
 (s/assert ::x 0)
@@ -446,12 +459,13 @@
   (= (subvec v 0 (min (count v) (count prefix))) prefix))
 
 (defn build-category-type-index
-  "Build a hierarchical index of categories -> types from flattened model documents"
+  "Build a hierarchical index of tags -> types from flattened model documents.
+   First 2 tags form the tree path, type is the leaf."
   [models]
   (reduce (fn [index [_id model]]
-            (let [category (or (:category model) [])
+            (let [tags (vec (take 2 (or (:tags model) [])))
                   type (:type model "ckt")]
-              (assoc-in index (conj category type) #{})))
+              (assoc-in index (conj tags type) #{})))
           {} models))
 
 (defn category-tree
@@ -483,7 +497,7 @@
    search-text: string to match against model name (or \"\" for all)"
   [models category search-text]
   (filter (fn [[model-id model]]
-            (let [model-path (conj (or (:category model) []) (:type model "ckt"))
+            (let [model-path (conj (vec (take 2 (or (:tags model) []))) (:type model "ckt"))
                   model-name (get model :name model-id)
                   filter-match (or (empty? search-text)
                                    (clojure.string/includes?
@@ -503,9 +517,12 @@
    (if (seq models)
      [radiobuttons selected-atom
       (doall (for [[model-id model] models
-                   :let [schem? (not (:templates model))
-                         icon (if schem? schemmodel codemodel)]]
-               [[:span [icon] " " (get model :name model-id)]
+                   :let [schem? (not (has-code-models? model))
+                         icon (if schem? schemmodel codemodel)
+                         badges (drop 2 (:tags model))]]
+               [[:span [icon] " " (get model :name model-id)
+                 (for [tag badges]
+                   [:span.tag-badge {:key tag} tag])]
                 model-id
                 (get model :name model-id)]))
       on-dblclick

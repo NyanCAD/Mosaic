@@ -240,12 +240,12 @@ class ServerAPI(SchematicAPI):
 
             seen_models.add(model_id_prefixed)
 
-            # Check if model exists and is a schematic (no templates)
+            # Check if model exists and is a schematic (no model entries)
             if model_id_prefixed in models:
                 model_def = models[model_id_prefixed]
 
-                # Schematic models have no templates field
-                if not model_def.get('templates'):
+                # Schematic models have no model entries
+                if not model_def.get('models'):
                     # Fetch subcircuit documents
                     if model_id_bare not in schem:
                         seq, subdocs = await self.get_docs(model_id_bare)
@@ -271,10 +271,10 @@ class ServerAPI(SchematicAPI):
         """
         selector = {}
 
-        # Add category path constraints
+        # Add tag constraints (flat list, matched by index)
         if category:
             for i, cat in enumerate(category):
-                selector[f"category.{i}"] = cat
+                selector[f"tags.{i}"] = cat
 
         # Add name regex filter
         if filter:

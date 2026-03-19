@@ -53,7 +53,7 @@
   (let [model (get @db model-id)]
     (cm/set-context-menu (.-clientX e) (.-clientY e)
                          [:ul
-                          (when (not (:templates model))
+                          (when (not (cm/has-code-models? model))
                             [:li {:on-click #(edit-url model-id)} "edit"])
                           [:li {:on-click #(swap! db dissoc model-id)} "delete"]])))
 
@@ -73,7 +73,7 @@
       [:h4.section-header "Installed"]
       [cm/model-list selmodel filtered-models
        (fn [model-id]
-         (when (not (get-in @db [model-id :templates]))
+         (when (not (cm/has-code-models? (get @db model-id)))
            #(edit-url model-id)))
        (fn [model-id]
          #(model-context-menu % db model-id))]]
@@ -100,14 +100,7 @@
 (defn model-properties
   "Edit properties for the selected model."
   [db]
-  (let [mod (r/cursor db [@selmodel])
-        model-selection (r/cursor selection [@selmodel])
-        language-cursor (r/cursor model-selection [:lang])
-        implementation-cursor (r/cursor model-selection [:impl])
-        lang-cursor (r/cursor mod [:templates @language-cursor])
-        template-cursor (r/cursor lang-cursor [@implementation-cursor])]
-    (when-not (seq @model-selection)
-      (reset! model-selection {:lang :spice :impl 0}))
+  (let [mod (r/cursor db [@selmodel])]
     (if @selmodel
       [:div.properties
        [:label {:for "model-name"} "Name"]
@@ -115,58 +108,47 @@
         :name
         #(swap! %1 assoc :name %2)]
 
-       [:label {:for "categories" :title "Comma-seperated device categories"} "Categories"]
-       [cm/dbfield :input {:id "categories"} mod
-        #(clojure.string/join " " (or (:category %) []))
-        #(swap! %1 assoc :category (clojure.string/split %2 #"[, ]+" -1))]
+       [:label {:for "tags" :title "Space-separated tags (first 2 form tree, rest are badges)"} "Tags"]
+       [cm/dbfield :input {:id "tags"} mod
+        #(clojure.string/join " " (or (:tags %) []))
+        #(swap! %1 assoc :tags (clojure.string/split %2 #"[, ]+" -1))]
 
        (when (#{"ckt" "amp"} (:type @mod "ckt"))
          [:<>
           [:h4 "Port Configuration"]
-          (when (not (:templates @mod))
+          (when (not (cm/has-code-models? @mod))
             [:button {:on-click #(import-ports @selmodel mod)}
              "Import from schematic"])
           [port-editor mod :top]
           [port-editor mod :bottom]
           [port-editor mod :left]
           [port-editor mod :right]])
-       (when (:templates @mod)
+       (when (cm/has-code-models? @mod)
          [:<>
-          [:h4 "Template Configuration"]
-          [:label {:for "device-type" :title "Device type"} "Device Type"]
-          [:input {:id "device-type"
-                   :type "text"
-                   :disabled true
-                   :value (:type @mod)}]
-
-          [:label {:for "language"} "Language"]
-          [:select {:id "language"
-                    :type "text"
-                    :value (if-let [lang @language-cursor] (name lang) "spice")
-                    :on-change #(reset! language-cursor (keyword (.. % -target -value)))}
-           [:option {:value "spice"} "Spice"]
-           [:option {:value "spectre"} "Spectre"]
-           [:option {:value "verilog"} "Verilog"]
-           [:option {:value "vhdl"} "VHDL"]]
-
-          [:label {:for "implementation"} "Implementation"]
-          [cm/combobox-field {:id "implementation"} template-cursor implementation-cursor lang-cursor
-           #(conj (if (seq %) % [{:name "default"}]) {:name "<new>"})
-           #(:name % "default")
-           #(swap! %1 assoc :name %2)]
-
-          [:label {:for "template-code"} "Code"]
-          [cm/dbfield :textarea {:id "template-code" :rows 8} template-cursor
-           :code
-           #(swap! %1 assoc :code %2)]
-
-          (when (= @language-cursor :spice)
-            [:<>
-             [:label {:for "use-x" :title "Forces subcircuit instantiation even for other device types"} "Use X"]
-             [:input {:type "checkbox"
-                      :id "use-x"
-                      :checked (get @template-cursor :use-x false)
-                      :on-change #(swap! template-cursor assoc :use-x (.. % -target -checked))}]])])
+          [:h4 "Model Configuration"]
+          [cm/recursive-editor
+           [{:name "models" :tooltip "Model entries"
+             :children
+             [{:name "language" :tooltip "Language" :type :select
+               :options [{:value "spice" :label "SPICE"}
+                         {:value "sax" :label "SAX"}
+                         {:value "verilog-a" :label "Verilog-A"}
+                         {:value "vhdl" :label "VHDL"}
+                         {:value "spectre" :label "Spectre"}]}
+              {:name "implementation" :tooltip "Variant (e.g. ngspice, behavioral)"}
+              {:name "name" :tooltip "Model name in netlist"}
+              {:name "spice-type" :tooltip "SPICE prefix type" :type :select
+               :options [{:value "" :label "None"}
+                         {:value "SUBCKT" :label "SUBCKT"}
+                         {:value "R" :label "R"} {:value "C" :label "C"}
+                         {:value "L" :label "L"} {:value "D" :label "D"}
+                         {:value "M" :label "M"} {:value "Q" :label "Q"}
+                         {:value "V" :label "V"} {:value "I" :label "I"}]}
+              {:name "library" :tooltip "Library file path"}
+              {:name "sections" :tooltip "PVT corners" :type :csv}
+              {:name "code" :tooltip "Inline model code" :type :textarea}
+              {:name "port-order" :tooltip "Port connection order" :type :csv}]}]
+           mod]])
        [:h4 "Parameters"]
        [parameters-editor mod]]
       [:div.empty "Select a model to edit its properties."])))
@@ -175,7 +157,7 @@
   (let [mod (r/cursor db [@selmodel])]
     [:div.preview
      (if @selmodel
-       (if (not (:templates @mod))
+       (if (not (cm/has-code-models? @mod))
          [:<>
           [:button.primary {:on-click #(edit-url @selmodel)
                             :title "Edit"} [cm/edit] " Edit"]
@@ -198,15 +180,15 @@
                                   (swap! modeldb assoc model-id
                                          {:name name
                                           :type "ckt"
-                                          :category category-path}))))
+                                          :tags (vec category-path)}))))
         add-spice #(spice-model-modal
                     (fn [device-type model-name]
                       (let [model-id (str "models:" (cm/random-name))]
                         (swap! modeldb assoc model-id
                                {:name model-name
                                 :type device-type
-                                :category category-path
-                                :templates {:spice [] :spectre [] :verilog [] :vhdl []}}))))]
+                                :tags (vec category-path)
+                                :models [{:language "spice"}]}))))]
     [:<>
      [:div.schsel
       [:div.addbuttons

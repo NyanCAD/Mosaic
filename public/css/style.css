@@ -1689,3 +1689,15 @@ rect.select {
 .mosaic-app .properties .add-btn:hover .bi-plus-circle-fill {
     display: inline;
 }
+
+/* Tag badges in model list */
+.mosaic-app .tag-badge {
+    display: inline-block;
+    background: #e7e7e7;
+    color: #555;
+    font-size: 0.75em;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 4px;
+    vertical-align: middle;
+}

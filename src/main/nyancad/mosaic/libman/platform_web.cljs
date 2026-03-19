@@ -58,13 +58,13 @@
 ;; --- Remote search ---
 
 (defn build-model-selector
-  "Build a Mango selector for models based on category and filter text."
+  "Build a Mango selector for models based on tags and filter text."
   [selected-category filter-text]
   (let [selected-type (cm/device-types (peek selected-category))
         category-path (if selected-type
                         (pop selected-category)
                         selected-category)]
-    (cond-> (into {} (map-indexed (fn [i cat] [(str "category." i) cat]) category-path))
+    (cond-> (into {} (map-indexed (fn [i tag] [(str "tags." i) tag]) category-path))
       selected-type (assoc :type selected-type)
       (seq filter-text) (assoc :name {"$regex" (str "(?i)" filter-text)}))))
 
@@ -129,7 +129,7 @@
      (seq @remotemodeldb)
      [:div.remote-models
       (doall (for [[model-id model] @remotemodeldb
-                    :let [schem? (not (:templates model))
+                    :let [schem? (not (cm/has-code-models? model))
                           icon (if schem? cm/schemmodel cm/codemodel)]]
                 [:label.remote-model {:key model-id}
                  [icon] " " (get model :name model-id)
