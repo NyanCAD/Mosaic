@@ -25,20 +25,25 @@
 (def grid-size 50)
 (def debounce #(goog.functions/debounce % 1000))
 
-(defn dbfield [typ props st valfn changefn]
-  (let [int (r/atom @st)
-        ext (r/atom @st)
-        dbfn (debounce changefn)]
+(defn dbfield
+  "Debounced two-way binding between a text input and a cursor/atom.
+   Keystrokes update the input immediately; writes to st are debounced.
+   valfn: extract display text from atom state  (st → string)
+   changefn: write raw text back into atom      (st, string → nil)"
+  [typ props st valfn changefn]
+  (let [int  (r/atom (valfn @st))   ; display text for instant UI feedback
+        ext  (r/atom @st)           ; snapshot of st — detects external changes
+        dbfn (debounce changefn)]   ; changefn called once per edit, after debounce
     (fn [typ props st valfn changefn]
-      (when (not= @ext @st)
-        (reset! int @st)
-        (reset! ext @st))
+      (when (not= @ext @st)         ; st changed externally (remote sync, other component)
+        (reset! int (valfn @st))    ; re-extract display text
+        (reset! ext @st))           ; update snapshot
       [typ (assoc props
-                  :value (valfn @int)
+                  :value @int
                   :on-change (fn [e]
                                (let [val (.. e -target -value)]
-                                 (dbfn st val)
-                                 (changefn int val))))])))
+                                 (reset! int val)       ; immediate: update display text
+                                 (dbfn st val))))])))
 
 (defn combobox-field [props element-cursor index-cursor vector-cursor listfn valfn changefn]
   [:div.combobox-group
@@ -55,28 +60,31 @@
 
 (defn- leaf-editor
   "Render a single leaf field: label + input/textarea/select/csv."
-  [{:keys [name tooltip type options placeholder] :or {type :input}} cursor]
+  [{:keys [name tooltip type options placeholder default] :or {type :input}} cursor on-change]
   (let [k (keyword name)
-        ph (or placeholder "")]
+        ph (or placeholder "")
+        valfn #(or (get % k) default "")
+        wrap (fn [f] (fn [st v] (f st v) (when on-change (on-change))))]
     [:<>
      [:label {:for name :title tooltip} name]
      (case type
        :textarea [dbfield :textarea {:id name :rows 4 :placeholder ph} cursor
-                  #(get % k "") #(swap! %1 assoc k %2)]
-       :select   [:select {:id name :value (get @cursor k "")
-                           :on-change #(swap! cursor assoc k (.. % -target -value))}
+                  valfn (wrap #(swap! %1 assoc k %2))]
+       :select   [:select {:id name :value (or (get @cursor k) default "")
+                           :on-change #(do (swap! cursor assoc k (.. % -target -value))
+                                           (when on-change (on-change)))}
                   (for [{:keys [value label]} options]
                     [:option {:key value :value value} label])]
        :csv      [dbfield :input {:id name :type "text" :placeholder ph} cursor
                   #(clojure.string/join " " (get % k []))
-                  #(swap! %1 assoc k (clojure.string/split %2 #"[, ]+" -1))]
+                  (wrap #(swap! %1 assoc k (clojure.string/split %2 #"[, ]+" -1)))]
        ;; default: text input
                  [dbfield :input {:id name :type "text" :placeholder ph} cursor
-                  #(get % k "") #(swap! %1 assoc k %2)])]))
+                  valfn (wrap #(swap! %1 assoc k %2))])]))
 
 (defn- list-editor
   "Render a list of maps: fieldset per item with add/remove, recurse per item."
-  [{:keys [tooltip children]} list-cursor]
+  [{:keys [tooltip children]} list-cursor on-change]
   [:<>
    [:label tooltip]
    (doall
@@ -84,25 +92,29 @@
       (let [item-cursor (r/cursor list-cursor [idx])]
         [:fieldset.fieldset-item {:key idx}
          [:legend (if (seq (:name @item-cursor)) (:name @item-cursor) "untitled")
-          [:button.remove-btn {:on-click #(swap! list-cursor dissjoc idx)
+          [:button.remove-btn {:on-click #(do (swap! list-cursor dissjoc idx)
+                                              (when on-change (on-change)))
                                :title "Remove"} [x-circle] [x-circle-fill]]]
-         [recursive-editor children item-cursor]])))
-   [:button.add-btn {:on-click #(swap! list-cursor (fnil conj [])
-                                      (into {} (map (fn [{:keys [name]}] [(keyword name) ""]) children)))}
+         [recursive-editor children item-cursor on-change]])))
+   [:button.add-btn {:on-click #(do (swap! list-cursor (fnil conj [])
+                                          (into {} (map (fn [{:keys [name]}] [(keyword name) ""]) children)))
+                                    (when on-change (on-change)))}
     [plus-circle] [plus-circle-fill] " Add"]])
 
 (defn recursive-editor
   "Render editors for nested data. Each field is either a leaf or a list of maps.
    fields: [{:name :tooltip :type :children ...}]
-   cursor: cursor to a map"
-  [fields cursor]
-  [:<>
-   (doall
-    (for [{:keys [name children] :as field} fields]
-      [:<> {:key name}
-       (if children
-         [list-editor field (r/cursor cursor [(keyword name)])]
-         [leaf-editor field cursor])]))])
+   cursor: cursor to a map
+   on-change: optional callback fired after data changes (debounced for text fields)"
+  ([fields cursor] (recursive-editor fields cursor nil))
+  ([fields cursor on-change]
+   [:<>
+    (doall
+     (for [{:keys [name children] :as field} fields]
+       [:<> {:key name}
+        (if children
+          [list-editor field (r/cursor cursor [(keyword name)]) on-change]
+          [leaf-editor field cursor on-change])]))]))
 
 (defn sign [n] (if (> n 0) 1 -1))
 
