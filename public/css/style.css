@@ -465,7 +465,9 @@ html {
     grid-row: auto;
 }
 
-.mosaic-libman .properties input {
+.mosaic-libman .properties input,
+.mosaic-libman .properties select,
+.mosaic-libman .properties textarea {
     grid-column: controls;
     grid-row: auto;
     box-sizing: border-box;
@@ -475,6 +477,16 @@ html {
 .mosaic-libman .properties input[type="checkbox"] {
     width: auto;
     justify-self: start; /* Left align checkbox within its grid cell */
+}
+
+.mosaic-app .properties h4 {
+    grid-column: 1 / -1;
+    margin: 0.5em 0 0;
+}
+
+.mosaic-libman .properties > button {
+    grid-column: 1 / -1;
+    justify-self: start;
 }
 
 .mosaic-libman input[type="radio"],
@@ -810,7 +822,9 @@ html {
     grid-row: auto;
 }
 
-.mosaic-editor .properties input {
+.mosaic-editor .properties input,
+.mosaic-editor .properties select,
+.mosaic-editor .properties textarea {
     grid-column: controls;
     grid-row: auto;
     box-sizing: border-box;
@@ -1645,11 +1659,15 @@ rect.select {
     align-items: center;
 }
 
-.mosaic-app .properties .fieldset-item legend {
+.mosaic-app .properties .fieldset-item .fieldset-legend {
     grid-column: 1 / -1;
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 0.3em;
+    margin: -1.1em 0 0;
+    padding: 0 0.25em;
+    background: white;
+    width: fit-content;
 }
 
 .mosaic-app .properties .remove-btn {

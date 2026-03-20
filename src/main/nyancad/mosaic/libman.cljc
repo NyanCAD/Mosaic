@@ -91,7 +91,7 @@
 
 (defn parameters-editor [cell]
   [cm/recursive-editor
-   [{:name "props" :tooltip "Parameters"
+   [{:name "props" :tooltip "Parameters" :type :h4
      :children [{:name "name" :tooltip "Parameter name"}
                 {:name "tooltip" :tooltip "Description"}
                 {:name "default" :tooltip "Default value"}]}]
@@ -124,10 +124,8 @@
           [port-editor mod :left]
           [port-editor mod :right]])
        (when (cm/has-code-models? @mod)
-         [:<>
-          [:h4 "Model Configuration"]
-          [cm/recursive-editor
-           [{:name "models" :tooltip "Model entries"
+         [cm/recursive-editor
+           [{:name "models" :tooltip "Model Configuration" :type :h4
              :children
              [{:name "language" :tooltip "Language" :type :select
                :options [{:value "spice" :label "SPICE"}
@@ -148,8 +146,7 @@
               {:name "sections" :tooltip "PVT corners" :type :csv}
               {:name "code" :tooltip "Inline model code" :type :textarea}
               {:name "port-order" :tooltip "Port connection order" :type :csv}]}]
-           mod]])
-       [:h4 "Parameters"]
+           mod])
        [parameters-editor mod]]
       [:div.empty "Select a model to edit its properties."])))
 

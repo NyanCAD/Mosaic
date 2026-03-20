@@ -84,14 +84,14 @@
 
 (defn- list-editor
   "Render a list of maps: fieldset per item with add/remove, recurse per item."
-  [{:keys [tooltip children]} list-cursor on-change]
+  [{:keys [tooltip children type] :or {type :label}} list-cursor on-change]
   [:<>
-   [:label tooltip]
+   [type tooltip]
    (doall
     (for [[idx _] (map-indexed vector (or @list-cursor []))]
       (let [item-cursor (r/cursor list-cursor [idx])]
-        [:fieldset.fieldset-item {:key idx}
-         [:legend (if (seq (:name @item-cursor)) (:name @item-cursor) "untitled")
+        [:div.fieldset-item {:key idx :role "group"}
+         [:div.fieldset-legend (if (seq (:name @item-cursor)) (:name @item-cursor) "untitled")
           [:button.remove-btn {:on-click #(do (swap! list-cursor dissjoc idx)
                                               (when on-change (on-change)))
                                :title "Remove"} [x-circle] [x-circle-fill]]]
