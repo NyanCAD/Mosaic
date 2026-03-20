@@ -25,20 +25,25 @@
 (def grid-size 50)
 (def debounce #(goog.functions/debounce % 1000))
 
-(defn dbfield [typ props st valfn changefn]
-  (let [int (r/atom @st)
-        ext (r/atom @st)
-        dbfn (debounce changefn)]
+(defn dbfield
+  "Debounced two-way binding between a text input and a cursor/atom.
+   Keystrokes update the input immediately; writes to st are debounced.
+   valfn: extract display text from atom state  (st → string)
+   changefn: write raw text back into atom      (st, string → nil)"
+  [typ props st valfn changefn]
+  (let [int  (r/atom (valfn @st))   ; display text for instant UI feedback
+        ext  (r/atom @st)           ; snapshot of st — detects external changes
+        dbfn (debounce changefn)]   ; changefn called once per edit, after debounce
     (fn [typ props st valfn changefn]
-      (when (not= @ext @st)
-        (reset! int @st)
-        (reset! ext @st))
+      (when (not= @ext @st)         ; st changed externally (remote sync, other component)
+        (reset! int (valfn @st))    ; re-extract display text
+        (reset! ext @st))           ; update snapshot
       [typ (assoc props
-                  :value (valfn @int)
+                  :value @int
                   :on-change (fn [e]
                                (let [val (.. e -target -value)]
-                                 (dbfn st val)
-                                 (changefn int val))))])))
+                                 (reset! int val)       ; immediate: update display text
+                                 (dbfn st val))))])))
 
 (defn combobox-field [props element-cursor index-cursor vector-cursor listfn valfn changefn]
   [:div.combobox-group
@@ -50,6 +55,66 @@
             (fn [i item]
               [:option {:key i :value i} (valfn item)])
             (listfn @vector-cursor)))]])
+
+(declare recursive-editor dissjoc x-circle x-circle-fill plus-circle plus-circle-fill)
+
+(defn- leaf-editor
+  "Render a single leaf field: label + input/textarea/select/csv."
+  [{:keys [name tooltip type options placeholder default] :or {type :input}} cursor on-change]
+  (let [k (keyword name)
+        ph (or placeholder "")
+        valfn #(or (get % k) default "")
+        wrap (fn [f] (fn [st v] (f st v) (when on-change (on-change))))]
+    [:<>
+     [:label {:for name :title tooltip} name]
+     (case type
+       :textarea [dbfield :textarea {:id name :rows 4 :placeholder ph} cursor
+                  valfn (wrap #(swap! %1 assoc k %2))]
+       :select   [:select {:id name :value (or (get @cursor k) default "")
+                           :on-change #(do (swap! cursor assoc k (.. % -target -value))
+                                           (when on-change (on-change)))}
+                  (for [{:keys [value label]} options]
+                    [:option {:key value :value value} label])]
+       :csv      [dbfield :input {:id name :type "text" :placeholder ph} cursor
+                  #(clojure.string/join " " (get % k []))
+                  (wrap #(swap! %1 assoc k (clojure.string/split %2 #"[, ]+" -1)))]
+       ;; default: text input
+                 [dbfield :input {:id name :type "text" :placeholder ph} cursor
+                  valfn (wrap #(swap! %1 assoc k %2))])]))
+
+(defn- list-editor
+  "Render a list of maps: fieldset per item with add/remove, recurse per item."
+  [{:keys [tooltip children type] :or {type :label}} list-cursor on-change]
+  [:<>
+   [type tooltip]
+   (doall
+    (for [[idx _] (map-indexed vector (or @list-cursor []))]
+      (let [item-cursor (r/cursor list-cursor [idx])]
+        [:div.fieldset-item {:key idx :role "group"}
+         [:div.fieldset-legend (if (seq (:name @item-cursor)) (:name @item-cursor) "untitled")
+          [:button.remove-btn {:on-click #(do (swap! list-cursor dissjoc idx)
+                                              (when on-change (on-change)))
+                               :title "Remove"} [x-circle] [x-circle-fill]]]
+         [recursive-editor children item-cursor on-change]])))
+   [:button.add-btn {:on-click #(do (swap! list-cursor (fnil conj [])
+                                          (into {} (map (fn [{:keys [name]}] [(keyword name) ""]) children)))
+                                    (when on-change (on-change)))}
+    [plus-circle] [plus-circle-fill] " Add"]])
+
+(defn recursive-editor
+  "Render editors for nested data. Each field is either a leaf or a list of maps.
+   fields: [{:name :tooltip :type :children ...}]
+   cursor: cursor to a map
+   on-change: optional callback fired after data changes (debounced for text fields)"
+  ([fields cursor] (recursive-editor fields cursor nil))
+  ([fields cursor on-change]
+   [:<>
+    (doall
+     (for [{:keys [name children] :as field} fields]
+       [:<> {:key name}
+        (if children
+          [list-editor field (r/cursor cursor [(keyword name)]) on-change]
+          [leaf-editor field cursor on-change])]))]))
 
 (defn sign [n] (if (> n 0) 1 -1))
 
@@ -162,7 +227,7 @@
 (s/def ::schematic (s/map-of string? ::device))
 
 ; Model specs for modeldb
-(s/def ::category (s/coll-of string? :kind vector?))
+(s/def ::tags (s/coll-of string? :kind vector?))
 (s/def ::port-list (s/coll-of string? :kind vector?))
 (s/def ::ports (s/keys :opt-un [::top ::bottom ::left ::right]))
 (s/def ::top ::port-list)
@@ -170,10 +235,18 @@
 (s/def ::left ::port-list)
 (s/def ::right ::port-list)
 (s/def ::code string?)
-(s/def ::use-x boolean?)
-(s/def ::template (s/keys :opt-un [::name ::code ::use-x]))
-(s/def ::template-list (s/coll-of ::template :kind vector?))
-(s/def ::templates (s/map-of keyword? ::template-list))
+(s/def ::language string?)
+(s/def ::spice-type string?)
+(s/def ::implementation string?)
+(s/def ::library string?)
+(s/def ::sections (s/coll-of string? :kind vector?))
+(s/def ::port-order (s/coll-of string? :kind vector?))
+(s/def ::params (s/map-of string? string?))
+(s/def ::model-entry (s/keys :req-un [::language]
+                              :opt-un [::name ::implementation ::spice-type
+                                       ::library ::sections ::code
+                                       ::port-order ::params]))
+(s/def ::models (s/coll-of ::model-entry :kind vector?))
 
 ; Parameter specs for unified props system
 (s/def ::tooltip string?)
@@ -182,8 +255,13 @@
 (s/def ::props (s/coll-of ::parameter :kind vector?))
 
 (s/def ::model-def (s/keys :req-un [::name]
-                           :opt-un [::type ::category ::ports ::templates ::props]))
+                           :opt-un [::type ::tags ::ports ::models ::props]))
 (s/def ::modeldb (s/map-of string? ::model-def))
+
+(defn has-code-models?
+  "Check if a model definition has code model entries (vs. schematic-only)."
+  [model]
+  (boolean (seq (:models model))))
 
 ; https://clojure.atlassian.net/browse/CLJS-3207
 (s/assert ::x 0)
@@ -346,6 +424,10 @@
 (def external-link (r/adapt-react-class icons/BoxArrowUpRight))
 (def amp-icon (r/adapt-react-class icons/CaretRight))
 (def search (r/adapt-react-class icons/Search))
+(def x-circle (r/adapt-react-class icons/XCircle))
+(def x-circle-fill (r/adapt-react-class icons/XCircleFill))
+(def plus-circle (r/adapt-react-class icons/PlusCircle))
+(def plus-circle-fill (r/adapt-react-class icons/PlusCircleFill))
 (def history (r/adapt-react-class icons/ClockHistory))
 (def upload (r/adapt-react-class icons/Upload))
 
@@ -377,12 +459,13 @@
   (= (subvec v 0 (min (count v) (count prefix))) prefix))
 
 (defn build-category-type-index
-  "Build a hierarchical index of categories -> types from flattened model documents"
+  "Build a hierarchical index of tags -> types from flattened model documents.
+   First 2 tags form the tree path, type is the leaf."
   [models]
   (reduce (fn [index [_id model]]
-            (let [category (or (:category model) [])
+            (let [tags (vec (take 2 (or (:tags model) [])))
                   type (:type model "ckt")]
-              (assoc-in index (conj category type) #{})))
+              (assoc-in index (conj tags type) #{})))
           {} models))
 
 (defn category-tree
@@ -414,7 +497,7 @@
    search-text: string to match against model name (or \"\" for all)"
   [models category search-text]
   (filter (fn [[model-id model]]
-            (let [model-path (conj (or (:category model) []) (:type model "ckt"))
+            (let [model-path (conj (vec (take 2 (or (:tags model) []))) (:type model "ckt"))
                   model-name (get model :name model-id)
                   filter-match (or (empty? search-text)
                                    (clojure.string/includes?
@@ -434,9 +517,12 @@
    (if (seq models)
      [radiobuttons selected-atom
       (doall (for [[model-id model] models
-                   :let [schem? (not (:templates model))
-                         icon (if schem? schemmodel codemodel)]]
-               [[:span [icon] " " (get model :name model-id)]
+                   :let [schem? (not (has-code-models? model))
+                         icon (if schem? schemmodel codemodel)
+                         badges (drop 2 (:tags model))]]
+               [[:span [icon] " " (get model :name model-id)
+                 (for [tag badges]
+                   [:span.tag-badge {:key tag} tag])]
                 model-id
                 (get model :name model-id)]))
       on-dblclick

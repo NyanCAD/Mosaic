@@ -35,8 +35,8 @@
       (let [dev (first devs)
             model (:model dev)
             model-def (get @model-atom (cm/model-key model))
-            has-templates (:templates model-def)]
-        (if (and model (not (contains? @schematic-groups model)) (seq model-def) (not has-templates))
+            has-models (cm/has-code-models? model-def)]
+        (if (and model (not (contains? @schematic-groups model)) (seq model-def) (not has-models))
           (let [_ (swap! schematic-cache assoc model {})
                 subschem (pouch-atom db model (r/cursor schematic-cache [model]))]
             (add-watch-group schematic-groups subschem)

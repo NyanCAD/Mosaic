@@ -1451,7 +1451,7 @@
         [:<>
          [:h1 (or @name key)]
          [:div.properties
-          (when (and (seq @model) (not (:templates model-def)))
+          (when (and (seq @model) (not (cm/has-code-models? model-def)))
             [:a {:href "#" :on-click #(do (.preventDefault %) (open-schematic @model))} "Edit"])
           [:label {:for "name" :title "Instance name"} "name"]
           [:input {:id "name"
@@ -1476,17 +1476,8 @@
             [cm/search]]]
           ; Get properties from built-in device and model
           (let [device-props (::props (get models @device-type) [])
-                model-props (:props model-def [])
-                all-props (concat device-props model-props)]
-            (doall (for [param-def all-props
-                         :let [prop-name (keyword (:name param-def))
-                               tooltip (:tooltip param-def)]]
-                     [:<> {:key prop-name}
-                      [:label {:for prop-name :title tooltip} prop-name]
-                      [:input {:id prop-name
-                               :type "text"
-                               :default-value (get @props prop-name)
-                               :on-change (debounce #(do (swap! props assoc prop-name (.. % -target -value)) (post-action!)))}]])))
+                model-props (:props model-def [])]
+            [cm/recursive-editor (concat device-props model-props) props post-action!])
           [:label {:for "template" :title "Template to display"} "Text"]
           [:textarea {:id "template"
                       :default-value (get-in @schematic [key :template] (::template (get models @device-type)))
