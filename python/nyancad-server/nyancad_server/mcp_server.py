@@ -239,7 +239,7 @@ async def get_schematic(
 async def list_library(
     ctx: Context,
     filter: Annotated[Optional[str], "Filter by model name (substring match)"] = None,
-    category: Annotated[Optional[list[str]], "Filter by category path (e.g., ['passives', 'resistors'])"] = None,
+    tags: Annotated[Optional[list[str]], "Filter by tags (e.g., ['IHP', 'bjt'])"] = None,
     include_models: Annotated[bool, "Include full model entries in results"] = False
 ) -> dict[str, ModelMetadata]:
     """List available component models with optional filtering.
@@ -255,7 +255,7 @@ async def list_library(
     """
     api = get_api_from_context(ctx)
     try:
-        models = await api.get_library(filter, category)
+        models = await api.get_library(filter, tags)
         result = {}
         for model_id, model in models.items():
             # Compute has_models (not stored in DB)
