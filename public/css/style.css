@@ -1719,3 +1719,25 @@ rect.select {
     margin-left: 4px;
     vertical-align: middle;
 }
+.mosaic-app .tag-badge.clickable {
+    cursor: pointer;
+}
+.mosaic-app .tag-badge.clickable:hover {
+    background: #d0d0d0;
+}
+.mosaic-app .tag-badge.active {
+    cursor: pointer;
+    background: #4a9eff;
+    color: white;
+}
+.mosaic-app .tag-badge.active:hover {
+    background: #3080e0;
+}
+.mosaic-app .tag-badge.prop-tag {
+    background: #d4e8ff;
+    color: #1a5fa0;
+}
+.mosaic-app .tag-badge.prop-tag.active {
+    background: #1a5fa0;
+    color: white;
+}

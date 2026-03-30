@@ -25,7 +25,11 @@
 (defonce filter-text (r/atom ""))
 (defonce selection (r/atom {}))
 
-(defonce seltype (r/track #(cm/device-types (peek @selcat))))
+(defonce seltype
+  (r/track #(some->> @selcat
+                     (some (fn [t] (when (clojure.string/starts-with? t "type:") t)))
+                     (cm/parse-prop-tag)
+                     second)))
 
 ;; --- UI components ---
 
@@ -60,11 +64,11 @@
 (defn database-selector []
   [:div.cellsel
    (if (seq @modeldb)
-     [cm/category-tree selcat [] (cm/build-category-type-index @modeldb)]
+     [cm/tag-tree selcat (cm/build-tag-index @modeldb)]
      [:div.empty "There aren't any models yet"])])
 
 (defn model-list-selector
-  "Show list of individual models for the selected category/type path."
+  "Show list of individual models for the selected tag filters."
   [db]
   (let [filtered-models (cm/filter-models @db @selcat @filter-text)]
     [:div.schematics
@@ -76,7 +80,9 @@
          (when (not (cm/has-code-models? (get @db model-id)))
            #(edit-url model-id)))
        (fn [model-id]
-         #(model-context-menu % db model-id))]]
+         #(model-context-menu % db model-id))
+       #(when-not (some #{%} @selcat)
+          (swap! selcat conj %))]]
 
      ;; Available models section (platform-specific: web shows remote DB, VS Code is no-op)
      [remote-models-section selcat filter-text]]))
@@ -167,24 +173,26 @@
          [:div.empty "N/A"])
        [:div.empty "Select a model to preview."])]))
 
+(defn plain-tags
+  "Return only plain (non-property) tags from a tag vector."
+  [tags]
+  (vec (remove cm/parse-prop-tag tags)))
+
 (defn cell-view []
-  (let [category-path (if @seltype
-                        (vec (butlast @selcat))
-                        @selcat)
-        add-schem #(cm/prompt "Enter the name of the new schematic"
+  (let [add-schem #(cm/prompt "Enter the name of the new schematic"
                               (fn [name]
                                 (let [model-id (str "models:" (cm/random-name))]
                                   (swap! modeldb assoc model-id
                                          {:name name
                                           :type "ckt"
-                                          :tags (vec category-path)}))))
+                                          :tags (plain-tags @selcat)}))))
         add-spice #(spice-model-modal
                     (fn [device-type model-name]
                       (let [model-id (str "models:" (cm/random-name))]
                         (swap! modeldb assoc model-id
                                {:name model-name
                                 :type device-type
-                                :tags (vec category-path)
+                                :tags (plain-tags @selcat)
                                 :models [{:language "spice"}]}))))]
     [:<>
      [:div.schsel
@@ -194,9 +202,15 @@
        [:button {:on-click add-spice}
         [cm/add-model] "Add SPICE model"]]
       [:div.models-header
-       [:h2 "Models: " (if (seq @selcat)
-                         (clojure.string/join "/" @selcat)
-                         "All models")]
+       [:h2 "Models: "
+        (if (seq @selcat)
+          (for [tag @selcat]
+            [:span.tag-badge.active
+             {:key tag
+              :class (when (cm/parse-prop-tag tag) "prop-tag")
+              :on-click #(swap! selcat (fn [v] (vec (remove #{tag} v))))}
+             tag " \u00d7"])
+          "All models")]
        [cm/dbfield :input {:type "text" :placeholder "Filter models..." :class "filter-input"}
         filter-text identity reset!]]
       [model-list-selector modeldb]]

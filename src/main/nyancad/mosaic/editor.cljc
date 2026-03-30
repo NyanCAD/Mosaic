@@ -1408,15 +1408,15 @@
   (reset! cm/modal-content [history-panel]))
 
 (defn model-selector-popup
-  "Popup for selecting a device model with category tree and search"
+  "Popup for selecting a device model with tag tree and search"
   [device-type on-select]
   (let [selected (r/atom nil)]
     (fn [device-type on-select]
       (let [;; Filter models by device type first
             type-models (into {} (filter (fn [[_ m]] (= (:type m "ckt") device-type)) @modeldb))
-            ;; Build category tree from type-filtered models
-            trie (cm/build-category-type-index type-models)
-            ;; Filter by category and search text using shared function
+            ;; Build tag tree from type-filtered models
+            trie (cm/build-tag-index type-models)
+            ;; Filter by tags and search text
             filtered (cm/filter-models type-models @model-popup-category @model-popup-filter)]
         [:div.model-selector-popup
          [:h3 "Select Model"]
@@ -1426,14 +1426,16 @@
                                :value @model-popup-filter
                                :on-change #(reset! model-popup-filter (.. % -target -value))}]
          [:div.model-popup-content
-          ;; Category tree (left)
+          ;; Tag tree (left)
           [:div.model-categories
            (if (seq trie)
-             [cm/category-tree model-popup-category [] trie]
+             [cm/tag-tree model-popup-category trie]
              [:div.empty "No categories"])]
-          ;; Model list (right) using shared component
+          ;; Model list (right)
           [:div.model-list
-           [cm/model-list selected filtered]]]
+           [cm/model-list selected filtered nil nil
+            #(when-not (some #{%} @model-popup-category)
+               (swap! model-popup-category conj %))]]]
          ;; Buttons
          [:div.model-popup-buttons
           [:button {:on-click #(reset! cm/modal-content nil)} "Cancel"]

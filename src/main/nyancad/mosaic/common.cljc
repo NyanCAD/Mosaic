@@ -458,71 +458,91 @@
   [v prefix]
   (= (subvec v 0 (min (count v) (count prefix))) prefix))
 
-(defn build-category-type-index
-  "Build a hierarchical index of tags -> types from flattened model documents.
-   First 2 tags form the tree path, type is the leaf."
+(defn build-tag-index
+  "Build a hierarchical index from first 2 tags of model documents."
   [models]
   (reduce (fn [index [_id model]]
-            (let [tags (vec (take 2 (or (:tags model) [])))
-                  type (:type model "ckt")]
-              (assoc-in index (conj tags type) #{})))
+            (let [tags (vec (take 2 (or (:tags model) [])))]
+              (assoc-in index tags {})))
           {} models))
 
-(defn category-tree
-  "Render a collapsible category tree.
-   selected-atom: atom holding selected category path
-   base: current path prefix
-   trie: nested map of categories"
-  [selected-atom base trie]
-  [:<>
-   (doall (for [[cat subtrie] trie
-                :let [path (conj base cat)]]
-            [:details.tree {:key path
-                            :open (vec-startswith @selected-atom path)
-                            :on-toggle #(do
-                                          (.stopPropagation %)
-                                          (if (.. % -target -open)
-                                            (reset! selected-atom path)
-                                            (when (vec-startswith @selected-atom path)
-                                              (reset! selected-atom (pop path)))))}
-             [:summary cat]
-             (when (seq subtrie)
-               [:div.detailbody
-                [category-tree selected-atom path subtrie]])]))])
+(defn tag-tree
+  "Render a collapsible tag tree.
+   Nodes toggle membership in selected-atom (a vector of active tags).
+   Opening a node closes its siblings at the same level."
+  [selected-atom trie]
+  (let [siblings (set (keys trie))]
+    [:<>
+     (doall (for [[tag subtrie] trie
+                  :let [active (some #{tag} @selected-atom)]]
+              [:details.tree {:key tag
+                              :open active
+                              :on-toggle #(do
+                                            (.stopPropagation %)
+                                            (if (.. % -target -open)
+                                              (swap! selected-atom
+                                                     (fn [v] (conj (vec (remove siblings v)) tag)))
+                                              (swap! selected-atom
+                                                     (fn [v] (vec (remove #{tag} v))))))}
+               [:summary tag]
+               (when (seq subtrie)
+                 [:div.detailbody
+                  [tag-tree selected-atom subtrie]])]))]))
+
+(defn parse-prop-tag
+  "Parse a property tag like \"type:ckt\" into [\"type\" \"ckt\"], or nil if plain tag."
+  [tag]
+  (let [idx (clojure.string/index-of tag ":")]
+    (when idx
+      [(subs tag 0 idx) (subs tag (inc idx))])))
 
 (defn filter-models
-  "Filter models by category path and search text.
-   models: map of model-id -> model
-   category: vector path to filter by (or [] for all)
-   search-text: string to match against model name (or \"\" for all)"
-  [models category search-text]
-  (filter (fn [[model-id model]]
-            (let [model-path (conj (vec (take 2 (or (:tags model) []))) (:type model "ckt"))
-                  model-name (get model :name model-id)
-                  filter-match (or (empty? search-text)
+  "Filter models by active tags and search text.
+   sel-tags: vector of active tags. Plain tags match via set containment on :tags.
+   Property tags like \"type:ckt\" match the corresponding model field."
+  [models sel-tags search-text]
+  (let [plain-tags (set (remove parse-prop-tag sel-tags))
+        prop-tags (keep parse-prop-tag sel-tags)]
+    (filter (fn [[model-id model]]
+              (let [model-tags (set (or (:tags model) []))
+                    model-name (get model :name model-id)
+                    tags-match (every? model-tags plain-tags)
+                    props-match (every? (fn [[k v]] (= (str (get model (keyword k))) v)) prop-tags)
+                    name-match (or (empty? search-text)
                                    (clojure.string/includes?
                                     (clojure.string/lower-case model-name)
                                     (clojure.string/lower-case search-text)))]
-              (and (vec-startswith model-path category) filter-match)))
-          models))
+                (and tags-match props-match name-match)))
+            models)))
 
 (defn model-list
   "Render a list of models as radio buttons.
    selected-atom: atom holding selected model id
    models: seq of [model-id model] pairs
    on-dblclick: optional (fn [model-id] -> event-handler) for double-click
-   on-contextmenu: optional (fn [model-id] -> event-handler) for right-click"
-  ([selected-atom models] (model-list selected-atom models nil nil))
+   on-contextmenu: optional (fn [model-id] -> event-handler) for right-click
+   on-tag-click: optional (fn [tag] -> nil) called when a tag badge is clicked"
+  ([selected-atom models] (model-list selected-atom models nil nil nil))
   ([selected-atom models on-dblclick on-contextmenu]
+   (model-list selected-atom models on-dblclick on-contextmenu nil))
+  ([selected-atom models on-dblclick on-contextmenu on-tag-click]
    (if (seq models)
      [radiobuttons selected-atom
       (doall (for [[model-id model] models
                    :let [schem? (not (has-code-models? model))
                          icon (if schem? schemmodel codemodel)
-                         badges (drop 2 (:tags model))]]
+                         type-badge (str "type:" (:type model "ckt"))
+                         extra-tags (drop 2 (:tags model))
+                         all-badges (cons type-badge extra-tags)]]
                [[:span [icon] " " (get model :name model-id)
-                 (for [tag badges]
-                   [:span.tag-badge {:key tag} tag])]
+                 (for [tag all-badges]
+                   [:span.tag-badge {:key tag
+                                     :class [(when (parse-prop-tag tag) "prop-tag")
+                                             (when on-tag-click "clickable")]
+                                     :on-click (when on-tag-click
+                                                 #(do (.stopPropagation %)
+                                                      (on-tag-click tag)))}
+                    tag])]
                 model-id
                 (get model :name model-id)]))
       on-dblclick
