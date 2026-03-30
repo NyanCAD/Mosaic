@@ -173,6 +173,30 @@
 (def I (js/DOMMatrixReadOnly.))
 (def IV (transform-vec I))
 
+(defn viewbox-coord [e]
+  (let [^js el (js/document.querySelector ".mosaic-canvas")
+        m (.inverse (.getScreenCTM el))
+        p (point (.-clientX e) (.-clientY e))
+        tp (.matrixTransform p m)]
+    [(/ (.-x tp) grid-size) (/ (.-y tp) grid-size)]))
+
+(defn initial [device-type]
+  (case device-type
+    "resistor" "R"
+    "inductor" "L"
+    "capacitor" "C"
+    "diode" "D"
+    "vsource" "V"
+    "isource" "I"
+    "npn" "Q"
+    "pnp" "Q"
+    "pmos" "M"
+    "nmos" "M"
+    "wire" "W"
+    "port" "P"
+    "amp" "U"
+    "X"))
+
 (defn transform-direction
   "Determine cardinal direction from transformation matrix.
   Returns one of: :left, :right, :top, :bottom based on the final orientation."

@@ -6,7 +6,8 @@
   (:require [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode]]
             [nyancad.mosaic.common :as cm]
             [reagent.core :as r]
-            [clojure.spec.alpha :as s]))
+            [clojure.spec.alpha :as s]
+            [clojure.string :as str]))
 
 ;; Re-export done? so editor can :refer it from this namespace
 (def done? jsatom/done?)
@@ -52,9 +53,52 @@
                         :filename "models.nyanlib"})}
    [cm/library]])
 
+(defn- extract-gds-name
+  "Extract bare model ID from a dropped text/plain or URI path.
+   Matches (.*).gds on plain text first, else takes basename of a path."
+  [plain uri-path]
+  (or (when-let [[_ name] (re-matches #"(.*)\.gds$" (str plain))]
+        name)
+      (when-let [filename (last (str/split (str uri-path) #"[/\\]"))]
+        (when-let [[_ name] (re-matches #"(.*)\.gds$" filename)]
+          name))))
+
+(defn- make-name [device-type]
+  (let [prefix (cm/initial device-type)]
+    (first (remove #(contains? @schematic (str group ":" %))
+                   (map #(str prefix %) (next (range)))))))
+
+(defn- on-drop [e]
+  (.preventDefault e)
+  (.stopPropagation e)
+  (let [dt (.-dataTransfer e)
+        uri-list (.getData dt "text/uri-list")
+        plain (.getData dt "text/plain")
+        uri-path (when (seq uri-list)
+                   (let [uri (str/trim (first (str/split-lines uri-list)))]
+                     (try
+                       (js/decodeURIComponent (.-pathname (js/URL. uri)))
+                       (catch :default _ nil))))
+        model-id (extract-gds-name plain uri-path)]
+    (when model-id
+      (let [[x y] (cm/viewbox-coord e)
+            model-def (get @modeldb (cm/model-key model-id))
+            device-type (or (:type model-def) "ckt")
+            name (make-name device-type)
+            dev {:type device-type
+                 :model model-id
+                 :name name
+                 :transform cm/IV
+                 :x (Math/round x)
+                 :y (Math/round y)}]
+        (when (s/valid? :nyancad.mosaic.common/device dev)
+          (swap! schematic assoc (str group ":" name) dev))))))
+
 (defn init-extra!
-  "Set up get-state handler for SVG preview requests from extension host."
+  "Set up get-state handler and drop target for VS Code webview."
   []
+  (.addEventListener js/document "dragover" #(.preventDefault %))
+  (.addEventListener js/document "drop" on-drop)
   (.addEventListener js/window "message"
     (fn [^js event]
       (when (= (.. event -data -type) "get-state")
