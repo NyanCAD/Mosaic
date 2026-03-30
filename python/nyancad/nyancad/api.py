@@ -471,7 +471,7 @@ class FileAPI(SchematicAPI):
 
         Args:
             filter: Name filter pattern (regex, case-insensitive)
-            tags: Tag prefix to filter by (e.g. ["IHP", "bjt"])
+            tags: Tags to filter by (subset match, order-independent)
 
         Returns:
             Dictionary of {model_id: model_data}
@@ -489,10 +489,8 @@ class FileAPI(SchematicAPI):
                     continue
 
             if tags:
-                model_tags = model_def.get('tags', [])
-                if not model_tags or len(model_tags) < len(tags):
-                    continue
-                if model_tags[:len(tags)] != tags:
+                model_tags = set(model_def.get('tags', []))
+                if not set(tags).issubset(model_tags):
                     continue
 
             result[model_id] = model_def

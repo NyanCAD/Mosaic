@@ -133,7 +133,7 @@
          [cm/recursive-editor
            [{:name "models" :tooltip "Model Configuration" :type :h4
              :children
-             [{:name "language" :tooltip "Language" :type :select
+             [{:name "language" :tooltip "Language" :type :select :default "spice"
                :options [{:value "spice" :label "SPICE"}
                          {:value "sax" :label "SAX"}
                          {:value "verilog-a" :label "Verilog-A"}
