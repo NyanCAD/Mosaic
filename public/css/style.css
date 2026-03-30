@@ -465,7 +465,9 @@ html {
     grid-row: auto;
 }
 
-.mosaic-libman .properties input {
+.mosaic-libman .properties input,
+.mosaic-libman .properties select,
+.mosaic-libman .properties textarea {
     grid-column: controls;
     grid-row: auto;
     box-sizing: border-box;
@@ -475,6 +477,16 @@ html {
 .mosaic-libman .properties input[type="checkbox"] {
     width: auto;
     justify-self: start; /* Left align checkbox within its grid cell */
+}
+
+.mosaic-app .properties h4 {
+    grid-column: 1 / -1;
+    margin: 0.5em 0 0;
+}
+
+.mosaic-libman .properties > button {
+    grid-column: 1 / -1;
+    justify-self: start;
 }
 
 .mosaic-libman input[type="radio"],
@@ -810,7 +822,9 @@ html {
     grid-row: auto;
 }
 
-.mosaic-editor .properties input {
+.mosaic-editor .properties input,
+.mosaic-editor .properties select,
+.mosaic-editor .properties textarea {
     grid-column: controls;
     grid-row: auto;
     box-sizing: border-box;
@@ -1631,4 +1645,99 @@ rect.select {
     color: #666;
     font-style: italic;
     padding: 1em 0;
+}
+
+/* Recursive editor: fieldset items for nested data */
+.mosaic-app .properties .fieldset-item {
+    grid-column: 1 / -1;
+    border: 1px solid #2222220d;
+    border-radius: 5px;
+    padding: 0.5em;
+    display: grid;
+    grid-template-columns: subgrid;
+    gap: 0.5em;
+    align-items: center;
+}
+
+.mosaic-app .properties .fieldset-item .fieldset-legend {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+    margin: -1.1em 0 0;
+    padding: 0 0.25em;
+    background: white;
+    width: fit-content;
+}
+
+.mosaic-app .properties .remove-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    box-shadow: none;
+    color: #d9534f;
+    font-size: 16px;
+    display: inline-flex;
+    align-items: center;
+    margin-right: 0.5em;
+    order: -1;
+}
+
+.mosaic-app .properties .add-btn {
+    grid-column: 1 / -1;
+    justify-self: start;
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+}
+
+/* Outline/fill icon swap on hover */
+.mosaic-app .properties .bi-x-circle-fill,
+.mosaic-app .properties .bi-plus-circle-fill {
+    display: none;
+}
+
+.mosaic-app .properties .remove-btn:hover .bi-x-circle,
+.mosaic-app .properties .add-btn:hover .bi-plus-circle {
+    display: none;
+}
+
+.mosaic-app .properties .remove-btn:hover .bi-x-circle-fill,
+.mosaic-app .properties .add-btn:hover .bi-plus-circle-fill {
+    display: inline;
+}
+
+/* Tag badges in model list */
+.mosaic-app .tag-badge {
+    display: inline-block;
+    background: #e7e7e7;
+    color: #555;
+    font-size: 0.75em;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+.mosaic-app .tag-badge.clickable {
+    cursor: pointer;
+}
+.mosaic-app .tag-badge.clickable:hover {
+    background: #d0d0d0;
+}
+.mosaic-app .tag-badge.active {
+    cursor: pointer;
+    background: #4a9eff;
+    color: white;
+}
+.mosaic-app .tag-badge.active:hover {
+    background: #3080e0;
+}
+.mosaic-app .tag-badge.prop-tag {
+    background: #d4e8ff;
+    color: #1a5fa0;
+}
+.mosaic-app .tag-badge.prop-tag.active {
+    background: #1a5fa0;
+    color: white;
 }

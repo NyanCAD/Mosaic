@@ -179,11 +179,11 @@ async def get_schematic(
             # Search for schematic by name
             models = await api.get_library(filter=name)
 
-            # Find first schematic (no templates) with exact name match
+            # Find first schematic (no model entries) with exact name match
             first_partial = None
             for model_id, model in models.items():
-                # Schematics have no templates field
-                if not model.get('templates'):
+                # Schematics have no model entries
+                if not model.get('models'):
                     model_name = model.get('name', '')
                     if model_name.lower() == name.lower():
                         # Exact match - use immediately
@@ -239,13 +239,13 @@ async def get_schematic(
 async def list_library(
     ctx: Context,
     filter: Annotated[Optional[str], "Filter by model name (substring match)"] = None,
-    category: Annotated[Optional[list[str]], "Filter by category path (e.g., ['passives', 'resistors'])"] = None,
-    include_templates: Annotated[bool, "Include full template code in results"] = False
+    tags: Annotated[Optional[list[str]], "Filter by tags (e.g., ['IHP', 'bjt'])"] = None,
+    include_models: Annotated[bool, "Include full model entries in results"] = False
 ) -> dict[str, ModelMetadata]:
     """List available component models with optional filtering.
 
     Use this to browse the component library or search for specific models.
-    By default, returns lightweight metadata without template code.
+    By default, returns lightweight metadata without model entry details.
 
     Returns:
         Dictionary mapping model IDs to ModelMetadata objects.
@@ -255,15 +255,15 @@ async def list_library(
     """
     api = get_api_from_context(ctx)
     try:
-        models = await api.get_library(filter, category)
+        models = await api.get_library(filter, tags)
         result = {}
         for model_id, model in models.items():
-            # Compute has_templates (not stored in DB)
-            model['has_templates'] = bool(model.get('templates'))
+            # Compute has_models (not stored in DB)
+            model['has_models'] = bool(model.get('models'))
 
-            # Conditionally exclude templates
-            if not include_templates:
-                model.pop('templates', None)
+            # Conditionally exclude model entries
+            if not include_models:
+                model.pop('models', None)
 
             metadata = ModelMetadata.model_validate(model)
             result[model_id] = metadata

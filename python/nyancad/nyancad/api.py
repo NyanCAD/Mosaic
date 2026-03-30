@@ -4,13 +4,17 @@
 """
 Unified API for accessing NyanCAD schematic data.
 
-Provides abstract interface with two implementations:
+Provides abstract interface with three implementations:
 - BridgeAPI: Browser PouchDB via anywidget (no HTTP calls)
 - ServerAPI: CouchDB access via httpx (replaces legacy aiohttp)
+- FileAPI: Local .nyancir/.nyanlib files on disk
 """
 
+import json
+import re
 from abc import ABC, abstractmethod
 from collections import deque
+from pathlib import Path
 from typing import Any, Optional
 import httpx
 from .netlist import model_key
@@ -32,9 +36,12 @@ class SchematicAPI(ABC):
         """
         pass
 
-    @abstractmethod
     async def get_all_schem_docs(self, name: str) -> tuple[Any, dict[str, dict]]:
-        """Get schematic with all subcircuits and models recursively.
+        """Get schematic with all subcircuits and models via BFS.
+
+        Default implementation uses get_docs() to fetch models, the main
+        schematic, and any referenced subcircuits recursively.
+        Subclasses may override if their data is already complete (e.g. BridgeAPI).
 
         Args:
             name: Top-level schematic group name
@@ -48,19 +55,64 @@ class SchematicAPI(ABC):
                 ...
             }
         """
-        pass
+        schem = {}
+
+        # First fetch models
+        seq, models = await self.get_docs("models")
+        schem["models"] = models
+
+        # Fetch main schematic
+        seq, docs = await self.get_docs(name)
+        if not docs:
+            return seq, schem
+
+        schem[name] = docs
+
+        # BFS to resolve hierarchical circuits
+        queue = deque(docs.values())
+        seen_models = set()
+
+        while queue:
+            dev = queue.popleft()
+            model_id_bare = dev.get('model')
+
+            if not model_id_bare:
+                continue
+
+            model_id_prefixed = model_key(model_id_bare)
+
+            # Skip if already processed
+            if model_id_prefixed in seen_models:
+                continue
+
+            seen_models.add(model_id_prefixed)
+
+            # Check if model exists and is a schematic (no model entries)
+            if model_id_prefixed in models:
+                model_def = models[model_id_prefixed]
+
+                # Schematic models have no model entries
+                if not model_def.get('models'):
+                    # Fetch subcircuit documents
+                    if model_id_bare not in schem:
+                        seq, subdocs = await self.get_docs(model_id_bare)
+                        if subdocs:
+                            schem[model_id_bare] = subdocs
+                            queue.extend(subdocs.values())
+
+        return seq, schem
 
     @abstractmethod
     async def get_library(
         self,
         filter: Optional[str] = None,
-        category: Optional[list[str]] = None
+        tags: Optional[list[str]] = None
     ) -> dict[str, dict]:
         """List available models and schematics with filtering.
 
         Args:
             filter: Name filter pattern (regex)
-            category: Category path to filter by (hierarchical)
+            tags: Tag prefix to filter by (e.g. ["IHP", "bjt"])
 
         Returns:
             Dictionary of {model_id: model_data} with complete model definitions
@@ -104,13 +156,13 @@ class BridgeAPI(SchematicAPI):
     async def get_library(
         self,
         filter: Optional[str] = None,  # noqa: ARG002
-        category: Optional[list[str]] = None  # noqa: ARG002
+        tags: Optional[list[str]] = None  # noqa: ARG002
     ) -> dict[str, dict]:
         """Not implemented - adds complexity not needed for bridge mode.
 
         Args:
             filter: Unused (kept for interface compatibility)
-            category: Unused (kept for interface compatibility)
+            tags: Unused (kept for interface compatibility)
         """
         raise NotImplementedError(
             "BridgeAPI does not support library queries. "
@@ -197,84 +249,26 @@ class ServerAPI(SchematicAPI):
 
         return seq, docs
 
-    async def get_all_schem_docs(self, name: str) -> tuple[Any, dict[str, dict]]:
-        """Get schematic with all subcircuits and models via BFS traversal.
-
-        Ports the legacy netlist.py BFS algorithm to httpx.
-
-        Args:
-            name: Top-level schematic group name
-
-        Returns:
-            Tuple of (update_seq, full_schematic_dict)
-        """
-        schem = {}
-
-        # First fetch models
-        seq, models = await self.get_docs("models")
-        schem["models"] = models
-
-        # Fetch main schematic
-        seq, docs = await self.get_docs(name)
-        if not docs:
-            return seq, schem
-
-        schem[name] = docs
-
-        # BFS to resolve hierarchical circuits
-        queue = deque(docs.values())
-        seen_models = set()
-
-        while queue:
-            dev = queue.popleft()
-            model_id_bare = dev.get('model')
-
-            if not model_id_bare:
-                continue
-
-            model_id_prefixed = model_key(model_id_bare)
-
-            # Skip if already processed
-            if model_id_prefixed in seen_models:
-                continue
-
-            seen_models.add(model_id_prefixed)
-
-            # Check if model exists and is a schematic (no templates)
-            if model_id_prefixed in models:
-                model_def = models[model_id_prefixed]
-
-                # Schematic models have no templates field
-                if not model_def.get('templates'):
-                    # Fetch subcircuit documents
-                    if model_id_bare not in schem:
-                        seq, subdocs = await self.get_docs(model_id_bare)
-                        if subdocs:
-                            schem[model_id_bare] = subdocs
-                            queue.extend(subdocs.values())
-
-        return seq, schem
-
     def _build_selector(
         self,
         filter: Optional[str],
-        category: Optional[list[str]]
+        tags: Optional[list[str]]
     ) -> dict:
-        """Build Mango selector for category and name filtering.
+        """Build Mango selector for tag and name filtering.
 
         Args:
             filter: Name filter pattern (regex)
-            category: Category path (hierarchical)
+            tags: Tag prefix to match (e.g. ["IHP", "bjt"])
 
         Returns:
             Mango selector dict
         """
         selector = {}
 
-        # Add category path constraints
-        if category:
-            for i, cat in enumerate(category):
-                selector[f"category.{i}"] = cat
+        # Add tag constraints (flat list, matched by index)
+        if tags:
+            for i, tag in enumerate(tags):
+                selector[f"tags.{i}"] = tag
 
         # Add name regex filter
         if filter:
@@ -285,20 +279,20 @@ class ServerAPI(SchematicAPI):
     async def get_library(
         self,
         filter: Optional[str] = None,
-        category: Optional[list[str]] = None
+        tags: Optional[list[str]] = None
     ) -> dict[str, dict]:
         """List available models with filtering via CouchDB views/queries.
 
         Uses different query strategies based on database type:
         - User databases (userdb-*): Always use Mango queries (view not deployed)
-        - Central models database: Use view for name-only search, Mango for category
-        - Category search: Mango query via _find
+        - Central models database: Use view for name-only search, Mango for tags
+        - Tag search: Mango query via _find
         - Name search only: CouchDB view models/name_search (central) or Mango (user DB)
         - No criteria: Basic range query
 
         Args:
             filter: Name filter pattern
-            category: Category path to filter by
+            tags: Tag prefix to filter by
 
         Returns:
             Dictionary of {model_id: model_data} with complete model definitions
@@ -308,9 +302,9 @@ class ServerAPI(SchematicAPI):
         # Detect if this is a user database (view is only in central models DB)
         is_user_db = "userdb-" in self.base_url
 
-        # Use Mango query for: category searches OR (user DB + name filter)
-        if category or (is_user_db and filter):
-            selector = self._build_selector(filter, category)
+        # Use Mango query for: tag searches OR (user DB + name filter)
+        if tags or (is_user_db and filter):
+            selector = self._build_selector(filter, tags)
             response = await self.client.post(
                 f"{self.base_url}/_find",
                 json={"selector": selector}
@@ -417,3 +411,88 @@ class ServerAPI(SchematicAPI):
         if rows:
             return rows[0].get('doc', {})
         return {}
+
+
+class FileAPI(SchematicAPI):
+    """API implementation reading from .nyancir and .nyanlib files on disk."""
+
+    def __init__(self, project_dir: str | Path):
+        """Create FileAPI for a project directory.
+
+        Args:
+            project_dir: Path to directory containing .nyancir and .nyanlib files
+        """
+        self.project_dir = Path(project_dir)
+
+    @staticmethod
+    def _read_file(path: Path) -> dict[str, dict]:
+        """Read a JSON file and inject _id into each document.
+
+        Args:
+            path: Path to .nyancir or .nyanlib file
+
+        Returns:
+            Dictionary of {doc_id: doc_data} with _id injected
+        """
+        if not path.exists():
+            return {}
+        text = path.read_text(encoding='utf-8')
+        if not text.strip():
+            return {}
+        flat = json.loads(text)
+        for doc_id, doc in flat.items():
+            if isinstance(doc, dict):
+                doc['_id'] = doc_id
+        return flat
+
+    async def get_docs(self, name: str) -> tuple[Any, dict[str, dict]]:
+        """Get documents for a single group by reading the appropriate file.
+
+        Args:
+            name: Group name ("models" reads models.nyanlib, others read {name}.nyancir)
+
+        Returns:
+            Tuple of (None, {document_id: document_data})
+        """
+        if name == "models":
+            return (None, self._read_file(self.project_dir / "models.nyanlib"))
+
+        flat = self._read_file(self.project_dir / f"{name}.nyancir")
+        prefix = name + ":"
+        docs = {k: v for k, v in flat.items() if k.startswith(prefix)}
+        return (None, docs)
+
+    async def get_library(
+        self,
+        filter: Optional[str] = None,
+        tags: Optional[list[str]] = None
+    ) -> dict[str, dict]:
+        """List models from models.nyanlib with optional filtering.
+
+        Args:
+            filter: Name filter pattern (regex, case-insensitive)
+            tags: Tags to filter by (subset match, order-independent)
+
+        Returns:
+            Dictionary of {model_id: model_data}
+        """
+        _, all_models = await self.get_docs("models")
+
+        if not filter and not tags:
+            return all_models
+
+        result = {}
+        for model_id, model_def in all_models.items():
+            if filter:
+                name = model_def.get('name', '')
+                if not re.search(filter, name, re.IGNORECASE):
+                    continue
+
+            if tags:
+                model_tags = set(model_def.get('tags', []))
+                if not set(tags).issubset(model_tags):
+                    continue
+
+            result[model_id] = model_def
+
+        return result

@@ -62,6 +62,23 @@ export COUCHDB_ADMIN_USER=admin
 export COUCHDB_ADMIN_PASS=your_password
 ```
 
+### VS Code Extension
+
+**Build the extension (compiles ClojureScript + copies CSS/icons):**
+```bash
+npx shadow-cljs clj-run nyancad.mosaic.build/release-vscode
+```
+
+**F5 (Run Extension)** automatically starts `shadow-cljs watch vscode-webview vscode-ext` and launches the Extension Development Host with live JS reloading. However, it does **not** copy CSS. If you changed CSS, manually copy it:
+```bash
+cp public/css/style.css vscode-ext/out/style.css
+```
+
+**Package as .vsix:**
+```bash
+npx shadow-cljs clj-run nyancad.mosaic.build/package-vscode
+```
+
 ## Python Package Development
 
 ### nyancad (Client Library)

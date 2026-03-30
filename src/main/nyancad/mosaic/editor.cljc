@@ -27,27 +27,11 @@
                      point transform transform-vec
                      mosfet-shape bjt-conn]]))
 
-(defn initial [device-type]
-  (case device-type
-    "resistor" "R"
-    "inductor" "L"
-    "capacitor" "C"
-    "diode" "D"
-    "vsource" "V"
-    "isource" "I"
-    "npn" "Q"
-    "pnp" "Q"
-    "pmos" "M"
-    "nmos" "M"
-    "wire" "W"
-    "port" "P"
-    "amp" "U"
-    "X"))
 
 (defn make-names
   "Returns a lazy sequence of available names for a device type (e.g. R1, R2, R3...)"
   [base]
-  (let [names (map #(str (initial base) %) (next (range)))]
+  (let [names (map #(str (cm/initial base) %) (next (range)))]
     (remove #(@schematic (str group sep %)) names)))
 
 (defn make-name [base]
@@ -748,12 +732,6 @@
                   schem))]
     (swap! schematic (partial merge-with merge) wires)))
 
-(defn viewbox-coord [e]
-  (let [^js el (js/document.querySelector ".mosaic-canvas")
-        m (.inverse (.getScreenCTM el))
-        p (point (.-clientX e) (.-clientY e))
-        tp (.matrixTransform p m)]
-    [(/ (.-x tp) grid-size) (/ (.-y tp) grid-size)]))
 
 (def last-coord (atom [0 0]))
 
@@ -850,7 +828,7 @@
        (= 5 (.-button e))))
 
 (defn scroll-zoom [e]
-  (let [[x y] (viewbox-coord e)]
+  (let [[x y] (cm/viewbox-coord e)]
     (zoom-schematic (cm/sign (.-deltaY e)) (* x grid-size) (* y grid-size))))
 
 (defn button-zoom [dir]
@@ -893,14 +871,14 @@
               w h]))))
 
 (defn drag-device [e]
-  (let [[x y] (viewbox-coord e)
+  (let [[x y] (cm/viewbox-coord e)
         [xs ys] (::mouse-start @ui)
         dx (- x xs)
         dy (- y ys)]
     (swap! delta assoc :x dx :y dy)))
 
 (defn drag-wire [^js e]
-  (let [[x y] (viewbox-coord e)]
+  (let [[x y] (cm/viewbox-coord e)]
     (swap! staging
            (fn [d]
              (let [rx (- x (:x d) 0.5)
@@ -922,7 +900,7 @@
                    (assoc d :rx rx :ry ry :variant variant))))))))
 
 (defn drag-staged-device [e]
-  (let [[x y] (viewbox-coord e)
+  (let [[x y] (cm/viewbox-coord e)
         [width height] (get-in models [(:type @staging) ::bg])
         xm (math/round (- x width 0.5))
         ym (math/round (- y height 0.5))]
@@ -960,7 +938,7 @@
 (defn drag [e]
   ;; store mouse position for use outside mouse events
   ;; keyboard shortcuts for example
-  (swap! ui assoc ::mouse (viewbox-coord e))
+  (swap! ui assoc ::mouse (cm/viewbox-coord e))
   (case @tool
     ::wire (wire-drag e)
     ::pan (when (> (.-buttons e) 0) (drag-view e))
@@ -1054,7 +1032,7 @@
   (.postMessage probechan k))
 
 (defn drag-start [k e]
-  (swap! ui assoc ::mouse-start (viewbox-coord e))
+  (swap! ui assoc ::mouse-start (cm/viewbox-coord e))
   (reset! last-coord [(.-clientX e) (.-clientY e)])
   (let [uiv @ui
         update-selection
@@ -1076,7 +1054,7 @@
     (when (and (not= (::tool uiv) ::device)
                (= (.-button e) 0))
       (case (::tool uiv)
-        ::wire (add-wire (viewbox-coord e) (nil? (::dragging uiv)))
+        ::wire (add-wire (cm/viewbox-coord e) (nil? (::dragging uiv)))
         ::eraser (eraser-drag k e)
         ::probe (probe-element k)
         (swap! ui (fn [ui]
@@ -1088,7 +1066,7 @@
   (swap! ui assoc
          ::selected #{}
          ::dragging ::box
-         ::mouse-start (viewbox-coord e)))
+         ::mouse-start (cm/viewbox-coord e)))
 
 (defn drag-start-background [e]
   (reset! last-coord [(.-clientX e) (.-clientY e)])
@@ -1097,7 +1075,7 @@
          (= nil (::dragging @ui))
          (= ::cursor @tool)) (drag-start-box e)
     (and (= (.-button e) 0)
-         (= ::wire @tool)) (add-wire (viewbox-coord e) (nil? (::dragging @ui)))))
+         (= ::wire @tool)) (add-wire (cm/viewbox-coord e) (nil? (::dragging @ui)))))
 
 (defn context-menu [e]
   (when (or (::dragging @ui)
@@ -1408,15 +1386,15 @@
   (reset! cm/modal-content [history-panel]))
 
 (defn model-selector-popup
-  "Popup for selecting a device model with category tree and search"
+  "Popup for selecting a device model with tag tree and search"
   [device-type on-select]
   (let [selected (r/atom nil)]
     (fn [device-type on-select]
       (let [;; Filter models by device type first
             type-models (into {} (filter (fn [[_ m]] (= (:type m "ckt") device-type)) @modeldb))
-            ;; Build category tree from type-filtered models
-            trie (cm/build-category-type-index type-models)
-            ;; Filter by category and search text using shared function
+            ;; Build tag tree from type-filtered models
+            trie (cm/build-tag-index type-models)
+            ;; Filter by tags and search text
             filtered (cm/filter-models type-models @model-popup-category @model-popup-filter)]
         [:div.model-selector-popup
          [:h3 "Select Model"]
@@ -1426,14 +1404,16 @@
                                :value @model-popup-filter
                                :on-change #(reset! model-popup-filter (.. % -target -value))}]
          [:div.model-popup-content
-          ;; Category tree (left)
+          ;; Tag tree (left)
           [:div.model-categories
            (if (seq trie)
-             [cm/category-tree model-popup-category [] trie]
+             [cm/tag-tree model-popup-category trie]
              [:div.empty "No categories"])]
-          ;; Model list (right) using shared component
+          ;; Model list (right)
           [:div.model-list
-           [cm/model-list selected filtered]]]
+           [cm/model-list selected filtered nil nil
+            #(when-not (some #{%} @model-popup-category)
+               (swap! model-popup-category conj %))]]]
          ;; Buttons
          [:div.model-popup-buttons
           [:button {:on-click #(reset! cm/modal-content nil)} "Cancel"]
@@ -1451,7 +1431,7 @@
         [:<>
          [:h1 (or @name key)]
          [:div.properties
-          (when (and (seq @model) (not (:templates model-def)))
+          (when (and (seq @model) (not (cm/has-code-models? model-def)))
             [:a {:href "#" :on-click #(do (.preventDefault %) (open-schematic @model))} "Edit"])
           [:label {:for "name" :title "Instance name"} "name"]
           [:input {:id "name"
@@ -1476,17 +1456,8 @@
             [cm/search]]]
           ; Get properties from built-in device and model
           (let [device-props (::props (get models @device-type) [])
-                model-props (:props model-def [])
-                all-props (concat device-props model-props)]
-            (doall (for [param-def all-props
-                         :let [prop-name (keyword (:name param-def))
-                               tooltip (:tooltip param-def)]]
-                     [:<> {:key prop-name}
-                      [:label {:for prop-name :title tooltip} prop-name]
-                      [:input {:id prop-name
-                               :type "text"
-                               :default-value (get @props prop-name)
-                               :on-change (debounce #(do (swap! props assoc prop-name (.. % -target -value)) (post-action!)))}]])))
+                model-props (:props model-def [])]
+            [cm/recursive-editor (concat device-props model-props) props post-action!])
           [:label {:for "template" :title "Template to display"} "Text"]
           [:textarea {:id "template"
                       :default-value (get-in @schematic [key :template] (::template (get models @device-type)))
@@ -1638,74 +1609,74 @@
    [variant-tray
     [:button {:title "Add port [p]"
               :class (device-active "port")
-              :on-pointer-up #(add-device "port" (viewbox-coord %))}
+              :on-pointer-up #(add-device "port" (cm/viewbox-coord %))}
      [cm/device-icon "port"]]
     [:button {:title "Add wire label [t]"
               :class (device-active "port")
-              :on-pointer-up #(add-label (viewbox-coord %))}
+              :on-pointer-up #(add-label (cm/viewbox-coord %))}
      [cm/namei]]
     [:button {:title "Add ground [g]"
               :class (device-active "port")
-              :on-pointer-up #(add-gnd (viewbox-coord %))}
+              :on-pointer-up #(add-gnd (cm/viewbox-coord %))}
      [cm/device-icon "ground"]]
     [:button {:title "Add power supply [shift+p]"
               :class (device-active "port")
-              :on-pointer-up #(add-supply (viewbox-coord %))}
+              :on-pointer-up #(add-supply (cm/viewbox-coord %))}
      [cm/device-icon "supply"]]
     [:button {:title "Add text area [shift+t]"
               :class (device-active "port")
-              :on-pointer-up #(add-device "text" (viewbox-coord %))}
+              :on-pointer-up #(add-device "text" (cm/viewbox-coord %))}
      [cm/text]]]
    [:button {:title "Add resistor [r]"
              :class (device-active "resistor")
-             :on-pointer-up #(add-device "resistor" (viewbox-coord %))}
+             :on-pointer-up #(add-device "resistor" (cm/viewbox-coord %))}
     [cm/device-icon "resistor"]]
    [:button {:title "Add inductor [l]"
              :class (device-active "inductor")
-             :on-pointer-up #(add-device "inductor" (viewbox-coord %))}
+             :on-pointer-up #(add-device "inductor" (cm/viewbox-coord %))}
     [cm/device-icon "inductor"]]
    [:button {:title "Add capacitor [c]"
              :class (device-active "capacitor")
-             :on-pointer-up #(add-device "capacitor" (viewbox-coord %))}
+             :on-pointer-up #(add-device "capacitor" (cm/viewbox-coord %))}
     [cm/device-icon "capacitor"]]
    [:button {:title "Add diode [d]"
              :class (device-active "diode")
-             :on-pointer-up #(add-device "diode" (viewbox-coord %))}
+             :on-pointer-up #(add-device "diode" (cm/viewbox-coord %))}
     [cm/device-icon "diode"]]
    [variant-tray
     [:button {:title "Add voltage source [v]"
               :class (device-active "vsource")
-              :on-pointer-up #(add-device "vsource" (viewbox-coord %))}
+              :on-pointer-up #(add-device "vsource" (cm/viewbox-coord %))}
      [cm/device-icon "vsource"]]
     [:button {:title "Add current source [i]"
               :class (device-active "isource")
-              :on-pointer-up #(add-device "isource" (viewbox-coord %))}
+              :on-pointer-up #(add-device "isource" (cm/viewbox-coord %))}
      [cm/device-icon "isource"]]]
    [variant-tray
     [:button {:title "Add N-channel mosfet [m]"
               :class (device-active "nmos")
-              :on-pointer-up #(add-device "nmos" (viewbox-coord %))}
+              :on-pointer-up #(add-device "nmos" (cm/viewbox-coord %))}
      [cm/device-icon "nmos"]]
     [:button {:title "Add P-channel mosfet [shift+m]"
               :class (device-active "pmos")
-              :on-pointer-up #(add-device "pmos" (viewbox-coord %))}
+              :on-pointer-up #(add-device "pmos" (cm/viewbox-coord %))}
      [cm/device-icon "pmos"]]
     [:button {:title "Add NPN BJT [b]"
               :class (device-active "npn")
-              :on-pointer-up #(add-device "npn" (viewbox-coord %))}
+              :on-pointer-up #(add-device "npn" (cm/viewbox-coord %))}
      [cm/device-icon "npn"]]
     [:button {:title "Add PNP BJT [shift+b]"
               :class (device-active "pnp")
-              :on-pointer-up #(add-device "pnp" (viewbox-coord %))}
+              :on-pointer-up #(add-device "pnp" (cm/viewbox-coord %))}
      [cm/device-icon "pnp"]]]
    [variant-tray
     [:button {:title "Add subcircuit [x]"
               :class (device-active "ckt")
-              :on-pointer-up #(add-device "ckt" (viewbox-coord %))}
+              :on-pointer-up #(add-device "ckt" (cm/viewbox-coord %))}
      [cm/chip]]
     [:button {:title "Add amplifier [a]"
               :class (device-active "amp")
-              :on-pointer-up #(add-device "amp" (viewbox-coord %))}
+              :on-pointer-up #(add-device "amp" (cm/viewbox-coord %))}
      [cm/amp-icon]]]])
 
 (defn schematic-elements [schem]
