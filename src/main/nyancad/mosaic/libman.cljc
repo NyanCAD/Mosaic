@@ -26,10 +26,9 @@
 (defonce selection (r/atom {}))
 
 (defonce seltype
-  (r/track #(some->> @selcat
-                     (some (fn [t] (when (clojure.string/starts-with? t "type:") t)))
-                     (cm/parse-prop-tag)
-                     second)))
+  (r/track #(some (fn [t] (let [[k v] (cm/parse-prop-tag t)]
+                            (when (= k "type") v)))
+                  @selcat)))
 
 ;; --- UI components ---
 
@@ -44,7 +43,7 @@
                                (reset! cm/modal-content nil))}
            [:div "Enter the type and name of the new SPICE model"]
            [:div
-            [:select {:name "devicetype" :id "device-type" :default-value "diode"}
+            [:select {:name "devicetype" :id "device-type" :default-value (or @seltype "diode")}
              (for [dtype (sort cm/device-types)]
                [:option {:key dtype :value dtype} dtype])]
             [:input {:name "modelname" :id "model-name" :type "text" :auto-focus true :placeholder "Model name"}]]

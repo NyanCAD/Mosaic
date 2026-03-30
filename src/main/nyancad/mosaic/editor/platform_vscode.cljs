@@ -81,18 +81,23 @@
                        (catch :default _ nil))))
         model-id (extract-gds-name plain uri-path)]
     (when model-id
-      (let [[x y] (cm/viewbox-coord e)
-            model-def (get @modeldb (cm/model-key model-id))
-            device-type (or (:type model-def) "ckt")
-            name (make-name device-type)
-            dev {:type device-type
-                 :model model-id
-                 :name name
-                 :transform cm/IV
-                 :x (Math/round x)
-                 :y (Math/round y)}]
-        (when (s/valid? :nyancad.mosaic.common/device dev)
-          (swap! schematic assoc (str group ":" name) dev))))))
+      (let [model-key (cm/model-key model-id)
+            model-def (get @modeldb model-key)]
+        (if-not model-def
+          (js/console.warn "Dropped unknown model (no schematic?):" model-id)
+          (let [[x y] (cm/viewbox-coord e)
+                raw-type (or (:type model-def) "ckt")
+                device-type (if (contains? cm/device-types raw-type) raw-type "ckt")
+                name (make-name device-type)
+                dev {:type device-type
+                     :model model-id
+                     :name name
+                     :transform cm/IV
+                     :x (Math/round x)
+                     :y (Math/round y)}]
+            (if (s/valid? :nyancad.mosaic.common/device dev)
+              (swap! schematic assoc (str group ":" name) dev)
+              (js/console.warn "Invalid device from drop:" (s/explain-str :nyancad.mosaic.common/device dev)))))))))
 
 (defn init-extra!
   "Set up get-state handler and drop target for VS Code webview."
