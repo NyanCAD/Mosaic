@@ -433,6 +433,87 @@
                [:path {:d "M70,75 H125" :opacity 0.3}]  ;; translucent exit to port
                ]})
 
+;; bg [1,1], size 3. Ports: split-1x2-conn
+;; Y-junction: two S-curves sharing input
+(def splitter-1x2-elements
+  {::size 3
+   ::elements [[:path {:d "M25,75 C65,75 85,25 125,25"}]
+               [:path {:d "M25,75 C65,75 85,125 125,125"}]]})
+
+;; bg [1,2], size 4, 200x200px
+;; Ports like ring-double: (0,1)(2,1)(0,2)(2,2) → px (25,75)(125,75)(25,125)(125,125)
+;; Directional coupler: two waveguides approaching closely in the middle
+(def coupler-elements
+  {::size 4
+   ::elements [[:path {:d "M25,75 C55,75 45,95 75,95 C105,95 95,75 125,75"}]
+               [:path {:d "M25,125 C55,125 45,105 75,105 C105,105 95,125 125,125"}]]})
+
+;; Coupler-ring: 2x2 with ports inside, no padding
+;; size 2, 100x100px. Ports: (0,0)(1,0)(0,1)(1,1) → px (25,25)(75,25)(25,75)(75,75)
+(defn coupler-ring-bg [k v]
+  [device 2 k v
+   [:rect.tetris {:x 0 :y 0 :width (* 2 grid-size) :height (* 2 grid-size)}]])
+
+(def coupler-ring-elements
+  {::size 2
+   ::elements [[:path {:d "M25,25 A25,23 0 0,0 75,25"}]
+               [:path {:d "M25,75 A25,23 0 0,1 75,75"}]]})
+
+;; bg [1,1], size 3. Ports: split-1x2-conn
+;; MMI 1x2: multimode interference region with 1 input, 2 outputs
+(def mmi-1x2-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [0.9 1.5]]
+                        [[2.1 0.5] [2.5 0.5]]
+                        [[2.1 2.5] [2.5 2.5]]]]
+               [:rect.outline {:x 0.9 :y 0.5 :width 1.2 :height 2.0}]]})
+
+;; bg [1,1], size 3. Ports: split-2x2-conn
+;; MMI 2x2: multimode interference region with 2 inputs, 2 outputs
+(def mmi-2x2-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 0.5] [0.9 0.5]]
+                        [[0.5 2.5] [0.9 2.5]]
+                        [[2.1 0.5] [2.5 0.5]]
+                        [[2.1 2.5] [2.5 2.5]]]]
+               [:rect.outline {:x 0.9 :y 0.5 :width 1.2 :height 2.0}]]})
+
+;; bg [1,1], size 3. Ports: split-1x2-conn
+;; MZI 1x2: flat → wide(peak at x=70) → narrow(x=100) → fan to outputs
+;; All joins have horizontal tangents for smooth curves
+(def mzi-1x2-elements
+  {::size 3
+   ::elements [[:path {:d "M25,75 C33,75 38,75 46,75 C56,75 57,26 72,26 C90,26 77,71 100,71 C110,71 120,40 125,25"}]
+               [:path {:d "M25,75 C33,75 38,75 46,75 C56,75 57,124 72,124 C90,124 77,79 100,79 C110,79 120,100 125,125"}]]})
+
+;; bg [1,1], size 3. Ports: split-2x2-conn
+;; MZI 2x2: narrow(coupler) → wide(center) → narrow(coupler)
+(def mzi-2x2-elements
+  {::size 3
+   ::elements [[:path {:d "M25,25 C35,25 40,71 50,71 C60,71 65,25 75,25 C85,25 90,71 100,71 C110,71 115,25 125,25"}]
+               [:path {:d "M25,125 C35,125 40,79 50,79 C60,79 65,125 75,125 C85,125 90,79 100,79 C110,79 115,125 125,125"}]]})
+
+;; bg [1,1], size 3. Port: (2,1)→px(125,75) right only
+;; Laser: gain medium (rect) with emission rays
+(def laser-elements
+  {::size 3
+   ::elements [[:rect.outline {:x 0.6 :y 1.0 :width 0.8 :height 1.0}]
+               [:lines [[[1.4 1.5] [2.5 1.5]]
+                        [[1.6 1.3] [1.75 1.15]]
+                        [[1.6 1.7] [1.75 1.85]]]]]})
+
+;; bg [1,1], size 3. Port: (0,1)→px(25,75) left only
+;; Grating coupler: narrow concentric arcs (~60°) opening right, wifi-style
+;; Each arc at radius R from center (45,75), spanning ±30° from horizontal
+;; Start: (45+R*cos30°, 75-R*sin30°)  End: (45+R*cos30°, 75+R*sin30°)
+(def grating-coupler-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [0.9 1.5]]]]
+               [:path {:d "M57,67 A15,15 0 0,1 57,83"}]
+               [:path {:d "M66,61 A25,25 0 0,1 66,89"}]
+               [:path {:d "M75,55 A35,35 0 0,1 75,95"}]
+               [:path {:d "M84,49 A45,45 0 0,1 84,101"}]]})
+
 (defn circuit-shape [k v]
   (let [model (:model v)
         ports (get-in @modeldb [(cm/model-key model) :ports])
@@ -741,6 +822,62 @@
                        ::sym spiral-elements
                        ::template "{self.name}"
                        ::props []}
+             "splitter-1x2" {::bg [1 1]
+                             ::conn cm/split-1x2-conn
+                             ::sym splitter-1x2-elements
+                             ::template "{self.name}"
+                             ::props []}
+             "coupler" {::bg [1 2]
+                        ::conn (cm/ascii-patern
+                                ["   "
+                                 "1 2"
+                                 "3 4"])
+                        ::sym coupler-elements
+                        ::template "{self.name}"
+                        ::props []}
+             "coupler-ring" {::bg coupler-ring-bg
+                             ::conn (cm/ascii-patern
+                                     ["12"
+                                      "34"])
+                             ::sym coupler-ring-elements
+                             ::template "{self.name}"
+                             ::props []}
+             "mmi-1x2" {::bg [1 1]
+                        ::conn cm/split-1x2-conn
+                        ::sym mmi-1x2-elements
+                        ::template "{self.name}"
+                        ::props []}
+             "mmi-2x2" {::bg [1 1]
+                        ::conn cm/split-2x2-conn
+                        ::sym mmi-2x2-elements
+                        ::template "{self.name}"
+                        ::props []}
+             "mzi-1x2" {::bg [1 1]
+                        ::conn cm/split-1x2-conn
+                        ::sym mzi-1x2-elements
+                        ::template "{self.name}"
+                        ::props []}
+             "mzi-2x2" {::bg [1 1]
+                        ::conn cm/split-2x2-conn
+                        ::sym mzi-2x2-elements
+                        ::template "{self.name}"
+                        ::props []}
+             "laser" {::bg [1 1]
+                      ::conn (cm/ascii-patern
+                              ["   "
+                               "  1"
+                               "   "])
+                      ::sym laser-elements
+                      ::template "{self.name}"
+                      ::props []}
+             "grating-coupler" {::bg [1 1]
+                                ::conn (cm/ascii-patern
+                                        ["   "
+                                         "1  "
+                                         "   "])
+                                ::sym grating-coupler-elements
+                                ::template "{self.name}"
+                                ::props []}
              "wire" {::bg []
                      ::conn []
                      ::sym wire-sym
@@ -792,13 +929,14 @@
 (defn builtin-locations [{:keys [:x :y :type :transform]}]
   (let [mod (get models type)
         conn (::conn mod)
-        [w h] (::bg mod)
+        bg (::bg mod)
+        [w h] (when (vector? bg) bg)
         size (if (and (number? w) (number? h))
                (+ 2 (max w h))
                (cm/pattern-size conn))]
     [(rotate-shape conn size transform x y)
-     (rotate-shape (for [x (range w) y (range h)]
-                     [(inc x) (inc y) "%"])
+     (rotate-shape (for [x (range (or w 0)) y (range (or h 0))]
+                     [(+ (if w 1 0) x) (+ (if h 1 0) y) "%"])
                    size transform x y)]))
 
 (defn circuit-locations [{:keys [:x :y :model :transform :type]}]
@@ -1348,7 +1486,8 @@
       (fn? m) ^{:key k} [m k v]
       (map? m) ^{:key k} [render-symbol-data m k v]
       (= layer ::bg) ^{:key k} [draw-background m k v]
-      (= layer ::conn) (let [[w h] (::bg model-entry)
+      (= layer ::conn) (let [bg (::bg model-entry)
+                             [w h] (when (vector? bg) bg)
                              size (if (and (number? w) (number? h))
                                     (+ 2 (max w h))
                                     (cm/pattern-size m))]
@@ -1415,9 +1554,10 @@
 
 (defn add-device [cell [x y] & args]
   (let [kwargs (apply array-map args)
-        [width height] (get-in models [cell ::bg])
-        mx (math/round (- x (/ width 2) 1))
-        my (math/round (- y (/ height 2) 1))]
+        bg (get-in models [cell ::bg])
+        [width height] (when (vector? bg) bg)
+        mx (math/round (- x (/ (or width 0) 2) (if width 1 0)))
+        my (math/round (- y (/ (or height 0) 2) (if height 1 0)))]
     (swap! ui assoc
            ::staging (into {:transform cm/IV, :type cell :x mx :y my} kwargs)
            ::tool ::device)))
@@ -1874,7 +2014,43 @@
     [:button {:title "Add spiral"
               :class (device-active "spiral")
               :on-pointer-up #(add-device "spiral" (cm/viewbox-coord %))}
-     "🌀"]]])
+     "🌀"]
+    [:button {:title "Add 1x2 splitter"
+              :class (device-active "splitter-1x2")
+              :on-pointer-up #(add-device "splitter-1x2" (cm/viewbox-coord %))}
+     "⑃"]
+    [:button {:title "Add directional coupler"
+              :class (device-active "coupler")
+              :on-pointer-up #(add-device "coupler" (cm/viewbox-coord %))}
+     ")("]
+    [:button {:title "Add ring coupler"
+              :class (device-active "coupler-ring")
+              :on-pointer-up #(add-device "coupler-ring" (cm/viewbox-coord %))}
+     "⤫"]
+    [:button {:title "Add MMI 1x2"
+              :class (device-active "mmi-1x2")
+              :on-pointer-up #(add-device "mmi-1x2" (cm/viewbox-coord %))}
+     "⊏⊐"]
+    [:button {:title "Add MMI 2x2"
+              :class (device-active "mmi-2x2")
+              :on-pointer-up #(add-device "mmi-2x2" (cm/viewbox-coord %))}
+     "⊏⊐"]
+    [:button {:title "Add MZI 1x2"
+              :class (device-active "mzi-1x2")
+              :on-pointer-up #(add-device "mzi-1x2" (cm/viewbox-coord %))}
+     "◇"]
+    [:button {:title "Add MZI 2x2"
+              :class (device-active "mzi-2x2")
+              :on-pointer-up #(add-device "mzi-2x2" (cm/viewbox-coord %))}
+     "◈"]
+    [:button {:title "Add laser"
+              :class (device-active "laser")
+              :on-pointer-up #(add-device "laser" (cm/viewbox-coord %))}
+     "☀"]
+    [:button {:title "Add grating coupler"
+              :class (device-active "grating-coupler")
+              :on-pointer-up #(add-device "grating-coupler" (cm/viewbox-coord %))}
+     "▦"]]])
 
 (defn schematic-elements [schem]
   [:<>
