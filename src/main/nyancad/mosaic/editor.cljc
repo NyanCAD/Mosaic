@@ -108,7 +108,7 @@
   (when-let [st (cm/redo undotree)]
     (restore st)))
 
-(declare drag-start drag-end eraser-drag models on-pointer-down-element on-pointer-move-element on-pointer-up-bg double-click)
+(declare drag-start drag-end eraser-drag models on-pointer-down-element on-pointer-move-element on-pointer-up-bg double-click device-template)
 
 (defn device [size k v & elements]
   (assert (js/isFinite size))
@@ -149,6 +149,30 @@
                         [x y
                          (+ x size) (+ y size)
                          (+ x size) (- y size)])}])
+
+(def ^:private scale-keys #{:x :y :width :height :cx :cy :r})
+
+(defn- scale-attrs [attrs]
+  (reduce-kv (fn [m k v]
+               (assoc m k (if (scale-keys k) (* v grid-size) v)))
+             {} attrs))
+
+(defn- render-element [[tag & args]]
+  (let [[attrs & children] (if (map? (first args)) args (cons {} args))]
+    (case tag
+      :lines [lines (first args)]
+      :arrow [arrow (:x attrs) (:y attrs) (:size attrs) (:rotate attrs)]
+      :path  [:path attrs]
+      :text  (into [:text attrs] children)
+      ;; Default: scale coordinate attrs, pass through class from tag
+      (let [scaled (cond-> (scale-attrs attrs)
+                     (:points attrs) (update :points #(map (partial * grid-size) %)))]
+        (into [tag scaled] children)))))
+
+(defn- render-symbol-data [{:keys [::size ::elements]} k v]
+  (into [device size k v
+         [device-template v size]]
+        (map render-element elements)))
 
 (defn wire-sym [key wire]
   (let [{:keys [x y rx ry variant]} wire
@@ -275,89 +299,47 @@
        [arrow 1.4 1.81 0.12 -140]
        [arrow 1.25 1.68 0.12 40])]))
 
-(defn resistor-sym [k v]
-  (let [shape [[[1.5 0.5]
-                [1.5 1.1]]
-               [[1.5 1.9]
-                [1.5 2.5]]]]
-    [device 3 k v
-     [device-template v 3]
-     [:rect.outline {:x (* 1.35 grid-size)
-                     :y (* 1.1 grid-size)
-                     :width (* 0.3 grid-size)
-                     :height (* 0.8 grid-size)}]
-     [lines shape]]))
+(def resistor-elements
+  {::size 3
+   ::elements [[:rect.outline {:x 1.35 :y 1.1 :width 0.3 :height 0.8}]
+               [:lines [[[1.5 0.5] [1.5 1.1]]
+                        [[1.5 1.9] [1.5 2.5]]]]]})
 
-(defn capacitor-sym [k v]
-  (let [shape [[[1.5 0.5]
-                [1.5 1.4]]
-               [[1.1 1.4]
-                [1.9 1.4]]
-               [[1.1 1.6]
-                [1.9 1.6]]
-               [[1.5 1.6]
-                [1.5 2.5]]]]
-    [device 3 k v
-     [device-template v 3]
-     [lines shape]]))
+(def capacitor-elements
+  {::size 3
+   ::elements [[:lines [[[1.5 0.5] [1.5 1.4]]
+                        [[1.1 1.4] [1.9 1.4]]
+                        [[1.1 1.6] [1.9 1.6]]
+                        [[1.5 1.6] [1.5 2.5]]]]]})
 
-(defn inductor-sym [k v]
-  (let [shape [[[1.5 0.5]
-                [1.5 1.1]]
-               [[1.5 1.9]
-                [1.5 2.5]]]]
-    [device 3 k v
-     [device-template v 3]
-     [lines shape]
-     [:path {:d "M75,55
-                 a5,5 90 0,0 0,10
-                 a5,5 90 0,0 0,10
-                 a5,5 90 0,0 0,10
-                 a5,5 90 0,0 0,10
-                 "}]]))
+(def inductor-elements
+  {::size 3
+   ::elements [[:lines [[[1.5 0.5] [1.5 1.1]]
+                        [[1.5 1.9] [1.5 2.5]]]]
+               [:path {:d "M75,55 a5,5 90 0,0 0,10 a5,5 90 0,0 0,10 a5,5 90 0,0 0,10 a5,5 90 0,0 0,10"}]]})
 
-(defn isource-sym [k v]
-  (let [shape [[[1.5 0.5]
-                [1.5 1.1]]
-               [[1.5 1.25]
-                [1.5 1.65]]
-               [[1.5 1.9]
-                [1.5 2.5]]]]
-    [device 3 k v
-     [device-template v 3]
-     [lines shape]
-     [:circle.outline
-      {:cx (* grid-size 1.5)
-       :cy (* grid-size 1.5)
-       :r (* grid-size 0.4)}]
-     [arrow 1.5 1.8 0.15 -90]]))
+(def isource-elements
+  {::size 3
+   ::elements [[:lines [[[1.5 0.5] [1.5 1.1]]
+                        [[1.5 1.25] [1.5 1.65]]
+                        [[1.5 1.9] [1.5 2.5]]]]
+               [:circle.outline {:cx 1.5 :cy 1.5 :r 0.4}]
+               [:arrow {:x 1.5 :y 1.8 :size 0.15 :rotate -90}]]})
 
-(defn vsource-sym [k v]
-  (let [shape [[[1.5 0.5]
-                [1.5 1.1]]
-               [[1.5 1.9]
-                [1.5 2.5]]]]
-    [device 3 k v
-     [device-template v 3]
-     [lines shape]
-     [:circle.outline
-      {:cx (* grid-size 1.5)
-       :cy (* grid-size 1.5)
-       :r (* grid-size 0.4)}]
-     [:text {:x 75 :y 70 :text-anchor "middle"} "+"]
-     [:text {:x 75 :y 90 :text-anchor "middle"} "−"]]))
+(def vsource-elements
+  {::size 3
+   ::elements [[:lines [[[1.5 0.5] [1.5 1.1]]
+                        [[1.5 1.9] [1.5 2.5]]]]
+               [:circle.outline {:cx 1.5 :cy 1.5 :r 0.4}]
+               [:text {:x 75 :y 70 :text-anchor "middle"} "+"]
+               [:text {:x 75 :y 90 :text-anchor "middle"} "−"]]})
 
-(defn diode-sym [k v]
-  (let [shape [[[1.5 0.5]
-                [1.5 1.4]]
-               [[1.3 1.6]
-                [1.7 1.6]]
-               [[1.5 1.6]
-                [1.5 2.5]]]]
-    [device 3 k v
-     [device-template v 3]
-     [lines shape]
-     [arrow 1.5 1.6 0.2 270]]))
+(def diode-elements
+  {::size 3
+   ::elements [[:lines [[[1.5 0.5] [1.5 1.4]]
+                        [[1.3 1.6] [1.7 1.6]]
+                        [[1.5 1.6] [1.5 2.5]]]]
+               [:arrow {:x 1.5 :y 1.6 :size 0.2 :rotate 270}]]})
 
 (defn circuit-shape [k v]
   (let [model (:model v)
@@ -570,36 +552,36 @@
                     ::props []}
              "resistor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
-                         ::sym resistor-sym
+                         ::sym resistor-elements
                          ::template "{self.name}: {self.props.resistance}Ω"
                          ::props [{:name "resistance" :tooltip "Resistance value" :spice "resistance"}]}
              "capacitor" {::bg cm/twoport-bg
                           ::conn cm/twoport-conn
-                          ::sym capacitor-sym
+                          ::sym capacitor-elements
                           ::template "{self.name}: {self.props.capacitance}F"
                           ::props [{:name "capacitance" :tooltip "Capacitance value" :spice "capacitance"}]}
              "inductor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
-                         ::sym inductor-sym
+                         ::sym inductor-elements
                          ::template "{self.name}: {self.props.inductance}H"
                          ::props [{:name "inductance" :tooltip "Inductance value" :spice "inductance"}]}
              "vsource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
-                        ::sym vsource-sym
+                        ::sym vsource-elements
                         ::template "{self.name}: {self.props.dc}V"
                         ::props [{:name "dc" :tooltip "DC voltage" :spice "dc"}
                                  {:name "ac" :tooltip "AC voltage" :spice "ac"}
                                  {:name "tran" :tooltip "Transient voltage" :spice "tran"}]}
              "isource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
-                        ::sym isource-sym
+                        ::sym isource-elements
                         ::template "{self.name}: {self.props.dc}I"
                         ::props [{:name "dc" :tooltip "DC current" :spice "dc"}
                                  {:name "ac" :tooltip "AC current" :spice "ac"}
                                  {:name "tran" :tooltip "Transient current" :spice "tran"}]}
              "diode" {::bg cm/twoport-bg
                       ::conn cm/twoport-conn
-                      ::sym diode-sym
+                      ::sym diode-elements
                       ::props []}
              "wire" {::bg []
                      ::conn []
@@ -1202,6 +1184,7 @@
     ;; (assert m "no model")
     (cond
       (fn? m) ^{:key k} [m k v]
+      (map? m) ^{:key k} [render-symbol-data m k v]
       (= layer ::bg) ^{:key k} [draw-background m k v]
       (= layer ::conn) ^{:key k} [draw-pattern (cm/pattern-size m) m port k v]
       :else ^{:key k} [(fn [k _v] (println "invalid model for" k))])))
