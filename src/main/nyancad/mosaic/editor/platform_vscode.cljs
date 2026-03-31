@@ -3,11 +3,12 @@
 ; SPDX-License-Identifier: MPL-2.0
 
 (ns nyancad.mosaic.editor.platform-vscode
-  (:require [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode]]
+  (:require [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request!]]
             [nyancad.mosaic.common :as cm]
             [reagent.core :as r]
             [clojure.spec.alpha :as s]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [cljs.core.async :refer [go <!]]))
 
 ;; Re-export done? so editor can :refer it from this namespace
 (def done? jsatom/done?)
@@ -29,6 +30,25 @@
 (defonce local (r/atom {}))
 
 (defonce syncactive (r/atom false))
+
+;; --- Symbol URL resolution ---
+
+(defonce ^:private symbol-url-cache (r/atom {}))
+
+(defn resolve-symbol-url
+  "Resolve a symbol path to a blob URL. Returns a reactive cursor (deref for the URL).
+   Triggers async load on first call for each path; cursor yields nil until loaded."
+  [path]
+  (when (seq path)
+    (when-not (contains? @symbol-url-cache path)
+      (go
+        (let [content (<! (send-request! path))]
+          (when content
+            (let [type (if (str/ends-with? path ".svg") "image/svg+xml" "image/png")
+                  blob (js/Blob. #js[content] #js{:type type})
+                  url (js/URL.createObjectURL blob)]
+              (swap! symbol-url-cache assoc path url))))))
+    (r/cursor symbol-url-cache [path])))
 
 ;; --- Functions ---
 

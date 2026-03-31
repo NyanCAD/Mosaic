@@ -117,10 +117,12 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- safe-resolve
-  "Resolve filename within doc-dir. Rejects paths containing slashes."
+  "Resolve filename within doc-dir. Allows subdirectories but rejects traversal."
   [doc-dir filename]
-  (when-not (re-find #"[/\\]" filename)
-    (path/join doc-dir filename)))
+  (when-not (re-find #"\.\." filename)
+    (let [resolved (path/resolve doc-dir filename)]
+      (when (.startsWith resolved (str (path/resolve doc-dir) path/sep))
+        resolved))))
 
 (defn- setup-message-router!
   "Install a single message handler that dispatches by type.
@@ -186,7 +188,7 @@
         csp (str "default-src 'none';"
                  " style-src " (.-cspSource webview) " 'unsafe-inline';"
                  " script-src 'nonce-" nonce "' 'unsafe-eval';"
-                 " img-src " (.-cspSource webview) " data:;")]
+                 " img-src " (.-cspSource webview) " data: blob:;")]
     (str "<!DOCTYPE html>
 <html>
 <head>

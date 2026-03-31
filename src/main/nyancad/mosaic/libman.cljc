@@ -92,7 +92,7 @@
      [:label {:for (name side)} (name side)]
      [cm/dbfield :input {:id (name side), :type "text"} cell
       #(clojure.string/join " " (get-in % path))
-      #(swap! %1 assoc-in path (clojure.string/split %2 #"[, ]+" -1))]]))
+      #(swap! %1 assoc-in path (vec (remove empty? (clojure.string/split %2 #"[, ]+"))))]]))
 
 (defn parameters-editor [cell]
   [cm/recursive-editor
@@ -116,10 +116,14 @@
        [:label {:for "tags" :title "Space-separated tags (first 2 form tree, rest are badges)"} "Tags"]
        [cm/dbfield :input {:id "tags"} mod
         #(clojure.string/join " " (or (:tags %) []))
-        #(swap! %1 assoc :tags (clojure.string/split %2 #"[, ]+" -1))]
+        #(swap! %1 assoc :tags (vec (remove empty? (clojure.string/split %2 #"[, ]+"))))]
 
        (when (#{"ckt" "amp"} (:type @mod "ckt"))
          [:<>
+          [:label {:for "symbol-url" :title "Image URL to render inside the schematic symbol"} "Symbol URL"]
+          [cm/dbfield :input {:id "symbol-url" :type "url" :placeholder "https://..."} mod
+           :symbol
+           #(swap! %1 assoc :symbol %2)]
           [:h4 "Port Configuration"]
           (when (not (cm/has-code-models? @mod))
             [:button {:on-click #(import-ports @selmodel mod)}
