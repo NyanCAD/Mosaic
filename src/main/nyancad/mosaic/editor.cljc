@@ -436,9 +436,9 @@
 ;; bg [1,1], size 3. Ports: split-1x2-conn
 ;; Y-junction: two S-curves sharing input
 (def splitter-1x2-elements
-  {::size 3
-   ::elements [[:path {:d "M25,75 C65,75 85,25 125,25"}]
-               [:path {:d "M25,75 C65,75 85,125 125,125"}]]})
+  {::size 5
+   ::elements [[:path {:d "M25,125 C65,125 85,75 125,75"}]
+               [:path {:d "M25,125 C65,125 85,175 125,175"}]]})
 
 ;; bg [1,2], size 4, 200x200px
 ;; Ports like ring-double: (0,1)(2,1)(0,2)(2,2) → px (25,75)(125,75)(25,125)(125,125)
@@ -826,8 +826,13 @@
                        ::sym spiral-elements
                        ::template "{self.name}"
                        ::props []}
-             "splitter-1x2" {::bg [1 1]
-                             ::conn cm/split-1x2-conn
+             "splitter-1x2" {::bg [1 3]
+                             ::conn (cm/ascii-patern
+                                     ["   "
+                                      "  2"
+                                      "1  "
+                                      "  3"
+                                      "   "])
                              ::sym splitter-1x2-elements
                              ::template "{self.name}"
                              ::props []}
@@ -839,7 +844,7 @@
                         ::sym coupler-elements
                         ::template "{self.name}"
                         ::props []}
-             "coupler-ring" {::bg coupler-ring-bg
+             "coupler-ring" {::bg #'coupler-ring-bg
                              ::conn (cm/ascii-patern
                                      ["12"
                                       "34"])
@@ -1215,9 +1220,10 @@
 
 (defn drag-staged-device [e]
   (let [[x y] (cm/viewbox-coord e)
-        [width height] (get-in models [(:type @staging) ::bg])
-        xm (math/round (- x width 0.5))
-        ym (math/round (- y height 0.5))]
+        bg (get-in models [(:type @staging) ::bg])
+        [width height] (when (vector? bg) bg)
+        xm (math/round (- x (or width 0) 0.5))
+        ym (math/round (- y (or height 0) 0.5))]
     (swap! staging assoc :x xm :y ym)))
 
 (defn wire-drag [e]
