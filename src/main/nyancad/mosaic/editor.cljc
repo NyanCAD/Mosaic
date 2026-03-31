@@ -9,11 +9,11 @@
             #?@(:vscode [[nyancad.mosaic.editor.platform-vscode
                            :refer [group schematic modeldb snapshots simulations local
                                    done? syncactive notebook-panel secondary-menu-items
-                                   open-schematic init-extra!]]]
+                                   open-schematic resolve-symbol-url init-extra!]]]
                 :cljs [[nyancad.mosaic.editor.platform-web
                          :refer [group schematic modeldb snapshots simulations local
                                  done? syncactive notebook-panel secondary-menu-items
-                                 open-schematic init-extra!]]])
+                                 open-schematic resolve-symbol-url init-extra!]]])
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go go-loop <!]]
             [clojure.math :as math]
@@ -450,19 +450,26 @@
            (port-label v (* (+ x 0.5) grid-size) (* 1.3 grid-size) "middle" "hanging" pname))
          (for [[x _ pname] bottom-locs]
            (port-label v (* (+ x 0.5) grid-size) (* (+ height 0.7) grid-size) "middle" "baseline" pname))])
-      ;; Box outline (add .placeholder class when no model)
-      [:rect.outline
-       {:class (when-not has-model? "placeholder")
-        :x grid-size :y grid-size
-        :width (* grid-size width)
-        :height (* grid-size height)}]
-      ;; Model name or "?"
-      [:text.model-name
-       {:x cx :y cy
-        :text-anchor "middle"
-        :dominant-baseline "middle"
-        :transform (counter-rotate v cx cy)}
-       (if has-model? model-name "?")]]]))
+      ;; Symbol image replaces box, otherwise box outline with model name
+      (if-let [symbol-url (and has-model? (some-> model-def :symbol resolve-symbol-url deref))]
+        [:image {:href symbol-url
+                 :x grid-size :y grid-size
+                 :width (* grid-size width)
+                 :height (* grid-size height)
+                 :preserveAspectRatio "xMidYMid meet"
+                 :on-mouse-down #(.preventDefault %)}]
+        [:<>
+         [:rect.outline
+          {:class (when-not has-model? "placeholder")
+           :x grid-size :y grid-size
+           :width (* grid-size width)
+           :height (* grid-size height)}]
+         [:text.model-name
+          {:x cx :y cy
+           :text-anchor "middle"
+           :dominant-baseline "middle"
+           :transform (counter-rotate v cx cy)}
+          (if has-model? model-name "?")]])]]))
 
 (defn circuit-sym-amplifier [k v]
   (let [model (:model v)

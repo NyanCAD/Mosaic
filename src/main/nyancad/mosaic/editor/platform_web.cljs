@@ -122,6 +122,14 @@
         :title "Login / Account"}
     [cm/login]]])
 
+;; --- Symbol URL resolution ---
+
+(defn resolve-symbol-url
+  "On web, symbol paths resolve directly as relative URLs."
+  [path]
+  (when (seq path)
+    (delay path)))
+
 ;; --- Functions ---
 
 (defn open-schematic

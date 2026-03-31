@@ -278,8 +278,9 @@
                            :opt-un [::tooltip]))
 (s/def ::props (s/coll-of ::parameter :kind vector?))
 
+(s/def ::symbol (s/nilable string?))
 (s/def ::model-def (s/keys :req-un [::name]
-                           :opt-un [::type ::tags ::ports ::models ::props]))
+                           :opt-un [::type ::tags ::ports ::models ::props ::symbol]))
 (s/def ::modeldb (s/map-of string? ::model-def))
 
 (defn has-code-models?
@@ -487,7 +488,9 @@
   [models]
   (reduce (fn [index [_id model]]
             (let [tags (vec (take 2 (or (:tags model) [])))]
-              (assoc-in index tags {})))
+              (if (seq tags)
+                (assoc-in index tags {})
+                index)))
           {} models))
 
 (defn tag-tree

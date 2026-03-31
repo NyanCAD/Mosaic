@@ -5,10 +5,10 @@
 (ns nyancad.mosaic.libman.platform-vscode
   "JsAtom-backed platform module for the library manager (VS Code deployment)."
   (:require [reagent.core :as r]
-            [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode]]
+            [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request!]]
             [nyancad.mosaic.common :as cm]
             [nyancad.hipflask.util :refer [json->clj]]
-            [cljs.core.async :refer [go put! promise-chan <!]]))
+            [cljs.core.async :refer [go <!]]))
 
 ;; --- State ---
 
@@ -20,30 +20,6 @@
 (defonce remotemodeldb (r/atom {}))
 (defonce remote-search-loading (r/atom false))
 (defonce preview-url (r/atom nil))
-
-;; --- Request/response infra ---
-
-(defonce ^:private pending-requests (atom {}))
-
-(defn- send-request!
-  "Post a read-file message to the extension host, return a promise-chan with the response."
-  [filename]
-  (let [request-id (str (random-uuid))
-        ch (promise-chan)]
-    (swap! pending-requests assoc request-id ch)
-    (.postMessage vscode
-      #js{:type "read-file"
-          :filename filename
-          :requestId request-id})
-    ch))
-
-;; Listen for responses from extension host
-(.addEventListener js/window "message"
-  (fn [^js event]
-    (when-let [request-id (.. event -data -requestId)]
-      (when-let [ch (get @pending-requests request-id)]
-        (swap! pending-requests dissoc request-id)
-        (put! ch (.. event -data -content))))))
 
 ;; --- Preview ---
 

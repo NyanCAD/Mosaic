@@ -197,7 +197,7 @@ class ModelMetadata(BaseModel):
     props: Optional[list[Dict[str, str]]] = Field(None, description="Parameter definitions")
 
     # Symbol graphics
-    symbol: Optional[Any] = Field(None, description="Symbol graphics for schematic rendering")
+    symbol: Optional[str] = Field(None, description="URL to image rendered inside the schematic symbol")
 
 
 # Discriminated union - Pydantic routes to Wire or Component based on 'type' field

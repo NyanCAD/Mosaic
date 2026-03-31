@@ -9,7 +9,7 @@
    Each JsAtom has a group field for message routing in multi-atom webviews."
   (:require ["jsonc-parser" :as jsonc]
             [nyancad.hipflask.util :refer [json->clj]]
-            [cljs.core.async :refer [go]]
+            [cljs.core.async :refer [go put! promise-chan]]
             reagent.ratom))
 
 (defonce vscode (js/acquireVsCodeApi))
@@ -87,6 +87,29 @@
            (reset! (.-version ja) (.. event -data -version))
            (reset! cache (doc->state @(.-document ja))))))
      ja)))
+
+;; --- Request/response for read-file messages ---
+
+(defonce ^:private pending-requests (atom {}))
+
+(.addEventListener js/window "message"
+  (fn [^js event]
+    (when-let [request-id (.. event -data -requestId)]
+      (when-let [ch (get @pending-requests request-id)]
+        (swap! pending-requests dissoc request-id)
+        (put! ch (or (.. event -data -content) false))))))
+
+(defn send-request!
+  "Post a read-file message to the extension host, return a promise-chan with the response."
+  [filename]
+  (let [request-id (str (random-uuid))
+        ch (promise-chan)]
+    (swap! pending-requests assoc request-id ch)
+    (.postMessage vscode
+      #js{:type "read-file"
+          :filename filename
+          :requestId request-id})
+    ch))
 
 (defn done?
   "Returns a channel that completes immediately.
