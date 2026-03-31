@@ -459,39 +459,43 @@
    ::elements [[:path {:d "M25,25 A25,23 0 0,0 75,25"}]
                [:path {:d "M25,75 A25,23 0 0,1 75,75"}]]})
 
-;; bg [1,1], size 3. Ports: split-1x2-conn
-;; MMI 1x2: multimode interference region with 1 input, 2 outputs
+;; bg [1,3], size 5, 250x250px — ckt-block style rect with port leads
+;; MMI 1x2: Ports: (0,2)→px(25,125), (2,1)→px(125,75), (2,3)→px(125,175)
 (def mmi-1x2-elements
-  {::size 3
-   ::elements [[:lines [[[0.5 1.5] [0.9 1.5]]
-                        [[2.1 0.5] [2.5 0.5]]
-                        [[2.1 2.5] [2.5 2.5]]]]
-               [:rect.outline {:x 0.9 :y 0.5 :width 1.2 :height 2.0}]]})
+  {::size 5
+   ::elements [[:lines [[[0.5 2.5] [1.0 2.5]]
+                        [[2.0 1.5] [2.5 1.5]]
+                        [[2.0 3.5] [2.5 3.5]]]]
+               [:rect.outline {:x 1.0 :y 1.0 :width 1.0 :height 3.0}]]})
 
-;; bg [1,1], size 3. Ports: split-2x2-conn
-;; MMI 2x2: multimode interference region with 2 inputs, 2 outputs
+;; bg [1,3], size 5, 250x250px — ckt-block style rect with port leads
+;; MMI 2x2: Ports: (0,1)→px(25,75), (2,1)→px(125,75), (0,3)→px(25,175), (2,3)→px(125,175)
 (def mmi-2x2-elements
-  {::size 3
-   ::elements [[:lines [[[0.5 0.5] [0.9 0.5]]
-                        [[0.5 2.5] [0.9 2.5]]
-                        [[2.1 0.5] [2.5 0.5]]
-                        [[2.1 2.5] [2.5 2.5]]]]
-               [:rect.outline {:x 0.9 :y 0.5 :width 1.2 :height 2.0}]]})
+  {::size 5
+   ::elements [[:lines [[[0.5 1.5] [1.0 1.5]]
+                        [[0.5 3.5] [1.0 3.5]]
+                        [[2.0 1.5] [2.5 1.5]]
+                        [[2.0 3.5] [2.5 3.5]]]]
+               [:rect.outline {:x 1.0 :y 1.0 :width 1.0 :height 3.0}]]})
 
 ;; bg [1,1], size 3. Ports: split-1x2-conn
 ;; MZI 1x2: flat → wide(peak at x=70) → narrow(x=100) → fan to outputs
 ;; All joins have horizontal tangents for smooth curves
+;; bg [1,3], size 5, 250x250px
+;; Ports: (0,2)→px(25,125) input, (2,0)→px(125,25) top, (2,4)→px(125,225) bottom
+;; Y scaled: y_new = 2*y_old - 25
 (def mzi-1x2-elements
-  {::size 3
-   ::elements [[:path {:d "M25,75 C33,75 38,75 46,75 C56,75 57,26 72,26 C90,26 77,71 100,71 C110,71 120,40 125,25"}]
-               [:path {:d "M25,75 C33,75 38,75 46,75 C56,75 57,124 72,124 C90,124 77,79 100,79 C110,79 120,100 125,125"}]]})
+  {::size 5
+   ::elements [[:path {:d "M25,125 C37,125 33,125 46,124 C60,124 53,76 72,76 C95,76 74,121 100,121 C122,121 110,75 125,75"}]
+               [:path {:d "M25,125 C37,125 33,125 46,126 C60,126 53,174 72,174 C95,174 74,129 100,129 C122,129 110,175 125,175"}]]})
 
-;; bg [1,1], size 3. Ports: split-2x2-conn
-;; MZI 2x2: narrow(coupler) → wide(center) → narrow(coupler)
+;; bg [1,3], size 5, 250x250px
+;; Ports: (0,0)→px(25,25), (2,0)→px(125,25), (0,4)→px(25,225), (2,4)→px(125,225)
+;; Y scaled: y_new = 2*y_old - 25
 (def mzi-2x2-elements
-  {::size 3
-   ::elements [[:path {:d "M25,25 C35,25 40,71 50,71 C60,71 65,25 75,25 C85,25 90,71 100,71 C110,71 115,25 125,25"}]
-               [:path {:d "M25,125 C35,125 40,79 50,79 C60,79 65,125 75,125 C85,125 90,79 100,79 C110,79 115,125 125,125"}]]})
+  {::size 5
+   ::elements [[:path {:d "M25,75 C35,75 40,121 50,121 C60,121 65,75 75,75 C85,75 90,121 100,121 C110,121 115,75 125,75"}]
+               [:path {:d "M25,175 C35,175 40,129 50,129 C60,129 65,175 75,175 C85,175 90,129 100,129 C110,129 115,175 125,175"}]]})
 
 ;; bg [1,1], size 3. Port: (2,1)→px(125,75) right only
 ;; Laser: gain medium (rect) with emission rays
@@ -842,23 +846,43 @@
                              ::sym coupler-ring-elements
                              ::template "{self.name}"
                              ::props []}
-             "mmi-1x2" {::bg [1 1]
-                        ::conn cm/split-1x2-conn
+             "mmi-1x2" {::bg [1 3]
+                        ::conn (cm/ascii-patern
+                                ["   "
+                                 "  2"
+                                 "1  "
+                                 "  3"
+                                 "   "])
                         ::sym mmi-1x2-elements
                         ::template "{self.name}"
                         ::props []}
-             "mmi-2x2" {::bg [1 1]
-                        ::conn cm/split-2x2-conn
+             "mmi-2x2" {::bg [1 3]
+                        ::conn (cm/ascii-patern
+                                ["   "
+                                 "1 2"
+                                 "   "
+                                 "3 4"
+                                 "   "])
                         ::sym mmi-2x2-elements
                         ::template "{self.name}"
                         ::props []}
-             "mzi-1x2" {::bg [1 1]
-                        ::conn cm/split-1x2-conn
+             "mzi-1x2" {::bg [1 3]
+                        ::conn (cm/ascii-patern
+                                ["   "
+                                 "  2"
+                                 "1  "
+                                 "  3"
+                                 "   "])
                         ::sym mzi-1x2-elements
                         ::template "{self.name}"
                         ::props []}
-             "mzi-2x2" {::bg [1 1]
-                        ::conn cm/split-2x2-conn
+             "mzi-2x2" {::bg [1 3]
+                        ::conn (cm/ascii-patern
+                                ["   "
+                                 "1 2"
+                                 "   "
+                                 "3 4"
+                                 "   "])
                         ::sym mzi-2x2-elements
                         ::template "{self.name}"
                         ::props []}
