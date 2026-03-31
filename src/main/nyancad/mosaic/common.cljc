@@ -232,7 +232,9 @@
 
 ; Device type specs
 (def device-types #{"pmos" "nmos" "npn" "pnp" "resistor" "capacitor"
-                    "inductor" "vsource" "isource" "diode" "ckt" "amp"})
+                    "inductor" "vsource" "isource" "diode" "ckt" "amp"
+                    "straight" "bend" "sbend" "taper" "transition"
+                    "terminator" "crossing" "ring-single" "ring-double" "spiral"})
 
 (def schematic-only-types #{"wire" "port" "text"})
 
@@ -337,6 +339,35 @@
    [" P"
     "  "
     " N"]))
+
+;; Photonic connection patterns (horizontal orientation)
+(def horizontal-conn
+  "Two ports, left and right"
+  (ascii-patern
+   ["   "
+    "1 2"
+    "   "]))
+
+(def split-1x2-conn
+  "One port left, two ports right"
+  (ascii-patern
+   ["  2"
+    "1  "
+    "  3"]))
+
+(def split-2x2-conn
+  "Two ports left, two ports right"
+  (ascii-patern
+   ["1 3"
+    "   "
+    "2 4"]))
+
+(def cross-conn
+  "Four ports in a cross pattern"
+  (ascii-patern
+   [" 3 "
+    "1 2"
+    " 4 "]))
 
 (defn pattern-size [pattern]
   (let [size (inc (apply max (mapcat (partial take 2) pattern)))]
@@ -448,6 +479,7 @@
 (def help (r/adapt-react-class icons/QuestionCircle))
 (def external-link (r/adapt-react-class icons/BoxArrowUpRight))
 (def amp-icon (r/adapt-react-class icons/CaretRight))
+(def photonic-icon (r/adapt-react-class icons/Lightbulb))
 (def search (r/adapt-react-class icons/Search))
 (def x-circle (r/adapt-react-class icons/XCircle))
 (def x-circle-fill (r/adapt-react-class icons/XCircleFill))

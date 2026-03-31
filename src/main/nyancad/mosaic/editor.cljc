@@ -341,6 +341,98 @@
                         [[1.5 1.6] [1.5 2.5]]]]
                [:arrow {:x 1.5 :y 1.6 :size 0.2 :rotate 270}]]})
 
+;; Photonic component symbols
+;;
+;; Coordinate reference:
+;;   bg [w,h] → device size = 2 + max(w,h), bg rect at pixel (50,50) size (w*50, h*50)
+;;   Port at grid (gx,gy) → pixel center ((gx+0.5)*50, (gy+0.5)*50)
+;;   Lines use grid coords (auto-scaled by grid-size=50)
+;;   Paths use raw pixel coords in the size*50 px canvas
+
+;; bg [1,1], size 3, 150x150px
+;; Ports: (0,1)→px(25,75)  (2,1)→px(125,75)
+(def straight-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [2.5 1.5]]]]]})
+
+;; bg [1,1], size 3, 150x150px
+;; Ports: (0,1)→px(25,75) left  (1,2)→px(75,125) bottom
+;; Quarter-arc from left port curving down to bottom port
+(def bend-elements
+  {::size 3
+   ::elements [[:path {:d "M25,75 H50 Q75,75 75,100 V125"}]]})
+
+;; bg [1,2], size 4, 200x200px
+;; Ports: (0,1)→px(25,75)  (2,2)→px(125,125)
+;; S-curve connecting offset ports
+(def sbend-elements
+  {::size 4
+   ::elements [[:path {:d "M25,75 C75,75 75,125 125,125"}]]})
+
+;; bg [1,1], size 3, 150x150px
+;; Ports: (0,1)→px(25,75)  (2,1)→px(125,75)
+(def taper-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [1.0 1.5]]
+                        [[2.0 1.5] [2.5 1.5]]]]
+               [:polygon.outline {:points [1.0 1.2 2.0 1.4 2.0 1.6 1.0 1.8]}]]})
+
+;; bg [1,1], size 3, 150x150px
+;; Ports: (0,1)→px(25,75)  (2,1)→px(125,75)
+(def transition-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [1.0 1.5]]
+                        [[2.0 1.5] [2.5 1.5]]]]
+               [:polygon.outline {:points [1.0 1.35 1.5 1.45 2.0 1.35
+                                           2.0 1.65 1.5 1.55 1.0 1.65]}]]})
+
+;; bg [1,1], size 3, 150x150px
+;; Port: (0,1)→px(25,75) only
+(def terminator-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [1.3 1.5]]]]
+               [:polygon.outline {:points [1.3 1.3 1.7 1.5 1.3 1.7]}]]})
+
+;; bg [1,1], size 3, 150x150px
+;; Ports: (0,1)→px(25,75)  (2,1)→px(125,75)  (1,0)→px(75,25)  (1,2)→px(75,125)
+(def crossing-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [2.5 1.5]]
+                        [[1.5 0.5] [1.5 2.5]]]]]})
+
+;; bg [1,2], size 4, 200x200px
+;; bg rect at (50,50) size 50x100, center at px(75,100) = grid(1.5,2.0)
+;; Ring centered on bg, waveguide passes below ring
+;; Ports: (0,2)→px(25,125)  (2,2)→px(125,125)
+(def ring-single-elements
+  {::size 4
+   ::elements [[:lines [[[0.5 2.5] [2.5 2.5]]]]
+               [:circle.outline {:cx 1.5 :cy 2.0 :r 0.45}]]})
+
+;; bg [1,2], size 4, 200x200px
+;; Two waveguides top and bottom, ring centered on bg between them
+;; Ports: (0,1)→px(25,75)  (2,1)→px(125,75)  (0,2)→px(25,125)  (2,2)→px(125,125)
+(def ring-double-elements
+  {::size 4
+   ::elements [[:lines [[[0.5 1.5] [2.5 1.5]]
+                        [[0.5 2.5] [2.5 2.5]]]]
+               [:circle.outline {:cx 1.5 :cy 2.0 :r 0.45}]]})
+
+;; bg [1,1], size 3, 150x150px
+;; Ports: (0,1)→px(25,75)  (2,1)→px(125,75)
+;; Spiral: alternating semicircular arcs spiraling inward
+;; Left lead to spiral start at px(50,75), right lead from px(100,75)
+(def spiral-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [1.0 1.5]]]]
+               [:path {:d (str "M50,75 "
+                               "A25,25 0 0,0 100,75 "   ;; top arc r=25
+                               "A20,20 0 0,0 60,75 "    ;; bottom arc r=20
+                               "A15,15 0 0,0 90,75 "    ;; top arc r=15
+                               "A10,10 0 0,0 70,75")}]  ;; bottom arc r=10
+               [:path {:d "M70,75 H125" :opacity 0.3}]  ;; translucent exit to port
+               ]})
+
 (defn circuit-shape [k v]
   (let [model (:model v)
         ports (get-in @modeldb [(cm/model-key model) :ports])
@@ -583,6 +675,72 @@
                       ::conn cm/twoport-conn
                       ::sym diode-elements
                       ::props []}
+             ;; Photonic components
+             "straight" {::bg [1 1]
+                         ::conn cm/horizontal-conn
+                         ::sym straight-elements
+                         ::template "{self.name}"
+                         ::props []}
+             "bend" {::bg [1 1]
+                     ::conn (cm/ascii-patern
+                             ["   "
+                              "1  "
+                              " 2 "])
+                     ::sym bend-elements
+                     ::template "{self.name}"
+                     ::props []}
+             "sbend" {::bg [1 2]
+                      ::conn (cm/ascii-patern
+                              ["   "
+                               "1  "
+                               "  2"])
+                      ::sym sbend-elements
+                      ::template "{self.name}"
+                      ::props []}
+             "taper" {::bg [1 1]
+                      ::conn cm/horizontal-conn
+                      ::sym taper-elements
+                      ::template "{self.name}"
+                      ::props []}
+             "transition" {::bg [1 1]
+                           ::conn cm/horizontal-conn
+                           ::sym transition-elements
+                           ::template "{self.name}"
+                           ::props []}
+             "terminator" {::bg [1 1]
+                           ::conn (cm/ascii-patern
+                                   ["   "
+                                    "1  "
+                                    "   "])
+                           ::sym terminator-elements
+                           ::template "{self.name}"
+                           ::props []}
+             "crossing" {::bg [1 1]
+                         ::conn cm/cross-conn
+                         ::sym crossing-elements
+                         ::template "{self.name}"
+                         ::props []}
+             "ring-single" {::bg [1 2]
+                            ::conn (cm/ascii-patern
+                                    ["   "
+                                     "   "
+                                     "1 2"])
+                            ::sym ring-single-elements
+                            ::template "{self.name}"
+                            ::props []}
+             "ring-double" {::bg [1 2]
+                            ::conn (cm/ascii-patern
+                                    ["   "
+                                     "1 2"
+                                     "3 4"])
+                            ::sym ring-double-elements
+                            ::template "{self.name}"
+                            ::props []}
+             "spiral" {::bg [1 1]
+                       ::conn cm/horizontal-conn
+                       ::sym spiral-elements
+                       ::template "{self.name}"
+                       ::props []}
              "wire" {::bg []
                      ::conn []
                      ::sym wire-sym
@@ -598,16 +756,18 @@
                      ::template "Operating Point:\n{res.op}"
                      ::props []}})
 
-(defn rotate-shape [shape [a b c d e f] devx, devy]
-  (let [size (cm/pattern-size shape)
-        mid (- (/ size 2) 0.5)]
-    (map (fn [[px py _]]
-           (let [x (- px mid)
-                 y (- py mid)
-                 nx (+ (* a x) (* c y) e)
-                 ny (+ (* b x) (* d y) f)]
-             [(math/round (+ devx nx mid))
-              (math/round (+ devy ny mid))])) shape)))
+(defn rotate-shape
+  ([shape transform devx devy]
+   (rotate-shape shape (cm/pattern-size shape) transform devx devy))
+  ([shape size [a b c d e f] devx devy]
+   (let [mid (- (/ size 2) 0.5)]
+     (map (fn [[px py _]]
+            (let [x (- px mid)
+                  y (- py mid)
+                  nx (+ (* a x) (* c y) e)
+                  ny (+ (* b x) (* d y) f)]
+              [(math/round (+ devx nx mid))
+               (math/round (+ devy ny mid))])) shape))))
 
 (defn exrange [start width]
   (next (take-while #(not= % (+ start width))
@@ -632,11 +792,14 @@
 (defn builtin-locations [{:keys [:x :y :type :transform]}]
   (let [mod (get models type)
         conn (::conn mod)
-        [w h] (::bg mod)]
-    [(rotate-shape conn transform x y)
+        [w h] (::bg mod)
+        size (if (and (number? w) (number? h))
+               (+ 2 (max w h))
+               (cm/pattern-size conn))]
+    [(rotate-shape conn size transform x y)
      (rotate-shape (for [x (range w) y (range h)]
                      [(inc x) (inc y) "%"])
-                   transform x y)]))
+                   size transform x y)]))
 
 (defn circuit-locations [{:keys [:x :y :model :transform :type]}]
   (let [mod (get @modeldb (cm/model-key model))
@@ -1175,18 +1338,21 @@
       (eraser-drag k e))))
 
 (defn get-model [layer model k v]
-  (let [m (-> models
-              (get (:type model)
-                   {::bg #'circuit-shape
-                    ::conn #'circuit-conn
-                    ::sym #'circuit-sym})
-              (get layer))]
+  (let [model-entry (get models (:type model)
+                         {::bg #'circuit-shape
+                          ::conn #'circuit-conn
+                          ::sym #'circuit-sym})
+        m (get model-entry layer)]
     ;; (assert m "no model")
     (cond
       (fn? m) ^{:key k} [m k v]
       (map? m) ^{:key k} [render-symbol-data m k v]
       (= layer ::bg) ^{:key k} [draw-background m k v]
-      (= layer ::conn) ^{:key k} [draw-pattern (cm/pattern-size m) m port k v]
+      (= layer ::conn) (let [[w h] (::bg model-entry)
+                             size (if (and (number? w) (number? h))
+                                    (+ 2 (max w h))
+                                    (cm/pattern-size m))]
+                          ^{:key k} [draw-pattern size m port k v])
       :else ^{:key k} [(fn [k _v] (println "invalid model for" k))])))
 
 (defn end-ui [bg? selected dx dy]
@@ -1667,7 +1833,48 @@
     [:button {:title "Add amplifier [a]"
               :class (device-active "amp")
               :on-pointer-up #(add-device "amp" (cm/viewbox-coord %))}
-     [cm/amp-icon]]]])
+     [cm/amp-icon]]]
+   [variant-tray
+    [:button {:title "Add straight waveguide"
+              :class (device-active "straight")
+              :on-pointer-up #(add-device "straight" (cm/viewbox-coord %))}
+     [cm/photonic-icon]]
+    [:button {:title "Add bend"
+              :class (device-active "bend")
+              :on-pointer-up #(add-device "bend" (cm/viewbox-coord %))}
+     "↱"]
+    [:button {:title "Add S-bend"
+              :class (device-active "sbend")
+              :on-pointer-up #(add-device "sbend" (cm/viewbox-coord %))}
+     "∿"]
+    [:button {:title "Add taper"
+              :class (device-active "taper")
+              :on-pointer-up #(add-device "taper" (cm/viewbox-coord %))}
+     "⊳"]
+    [:button {:title "Add transition"
+              :class (device-active "transition")
+              :on-pointer-up #(add-device "transition" (cm/viewbox-coord %))}
+     "⋈"]
+    [:button {:title "Add terminator"
+              :class (device-active "terminator")
+              :on-pointer-up #(add-device "terminator" (cm/viewbox-coord %))}
+     "▸"]
+    [:button {:title "Add crossing"
+              :class (device-active "crossing")
+              :on-pointer-up #(add-device "crossing" (cm/viewbox-coord %))}
+     "✚"]
+    [:button {:title "Add ring resonator"
+              :class (device-active "ring-single")
+              :on-pointer-up #(add-device "ring-single" (cm/viewbox-coord %))}
+     "◎"]
+    [:button {:title "Add double ring resonator"
+              :class (device-active "ring-double")
+              :on-pointer-up #(add-device "ring-double" (cm/viewbox-coord %))}
+     "⊚"]
+    [:button {:title "Add spiral"
+              :class (device-active "spiral")
+              :on-pointer-up #(add-device "spiral" (cm/viewbox-coord %))}
+     "🌀"]]])
 
 (defn schematic-elements [schem]
   [:<>
