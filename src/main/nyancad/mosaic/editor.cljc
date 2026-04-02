@@ -108,7 +108,7 @@
   (when-let [st (cm/redo undotree)]
     (restore st)))
 
-(declare drag-start drag-end eraser-drag models on-pointer-down-element on-pointer-move-element on-pointer-up-bg double-click device-template)
+(declare drag-start drag-end eraser-drag models on-pointer-down-element on-pointer-move-element on-pointer-up-bg double-click device-template circuit-designator)
 
 (defn device [size k v & elements]
   (assert (js/isFinite size))
@@ -118,7 +118,7 @@
                     :style {:transform (.toString (.translate (transform (:transform v cm/IV)) (* (:x v) grid-size) (* (:y v) grid-size)))
                             :transform-origin (str (* (+ (:x v) (/ size 2)) grid-size) "px "
                                                    (* (+ (:y v) (/ size 2)) grid-size) "px")}
-                    :class [(:type v) (:variant v) (when (contains? @selected k) :selected)]}]
+                    :class [(:type v) (:variant v) (::category (get models (:type v))) (when (contains? @selected k) :selected)]}]
         elements))
 
 (defn port [x y]
@@ -142,13 +142,15 @@
    (for [arc arcs]
      ^{:key arc} [:polyline {:points (map #(* % grid-size) (flatten arc))}])])
 
-(defn arrow [x y size rotate]
-  [:polygon.arrow {:transform (str "rotate(" rotate " " (* x grid-size) " " (* y grid-size) ")")
-                   :points
-                   (map #(* % grid-size)
-                        [x y
-                         (+ x size) (+ y size)
-                         (+ x size) (- y size)])}])
+(defn arrow
+  ([x y size rotate] (arrow x y size size rotate))
+  ([x y width height rotate]
+    [:polygon.arrow {:transform (str "rotate(" rotate " " (* x grid-size) " " (* y grid-size) ")")
+                     :points
+                     (map #(* % grid-size)
+                          [x y
+                           (+ x width) (+ y height)
+                           (+ x width) (- y height)])}]))
 
 (def ^:private scale-keys #{:x :y :width :height :cx :cy :r})
 
@@ -215,17 +217,10 @@
      [:text
       content]]))
 
-(defn device-template [dev width]
-  (when-let [text (get dev :template
-                       (::template (get models (:type dev))))]
-    [:text.identifier
-     {:transform (-> (:transform dev)
-                     transform
-                     (.translate (* grid-size (/ width -2)) (* grid-size (/ width -2)))
-                     .inverse
-                     (.translate (* grid-size 0.6) (* grid-size -0.25))
-                     .toString)}
-     (schem-template dev text)]))
+(defn device-template [dev size]
+  (let [bg (::bg (get models (:type dev)))
+        [bg-w bg-h] (if (vector? bg) bg [1 1])]
+    (circuit-designator dev size bg-w bg-h)))
 
 (defn port-sym [key label]
   [device 1 key label
@@ -334,12 +329,36 @@
                [:text {:x 75 :y 70 :text-anchor "middle"} "+"]
                [:text {:x 75 :y 90 :text-anchor "middle"} "−"]]})
 
-(def diode-elements
-  {::size 3
-   ::elements [[:lines [[[1.5 0.5] [1.5 1.4]]
-                        [[1.3 1.6] [1.7 1.6]]
-                        [[1.5 1.6] [1.5 2.5]]]]
-               [:arrow {:x 1.5 :y 1.6 :size 0.2 :rotate 270}]]})
+(defn diode-sym [k v]
+  (let [shape [[[1.5 0.5] [1.5 1.4]]
+               [[1.3 1.7] [1.7 1.7]]
+               [[1.5 1.7] [1.5 2.5]]]
+        tp (:type v)]
+    [device 3 k v
+     [lines shape]
+     [device-template v 3]
+     [arrow 1.5 1.7 0.4 0.2 270]
+     ;; LED: light arrows pointing away from diode (lower-right, ~27° from horizontal)
+     (when (= tp "led")
+       [:<>
+        [lines [[[1.75 1.375] [1.88 1.44]]]]
+        [arrow 1.93 1.465 0.05 -153]
+        [lines [[[1.75 1.575] [1.88 1.64]]]]
+        [arrow 1.93 1.665 0.05 -153]])
+     ;; Photodiode: light arrows pointing toward diode (upper-left, ~27° from horizontal)
+     (when (= tp "photodiode")
+       [:<>
+        [lines [[[1.93 1.45] [1.78 1.375]]]]
+        [arrow 1.72 1.35 0.05 27]
+        [lines [[[1.93 1.65] [1.78 1.575]]]]
+        [arrow 1.72 1.55 0.05 27]])
+     ;; Optical butt-coupling: line with T-cap at the device facet
+     (when (or (= tp "led") (= tp "photodiode"))
+       [lines [[[2.5 1.5] [2.0 1.5]]
+               [[2.0 1.3] [2.0 1.7]]]])
+     ;; Modulator: optical transmission line through the diode
+     (when (= tp "modulator")
+       [lines [[[0.5 1.5] [2.5 1.5]]]])]))
 
 ;; Photonic component symbols
 ;;
@@ -533,14 +552,6 @@
                                "V162.5 "
                                "A12.5,12.5 0 0,0 125,175")}]]})
 
-;; bg [1,1], size 3. Port: (2,1)→px(125,75) right only
-;; Laser: gain medium (rect) with emission rays
-(def laser-elements
-  {::size 3
-   ::elements [[:rect.outline {:x 0.6 :y 1.0 :width 0.8 :height 1.0}]
-               [:lines [[[1.4 1.5] [2.5 1.5]]
-                        [[1.6 1.3] [1.75 1.15]]
-                        [[1.6 1.7] [1.75 1.85]]]]]})
 
 ;; bg [1,1], size 3. Port: (0,1)→px(25,75) left only
 ;; Grating coupler: narrow concentric arcs (~60°) opening right, wifi-style
@@ -593,7 +604,7 @@
         [dx dy] (apply max-key (fn [[x y]] (- x y)) rotated)
         desig-offset-x (+ dx 0.1)
         desig-offset-y (+ dy 0.25)]
-    (when-let [text (get v :template "{self.name}")]
+    (when-let [text (get v :template (get-in models [(:type v) ::template] "{self.name}"))]
       [:text.identifier
        {:transform (-> (:transform v) transform
                        (.translate (* grid-size (/ size -2)) (* grid-size (/ size -2)))
@@ -746,41 +757,49 @@
 (def models {"pmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
+                     ::category "pchan"
                      ::template "{self.name}"
                      ::props []}
              "nmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
+                     ::category "nchan"
                      ::template "{self.name}"
                      ::props []}
              "npn" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
+                    ::category "nchan"
                     ::template "{self.name}"
                     ::props []}
              "pnp" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
+                    ::category "pchan"
                     ::template "{self.name}"
                     ::props []}
              "resistor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
                          ::sym resistor-elements
+                         ::category "passive"
                          ::template "{self.name}: {self.props.resistance}Ω"
                          ::props [{:name "resistance" :tooltip "Resistance value" :spice "resistance"}]}
              "capacitor" {::bg cm/twoport-bg
                           ::conn cm/twoport-conn
                           ::sym capacitor-elements
+                          ::category "passive"
                           ::template "{self.name}: {self.props.capacitance}F"
                           ::props [{:name "capacitance" :tooltip "Capacitance value" :spice "capacitance"}]}
              "inductor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
                          ::sym inductor-elements
+                         ::category "passive"
                          ::template "{self.name}: {self.props.inductance}H"
                          ::props [{:name "inductance" :tooltip "Inductance value" :spice "inductance"}]}
              "vsource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
                         ::sym vsource-elements
+                        ::category "source"
                         ::template "{self.name}: {self.props.dc}V"
                         ::props [{:name "dc" :tooltip "DC voltage" :spice "dc"}
                                  {:name "ac" :tooltip "AC voltage" :spice "ac"}
@@ -788,18 +807,48 @@
              "isource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
                         ::sym isource-elements
+                        ::category "source"
                         ::template "{self.name}: {self.props.dc}I"
                         ::props [{:name "dc" :tooltip "DC current" :spice "dc"}
                                  {:name "ac" :tooltip "AC current" :spice "ac"}
                                  {:name "tran" :tooltip "Transient current" :spice "tran"}]}
              "diode" {::bg cm/twoport-bg
                       ::conn cm/twoport-conn
-                      ::sym diode-elements
+                      ::sym #'diode-sym
+                      ::category "passive"
                       ::props []}
+             "led" {::bg [1 1]
+                    ::conn (cm/ascii-patern
+                            [" P "
+                             "  O"
+                             " N "])
+                    ::sym #'diode-sym
+                    ::category "photonic-active"
+                    ::template "{self.name}"
+                    ::props []}
+             "photodiode" {::bg [1 1]
+                           ::conn (cm/ascii-patern
+                                   [" P "
+                                    "  O"
+                                    " N "])
+                           ::sym #'diode-sym
+                           ::category "photonic-active"
+                           ::template "{self.name}"
+                           ::props []}
+             "modulator" {::bg [1 1]
+                          ::conn (cm/ascii-patern
+                                  [" P "
+                                   "1 2"
+                                   " N "])
+                          ::sym #'diode-sym
+                          ::category "photonic-active"
+                          ::template "{self.name}"
+                          ::props []}
              ;; Photonic components
              "straight" {::bg [1 1]
                          ::conn cm/horizontal-conn
                          ::sym straight-elements
+                         ::category "photonic"
                          ::template "{self.name}"
                          ::props []}
              "bend" {::bg [1 1]
@@ -808,6 +857,7 @@
                               "1  "
                               " 2 "])
                      ::sym bend-elements
+                     ::category "photonic"
                      ::template "{self.name}"
                      ::props []}
              "sbend" {::bg [1 2]
@@ -816,16 +866,19 @@
                                "1  "
                                "  2"])
                       ::sym sbend-elements
+                      ::category "photonic"
                       ::template "{self.name}"
                       ::props []}
              "taper" {::bg [1 1]
                       ::conn cm/horizontal-conn
                       ::sym taper-elements
+                      ::category "photonic"
                       ::template "{self.name}"
                       ::props []}
              "transition" {::bg [1 1]
                            ::conn cm/horizontal-conn
                            ::sym transition-elements
+                           ::category "photonic"
                            ::template "{self.name}"
                            ::props []}
              "terminator" {::bg [1 1]
@@ -834,11 +887,13 @@
                                     "1  "
                                     "   "])
                            ::sym terminator-elements
+                           ::category "photonic"
                            ::template "{self.name}"
                            ::props []}
              "crossing" {::bg [1 1]
                          ::conn cm/cross-conn
                          ::sym crossing-elements
+                         ::category "photonic"
                          ::template "{self.name}"
                          ::props []}
              "ring-single" {::bg [1 2]
@@ -847,6 +902,7 @@
                                      "   "
                                      "1 2"])
                             ::sym ring-single-elements
+                            ::category "photonic"
                             ::template "{self.name}"
                             ::props []}
              "ring-double" {::bg [1 2]
@@ -855,11 +911,13 @@
                                      "1 2"
                                      "3 4"])
                             ::sym ring-double-elements
+                            ::category "photonic"
                             ::template "{self.name}"
                             ::props []}
              "spiral" {::bg [1 1]
                        ::conn cm/horizontal-conn
                        ::sym spiral-elements
+                       ::category "photonic"
                        ::template "{self.name}"
                        ::props []}
              "splitter-1x2" {::bg [1 3]
@@ -870,6 +928,7 @@
                                       "  3"
                                       "   "])
                              ::sym splitter-1x2-elements
+                             ::category "photonic"
                              ::template "{self.name}"
                              ::props []}
              "coupler" {::bg [1 2]
@@ -878,6 +937,7 @@
                                  "1 2"
                                  "3 4"])
                         ::sym coupler-elements
+                        ::category "photonic"
                         ::template "{self.name}"
                         ::props []}
              "coupler-ring" {::bg #'coupler-ring-bg
@@ -885,6 +945,7 @@
                                      ["12"
                                       "34"])
                              ::sym coupler-ring-elements
+                             ::category "photonic"
                              ::template "{self.name}"
                              ::props []}
              "mmi-1x2" {::bg [1 3]
@@ -895,6 +956,7 @@
                                  "  3"
                                  "   "])
                         ::sym mmi-1x2-elements
+                        ::category "photonic"
                         ::template "{self.name}"
                         ::props []}
              "mmi-2x2" {::bg [1 3]
@@ -905,6 +967,7 @@
                                  "3 4"
                                  "   "])
                         ::sym mmi-2x2-elements
+                        ::category "photonic"
                         ::template "{self.name}"
                         ::props []}
              "mzi-1x2" {::bg [1 3]
@@ -915,6 +978,7 @@
                                  "  3"
                                  "   "])
                         ::sym mzi-1x2-elements
+                        ::category "photonic"
                         ::template "{self.name}"
                         ::props []}
              "mzi-2x2" {::bg [1 3]
@@ -925,22 +989,16 @@
                                  "3 4"
                                  "   "])
                         ::sym mzi-2x2-elements
+                        ::category "photonic"
                         ::template "{self.name}"
                         ::props []}
-             "laser" {::bg [1 1]
-                      ::conn (cm/ascii-patern
-                              ["   "
-                               "  1"
-                               "   "])
-                      ::sym laser-elements
-                      ::template "{self.name}"
-                      ::props []}
-             "grating-coupler" {::bg [1 1]
+"grating-coupler" {::bg [1 1]
                                 ::conn (cm/ascii-patern
                                         ["   "
                                          "1  "
                                          "   "])
                                 ::sym grating-coupler-elements
+                                ::category "source"
                                 ::template "{self.name}"
                                 ::props []}
              "wire" {::bg []
@@ -2109,10 +2167,18 @@
               :class (device-active "mzi-2x2")
               :on-pointer-up #(add-device "mzi-2x2" (cm/viewbox-coord %))}
      "◈"]
-    [:button {:title "Add laser"
-              :class (device-active "laser")
-              :on-pointer-up #(add-device "laser" (cm/viewbox-coord %))}
-     "☀"]
+    [:button {:title "Add LED/laser diode"
+              :class (device-active "led")
+              :on-pointer-up #(add-device "led" (cm/viewbox-coord %))}
+     "💡"]
+    [:button {:title "Add photodiode"
+              :class (device-active "photodiode")
+              :on-pointer-up #(add-device "photodiode" (cm/viewbox-coord %))}
+     "👁"]
+    [:button {:title "Add PN modulator"
+              :class (device-active "modulator")
+              :on-pointer-up #(add-device "modulator" (cm/viewbox-coord %))}
+     "⇌"]
     [:button {:title "Add grating coupler"
               :class (device-active "grating-coupler")
               :on-pointer-up #(add-device "grating-coupler" (cm/viewbox-coord %))}

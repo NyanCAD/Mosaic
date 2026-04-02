@@ -232,12 +232,13 @@
 
 ; Device type specs
 (def device-types #{"pmos" "nmos" "npn" "pnp" "resistor" "capacitor"
-                    "inductor" "vsource" "isource" "diode" "ckt" "amp"
+                    "inductor" "vsource" "isource" "diode" "led" "photodiode" "modulator"
+                    "ckt" "amp"
                     "straight" "bend" "sbend" "taper" "transition"
                     "terminator" "crossing" "ring-single" "ring-double" "spiral"
                     "splitter-1x2" "coupler" "coupler-ring"
                     "mmi-1x2" "mmi-2x2" "mzi-1x2" "mzi-2x2"
-                    "laser" "grating-coupler"})
+                    "grating-coupler"})
 
 (def schematic-only-types #{"wire" "port" "text"})
 

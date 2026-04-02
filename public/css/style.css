@@ -948,30 +948,34 @@ rect.select {
     fill: rgb(229, 216, 243) !important;
 }
 
-.tetris g.device.nmos rect.tetris,
-.tetris g.device.npn rect.tetris {
+.tetris g.device.nchan rect.tetris {
     fill: rgb(216, 236, 243);
     stroke: rgb(216, 236, 243);
 }
 
-.tetris g.device.pmos rect.tetris,
-.tetris g.device.pnp rect.tetris {
+.tetris g.device.pchan rect.tetris {
     fill: rgb(243, 231, 216);
     stroke: rgb(243, 231, 216);
 }
 
-.tetris g.device.capacitor rect.tetris,
-.tetris g.device.inductor rect.tetris,
-.tetris g.device.resistor rect.tetris,
-.tetris g.device.diode rect.tetris {
+.tetris g.device.passive rect.tetris {
     fill: rgb(216, 243, 226);
     stroke: rgb(216, 243, 226);
 }
 
-.tetris g.device.vsource rect.tetris,
-.tetris g.device.isource rect.tetris {
+.tetris g.device.source rect.tetris {
     fill: rgb(243, 243, 216);
     stroke: rgb(243, 243, 216);
+}
+
+.tetris g.device.photonic rect.tetris {
+    fill: rgb(216, 243, 240);
+    stroke: rgb(216, 243, 240);
+}
+
+.tetris g.device.photonic-active rect.tetris {
+    fill: rgb(243, 224, 216);
+    stroke: rgb(243, 224, 216);
 }
 
 .tetris g.device.port polyline {
@@ -1094,8 +1098,8 @@ rect.select {
 /* Subcircuit (ckt) and amplifier (amp) styling - tetris theme */
 .tetris g.device.ckt rect.tetris,
 .tetris g.device.amp rect.tetris {
-    fill: rgb(243, 238, 216);
-    stroke: rgb(243, 238, 216);
+    fill: rgb(243, 243, 216);
+    stroke: rgb(243, 243, 216);
 }
 
 .tetris g.device.ckt .outline.placeholder,
