@@ -103,13 +103,13 @@ html {
     color: white;
 }
 
-.mosaic-app .buttongroup.primary > button,
+.mosaic-app .buttongroup.primary>button,
 .mosaic-app .buttongroup summary::after {
     color: white;
     border-color: white;
 }
 
-.mosaic-app .buttongroup.primary > button:disabled {
+.mosaic-app .buttongroup.primary>button:disabled {
     color: grey;
 }
 
@@ -124,14 +124,14 @@ html {
     left: 0px;
 }
 
-.mosaic-app .buttongroup details > button {
+.mosaic-app .buttongroup details>button {
     position: absolute;
     left: 0;
     bottom: -100%;
     width: 100%;
 }
 
-.mosaic-app .buttongroup > button {
+.mosaic-app .buttongroup>button {
     background: none;
     box-shadow: none;
 }
@@ -155,12 +155,12 @@ html {
     transition: transform 100ms;
 }
 
-.mosaic-app details[open] > summary::after {
+.mosaic-app details[open]>summary::after {
     transform: rotate(45deg);
 }
 
 /* Special cases for details triangles with different backgrounds */
-.mosaic-app .cellsel details[open] > summary::after {
+.mosaic-app .cellsel details[open]>summary::after {
     border-color: white;
 }
 
@@ -315,22 +315,27 @@ html {
 .syncstatus.active svg {
     animation: 1.5s linear infinite spinner;
 }
+
 .syncstatus.done {
     animation: 1.5s linear fadeout;
     opacity: 0;
 }
+
 @keyframes spinner {
     from {
         transform: rotate(0deg);
     }
+
     to {
         transform: rotate(360deg);
     }
 }
+
 @keyframes fadeout {
     from {
         opacity: 1;
     }
+
     to {
         opacity: 0;
     }
@@ -371,21 +376,26 @@ html {
     border-right: 1px solid #e7e7e7;
     overflow: hidden;
 }
-.mosaic-libman .libraries > * {
+
+.mosaic-libman .libraries>* {
     padding: 1em;
 }
+
 .mosaic-libman .libraries .dbsel {
     flex-grow: 1;
 }
+
 .mosaic-libman .schematics {
     grid-area: schematics;
     display: flex;
     flex-direction: column;
 }
+
 .mosaic-libman .cellsel {
     flex-grow: 1;
     overflow: auto;
 }
+
 .mosaic-libman .cellsel details {
     margin: 0.5em 0;
 }
@@ -434,7 +444,7 @@ html {
     justify-content: center;
 }
 
-.mosaic-libman .proppane .preview > button {
+.mosaic-libman .proppane .preview>button {
     position: absolute;
     top: 10px;
     right: 10px;
@@ -476,7 +486,8 @@ html {
 
 .mosaic-libman .properties input[type="checkbox"] {
     width: auto;
-    justify-self: start; /* Left align checkbox within its grid cell */
+    justify-self: start;
+    /* Left align checkbox within its grid cell */
 }
 
 .mosaic-app .properties h4 {
@@ -484,7 +495,7 @@ html {
     margin: 0.5em 0 0;
 }
 
-.mosaic-libman .properties > button {
+.mosaic-libman .properties>button {
     grid-column: 1 / -1;
     justify-self: start;
 }
@@ -493,17 +504,19 @@ html {
 .model-selector-popup input[type="radio"] {
     display: none;
 }
-.mosaic-libman input[type="radio"] + label,
+
+.mosaic-libman input[type="radio"]+label,
 .mosaic-libman .remote-model,
-.model-selector-popup input[type="radio"] + label {
+.model-selector-popup input[type="radio"]+label {
     display: block;
     padding: 10px 15px;
     margin-top: 5px;
     cursor: pointer;
 }
-.mosaic-libman input[type="radio"]:checked + label,
+
+.mosaic-libman input[type="radio"]:checked+label,
 .mosaic-libman .remote-model:active,
-.model-selector-popup input[type="radio"]:checked + label {
+.model-selector-popup input[type="radio"]:checked+label {
     background-color: rgba(0, 0, 0, 0.041);
     border-radius: 7px;
 }
@@ -541,29 +554,34 @@ html {
     overflow: hidden;
     margin-left: 7px;
 }
+
 .mosaic-libman details[open] .detailbody,
 .model-selector-popup details[open] .detailbody {
     max-height: 10000px;
 }
+
 .mosaic-libman details summary {
     list-style-type: none;
 }
+
 .mosaic-libman .cellsel details summary,
 .model-selector-popup details summary {
     padding: 10px 15px;
     border-radius: 7px;
     cursor: pointer;
 }
+
 .mosaic-libman .dbprops details summary {
     padding: 1em;
     cursor: pointer;
 }
+
 .mosaic-libman .dbprops details form {
     margin: 0 1em 1em 1em;
 }
 
-.mosaic-libman .cellsel details[open] > summary,
-.model-selector-popup details[open] > summary {
+.mosaic-libman .cellsel details[open]>summary,
+.model-selector-popup details[open]>summary {
     background: #0e1a32 0% 0% no-repeat padding-box;
     color: white;
 }
@@ -578,6 +596,7 @@ html {
 .mosaic-libman .empty {
     margin: 1em 0;
 }
+
 /* editor */
 .mosaic-editor * {
     margin: 0;
@@ -625,11 +644,13 @@ html {
     background-position: 15px 50%;
     padding-left: 65px;
 }
+
 .mosaic-container .menu .primary {
     display: flex;
     justify-content: flex-start;
     flex-wrap: wrap;
 }
+
 .mosaic-container .menu .secondary {
     display: flex;
     justify-content: flex-end;
@@ -645,7 +666,8 @@ html {
     position: relative;
     flex: 1;
     overflow: hidden;
-    z-index: 1; /* Lower z-index than notebook */
+    z-index: 1;
+    /* Lower z-index than notebook */
 }
 
 .mosaic-container .devicetray {
@@ -682,6 +704,7 @@ html {
     overflow-x: hidden;
     box-sizing: border-box;
 }
+
 .mosaic-container .sidebar h1 {
     background-color: #0e1a32;
     color: white;
@@ -693,6 +716,7 @@ html {
         sans-serif;
     letter-spacing: 0.7px;
 }
+
 .mosaic-container .sidebar .properties {
     padding: 20px;
 }
@@ -727,17 +751,19 @@ html {
 .mosaic-container .chrome button:hover {
     background-color: lightgray;
 }
+
 .mosaic-container .chrome a:active,
 .mosaic-container .chrome a.active,
 .mosaic-container .chrome button.active,
-.mosaic-container .chrome input[type="radio"]:checked + label {
+.mosaic-container .chrome input[type="radio"]:checked+label {
     background-color: #0e1a32;
     color: white;
 }
+
 .mosaic-container .chrome a:active svg,
 .mosaic-container .chrome a.active svg,
 .mosaic-container .chrome button.active svg,
-.mosaic-container .chrome input[type="radio"]:checked + label svg {
+.mosaic-container .chrome input[type="radio"]:checked+label svg {
     fill: white;
 }
 
@@ -751,17 +777,21 @@ html {
     height: 25px;
     display: inline-block;
 }
+
 .mosaic-container .devicetray svg {
     width: 25px;
     height: 25px;
 }
+
 .mosaic-container .devicetray details {
     position: relative;
 }
+
 .mosaic-container .devicetray summary {
     list-style-type: none;
     cursor: pointer;
 }
+
 .mosaic-container .devicetray details summary::after {
     /* Reset conflicting positioning from global rule */
     position: absolute;
@@ -775,16 +805,20 @@ html {
 
     /* Override padding and rotation for devicetray */
     padding: 2px;
-    transform: rotate(45deg); /* closed = down ▼ */
+    transform: rotate(45deg);
+    /* closed = down ▼ */
 }
 
 .mosaic-container .devicetray details[open] summary::after {
-    transform: rotate(-45deg); /* open = right ▶ */
+    transform: rotate(-45deg);
+    /* open = right ▶ */
 }
 
 .mosaic-container .devicetray details summary:has(button.active)::after {
-    border-color: white; /* white triangle when button is active */
+    border-color: white;
+    /* white triangle when button is active */
 }
+
 .mosaic-container .devicetray details .tray {
     position: absolute;
     top: 0;
@@ -797,6 +831,7 @@ html {
     border-radius: 5px;
     z-index: 0;
 }
+
 .mosaic-container .devicetray details .tray::before {
     content: "";
     position: absolute;
@@ -817,6 +852,7 @@ html {
     grid-auto-flow: row;
     grid-gap: 0.8em;
 }
+
 .mosaic-editor .properties label {
     grid-column: labels;
     grid-row: auto;
@@ -872,8 +908,13 @@ polyline.wirebb {
     pointer-events: stroke;
     stroke-linejoin: round;
 }
+
 g.wire:hover polyline.wirebb {
     stroke: #00000008;
+}
+
+g.wire.photonic polyline.wirebb {
+    stroke: rgba(216, 243, 240, 0.2);
 }
 
 text {
@@ -934,7 +975,8 @@ rect.select {
 .tetris rect.tetris {
     fill: rgb(238, 238, 238);
     stroke: rgb(238, 238, 238);
-    stroke-width: calc(10px * 0.8284271247461903); /* 2*rx*(sqrt(2)-1) */
+    stroke-width: calc(10px * 0.8284271247461903);
+    /* 2*rx*(sqrt(2)-1) */
     rx: 10px;
 }
 
@@ -948,30 +990,34 @@ rect.select {
     fill: rgb(229, 216, 243) !important;
 }
 
-.tetris g.device.nmos rect.tetris,
-.tetris g.device.npn rect.tetris {
+.tetris g.device.nchan rect.tetris {
     fill: rgb(216, 236, 243);
     stroke: rgb(216, 236, 243);
 }
 
-.tetris g.device.pmos rect.tetris,
-.tetris g.device.pnp rect.tetris {
+.tetris g.device.pchan rect.tetris {
     fill: rgb(243, 231, 216);
     stroke: rgb(243, 231, 216);
 }
 
-.tetris g.device.capacitor rect.tetris,
-.tetris g.device.inductor rect.tetris,
-.tetris g.device.resistor rect.tetris,
-.tetris g.device.diode rect.tetris {
+.tetris g.device.passive rect.tetris {
     fill: rgb(216, 243, 226);
     stroke: rgb(216, 243, 226);
 }
 
-.tetris g.device.vsource rect.tetris,
-.tetris g.device.isource rect.tetris {
+.tetris g.device.source rect.tetris {
     fill: rgb(243, 243, 216);
     stroke: rgb(243, 243, 216);
+}
+
+.tetris g.device.photonic rect.tetris {
+    fill: rgb(216, 243, 240);
+    stroke: rgb(216, 243, 240);
+}
+
+.tetris g.device.photonic-active rect.tetris {
+    fill: rgb(243, 224, 216);
+    stroke: rgb(243, 224, 216);
 }
 
 .tetris g.device.port polyline {
@@ -981,6 +1027,11 @@ rect.select {
 .tetris circle.port {
     fill: rgb(145, 0, 0);
     stroke: rgb(53, 0, 0);
+}
+
+.tetris circle.port.photonic {
+    fill: rgb(0, 80, 160);
+    stroke: rgb(0, 20, 60);
 }
 
 .tetris g.device circle.port {
@@ -1001,15 +1052,19 @@ rect.select {
     fill: none;
 }
 
+
 .tetris polyline.wire {
     stroke: black;
     stroke-width: 2px;
     fill: none;
     stroke-linejoin: round;
 }
+
+
 .tetris circle.wire {
     fill: black;
 }
+
 .tetris g.wire.selected polyline.wire {
     stroke-dasharray: 10px 3px;
 }
@@ -1026,6 +1081,20 @@ rect.select {
     fill: none;
     stroke: red;
     stroke-dasharray: 1 4;
+}
+
+.tetris circle.nc.photonic {
+    stroke: rgb(0, 80, 160);
+}
+
+.tetris .wire-error {
+    color: red;
+    pointer-events: all;
+    cursor: help;
+}
+
+.tetris .wire-error.fork-error {
+    color: orange;
 }
 
 /* eyesore theme */
@@ -1075,9 +1144,11 @@ rect.select {
     fill: rgb(255, 0, 0);
     stroke: none;
 }
+
 .eyesore g.device.port circle.port {
     fill: none;
 }
+
 .eyesore g.device.port.supply polyline,
 .eyesore g.device.port.ground polyline {
     stroke: #00cc66;
@@ -1094,8 +1165,8 @@ rect.select {
 /* Subcircuit (ckt) and amplifier (amp) styling - tetris theme */
 .tetris g.device.ckt rect.tetris,
 .tetris g.device.amp rect.tetris {
-    fill: rgb(243, 238, 216);
-    stroke: rgb(243, 238, 216);
+    fill: rgb(243, 243, 216);
+    stroke: rgb(243, 243, 216);
 }
 
 .tetris g.device.ckt .outline.placeholder,
@@ -1149,6 +1220,7 @@ rect.select {
     vector-effect: non-scaling-stroke;
     stroke-linejoin: round;
 }
+
 .eyesore circle.wire {
     fill: #39bfff;
 }
@@ -1438,7 +1510,7 @@ rect.select {
     gap: 4px;
 }
 
-.mosaic-app .modal .onboarding .component-item > *:first-child {
+.mosaic-app .modal .onboarding .component-item>*:first-child {
     height: 36px;
     display: flex;
     align-items: center;
@@ -1450,7 +1522,7 @@ rect.select {
     height: 36px;
 }
 
-.mosaic-app .modal .onboarding .component-item > svg {
+.mosaic-app .modal .onboarding .component-item>svg {
     width: 28px;
     height: 28px;
     color: #555;
@@ -1719,24 +1791,30 @@ rect.select {
     margin-left: 4px;
     vertical-align: middle;
 }
+
 .mosaic-app .tag-badge.clickable {
     cursor: pointer;
 }
+
 .mosaic-app .tag-badge.clickable:hover {
     background: #d0d0d0;
 }
+
 .mosaic-app .tag-badge.active {
     cursor: pointer;
     background: #4a9eff;
     color: white;
 }
+
 .mosaic-app .tag-badge.active:hover {
     background: #3080e0;
 }
+
 .mosaic-app .tag-badge.prop-tag {
     background: #d4e8ff;
     color: #1a5fa0;
 }
+
 .mosaic-app .tag-badge.prop-tag.active {
     background: #1a5fa0;
     color: white;

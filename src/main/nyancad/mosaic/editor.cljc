@@ -76,7 +76,7 @@
 
 (defonce undotree (cm/newundotree))
 
-(declare build-wire-split-index split-wire location-index)
+(declare build-wire-split-index build-location-index split-wire location-index wire-type-index)
 
 (defn post-action!
   "Record undo checkpoint and split wires after a user action completes.
@@ -85,9 +85,10 @@
   (go
     (<! (done? schematic))
     (cm/newdo undotree @schematic)
-    (doseq [[w coords] (build-wire-split-index @location-index)]
-      (split-wire w coords)
-      (<! (done? schematic)))))
+    (let [loc-idx (build-location-index @schematic)]
+      (doseq [[w coords] (build-wire-split-index loc-idx)]
+        (split-wire w coords loc-idx)
+        (<! (done? schematic))))))
 
 (defn restore [state]
   (let [;; Ensure keys are strings (schematic uses string device IDs)
@@ -108,7 +109,7 @@
   (when-let [st (cm/redo undotree)]
     (restore st)))
 
-(declare drag-start drag-end eraser-drag models on-pointer-down-element on-pointer-move-element on-pointer-up-bg double-click)
+(declare drag-start drag-end eraser-drag models on-pointer-down-element on-pointer-move-element on-pointer-up-bg double-click device-template circuit-designator)
 
 (defn device [size k v & elements]
   (assert (js/isFinite size))
@@ -118,13 +119,14 @@
                     :style {:transform (.toString (.translate (transform (:transform v cm/IV)) (* (:x v) grid-size) (* (:y v) grid-size)))
                             :transform-origin (str (* (+ (:x v) (/ size 2)) grid-size) "px "
                                                    (* (+ (:y v) (/ size 2)) grid-size) "px")}
-                    :class [(:type v) (:variant v) (when (contains? @selected k) :selected)]}]
+                    :class [(:type v) (:variant v) (::category (get models (:type v))) (when (contains? @selected k) :selected)]}]
         elements))
 
-(defn port [x y]
+(defn port [x y port-type]
   [:circle.port {:cx (+ x (/ grid-size 2))
                  :cy (+ y (/ grid-size 2))
-                 :r (/ grid-size 10)}])
+                 :r (/ grid-size 10)
+                 :class (when port-type (name port-type))}])
 
 (defn draw-background [[width height] k v]
   [device (+ 2 (max width height)) k v
@@ -134,21 +136,47 @@
 
 (defn draw-pattern [size pattern prim k v]
   [apply device size k v
-   (for [[x y _] pattern]
-     ^{:key [x y]} [prim (* x grid-size) (* y grid-size)])])
+   (for [{:keys [x y type]} pattern]
+     ^{:key [x y]} [prim (* x grid-size) (* y grid-size) type])])
 
 (defn lines [arcs]
   [:<>
    (for [arc arcs]
      ^{:key arc} [:polyline {:points (map #(* % grid-size) (flatten arc))}])])
 
-(defn arrow [x y size rotate]
-  [:polygon.arrow {:transform (str "rotate(" rotate " " (* x grid-size) " " (* y grid-size) ")")
-                   :points
-                   (map #(* % grid-size)
-                        [x y
-                         (+ x size) (+ y size)
-                         (+ x size) (- y size)])}])
+(defn arrow
+  ([x y size rotate] (arrow x y size size rotate))
+  ([x y width height rotate]
+    [:polygon.arrow {:transform (str "rotate(" rotate " " (* x grid-size) " " (* y grid-size) ")")
+                     :points
+                     (map #(* % grid-size)
+                          [x y
+                           (+ x width) (+ y height)
+                           (+ x width) (- y height)])}]))
+
+(def ^:private scale-keys #{:x :y :width :height :cx :cy :r})
+
+(defn- scale-attrs [attrs]
+  (reduce-kv (fn [m k v]
+               (assoc m k (if (scale-keys k) (* v grid-size) v)))
+             {} attrs))
+
+(defn- render-element [[tag & args]]
+  (let [[attrs & children] (if (map? (first args)) args (cons {} args))]
+    (case tag
+      :lines [lines (first args)]
+      :arrow [arrow (:x attrs) (:y attrs) (:size attrs) (:rotate attrs)]
+      :path  [:path attrs]
+      :text  (into [:text attrs] children)
+      ;; Default: scale coordinate attrs, pass through class from tag
+      (let [scaled (cond-> (scale-attrs attrs)
+                     (:points attrs) (update :points #(map (partial * grid-size) %)))]
+        (into [tag scaled] children)))))
+
+(defn- render-symbol-data [{:keys [::size ::elements]} k v]
+  (into [device size k v
+         [device-template v size]]
+        (map render-element elements)))
 
 (defn wire-sym [key wire]
   (let [{:keys [x y rx ry variant]} wire
@@ -159,13 +187,16 @@
         [mx my] (case variant "hv" [x2 y1] "vh" [x1 y2] nil)
         pts (if mx
               (str x1 "," y1 " " mx "," my " " x2 "," y2)
-              (str x1 "," y1 " " x2 "," y2))]
+              (str x1 "," y1 " " x2 "," y2))
+        wire-type (get @wire-type-index key)]
     [:g.wire {:on-pointer-down #(on-pointer-down-element key %)
               :on-pointer-move #(on-pointer-move-element key %)
               :on-pointer-up on-pointer-up-bg
-              :class (when (contains? @selected key) :selected)}
+              :class [(when (contains? @selected key) :selected)
+                      (when wire-type (name wire-type))]}
      [:polyline.wirebb {:points pts}]
-     [:polyline.wire {:points pts}]]))
+     [:polyline.wire {:points pts
+                      :class (when wire-type (name wire-type))}]]))
 
 (defn schem-template [dev fmt]
   (let [res (if-let [l (last @simulations)] (val l) {})
@@ -191,17 +222,10 @@
      [:text
       content]]))
 
-(defn device-template [dev width]
-  (when-let [text (get dev :template
-                       (::template (get models (:type dev))))]
-    [:text.identifier
-     {:transform (-> (:transform dev)
-                     transform
-                     (.translate (* grid-size (/ width -2)) (* grid-size (/ width -2)))
-                     .inverse
-                     (.translate (* grid-size 0.6) (* grid-size -0.25))
-                     .toString)}
-     (schem-template dev text)]))
+(defn device-template [dev size]
+  (let [bg (::bg (get models (:type dev)))
+        [bg-w bg-h] (if (vector? bg) bg [1 1])]
+    (circuit-designator dev size bg-w bg-h)))
 
 (defn port-sym [key label]
   [device 1 key label
@@ -275,89 +299,276 @@
        [arrow 1.4 1.81 0.12 -140]
        [arrow 1.25 1.68 0.12 40])]))
 
-(defn resistor-sym [k v]
-  (let [shape [[[1.5 0.5]
-                [1.5 1.1]]
-               [[1.5 1.9]
-                [1.5 2.5]]]]
-    [device 3 k v
-     [device-template v 3]
-     [:rect.outline {:x (* 1.35 grid-size)
-                     :y (* 1.1 grid-size)
-                     :width (* 0.3 grid-size)
-                     :height (* 0.8 grid-size)}]
-     [lines shape]]))
+(def resistor-elements
+  {::size 3
+   ::elements [[:rect.outline {:x 1.35 :y 1.1 :width 0.3 :height 0.8}]
+               [:lines [[[1.5 0.5] [1.5 1.1]]
+                        [[1.5 1.9] [1.5 2.5]]]]]})
 
-(defn capacitor-sym [k v]
-  (let [shape [[[1.5 0.5]
-                [1.5 1.4]]
-               [[1.1 1.4]
-                [1.9 1.4]]
-               [[1.1 1.6]
-                [1.9 1.6]]
-               [[1.5 1.6]
-                [1.5 2.5]]]]
-    [device 3 k v
-     [device-template v 3]
-     [lines shape]]))
+(def capacitor-elements
+  {::size 3
+   ::elements [[:lines [[[1.5 0.5] [1.5 1.4]]
+                        [[1.1 1.4] [1.9 1.4]]
+                        [[1.1 1.6] [1.9 1.6]]
+                        [[1.5 1.6] [1.5 2.5]]]]]})
 
-(defn inductor-sym [k v]
-  (let [shape [[[1.5 0.5]
-                [1.5 1.1]]
-               [[1.5 1.9]
-                [1.5 2.5]]]]
-    [device 3 k v
-     [device-template v 3]
-     [lines shape]
-     [:path {:d "M75,55
-                 a5,5 90 0,0 0,10
-                 a5,5 90 0,0 0,10
-                 a5,5 90 0,0 0,10
-                 a5,5 90 0,0 0,10
-                 "}]]))
+(def inductor-elements
+  {::size 3
+   ::elements [[:lines [[[1.5 0.5] [1.5 1.1]]
+                        [[1.5 1.9] [1.5 2.5]]]]
+               [:path {:d "M75,55 a5,5 90 0,0 0,10 a5,5 90 0,0 0,10 a5,5 90 0,0 0,10 a5,5 90 0,0 0,10"}]]})
 
-(defn isource-sym [k v]
-  (let [shape [[[1.5 0.5]
-                [1.5 1.1]]
-               [[1.5 1.25]
-                [1.5 1.65]]
-               [[1.5 1.9]
-                [1.5 2.5]]]]
-    [device 3 k v
-     [device-template v 3]
-     [lines shape]
-     [:circle.outline
-      {:cx (* grid-size 1.5)
-       :cy (* grid-size 1.5)
-       :r (* grid-size 0.4)}]
-     [arrow 1.5 1.8 0.15 -90]]))
+(def isource-elements
+  {::size 3
+   ::elements [[:lines [[[1.5 0.5] [1.5 1.1]]
+                        [[1.5 1.25] [1.5 1.65]]
+                        [[1.5 1.9] [1.5 2.5]]]]
+               [:circle.outline {:cx 1.5 :cy 1.5 :r 0.4}]
+               [:arrow {:x 1.5 :y 1.8 :size 0.15 :rotate -90}]]})
 
-(defn vsource-sym [k v]
-  (let [shape [[[1.5 0.5]
-                [1.5 1.1]]
-               [[1.5 1.9]
-                [1.5 2.5]]]]
-    [device 3 k v
-     [device-template v 3]
-     [lines shape]
-     [:circle.outline
-      {:cx (* grid-size 1.5)
-       :cy (* grid-size 1.5)
-       :r (* grid-size 0.4)}]
-     [:text {:x 75 :y 70 :text-anchor "middle"} "+"]
-     [:text {:x 75 :y 90 :text-anchor "middle"} "−"]]))
+(def vsource-elements
+  {::size 3
+   ::elements [[:lines [[[1.5 0.5] [1.5 1.1]]
+                        [[1.5 1.9] [1.5 2.5]]]]
+               [:circle.outline {:cx 1.5 :cy 1.5 :r 0.4}]
+               [:text {:x 75 :y 70 :text-anchor "middle"} "+"]
+               [:text {:x 75 :y 90 :text-anchor "middle"} "−"]]})
 
 (defn diode-sym [k v]
-  (let [shape [[[1.5 0.5]
-                [1.5 1.4]]
-               [[1.3 1.6]
-                [1.7 1.6]]
-               [[1.5 1.6]
-                [1.5 2.5]]]]
+  (let [shape [[[1.5 0.5] [1.5 1.4]]
+               [[1.3 1.7] [1.7 1.7]]
+               [[1.5 1.7] [1.5 2.5]]]
+        tp (:type v)]
     [device 3 k v
-     [device-template v 3]
      [lines shape]
-     [arrow 1.5 1.6 0.2 270]]))
+     [device-template v 3]
+     [arrow 1.5 1.7 0.4 0.2 270]
+     ;; LED: light arrows pointing away from diode (lower-right, ~27° from horizontal)
+     (when (= tp "led")
+       [:<>
+        [lines [[[1.75 1.375] [1.88 1.44]]]]
+        [arrow 1.93 1.465 0.05 -153]
+        [lines [[[1.75 1.575] [1.88 1.64]]]]
+        [arrow 1.93 1.665 0.05 -153]])
+     ;; Photodiode: light arrows pointing toward diode (upper-left, ~27° from horizontal)
+     (when (= tp "photodiode")
+       [:<>
+        [lines [[[1.93 1.45] [1.78 1.375]]]]
+        [arrow 1.72 1.35 0.05 27]
+        [lines [[[1.93 1.65] [1.78 1.575]]]]
+        [arrow 1.72 1.55 0.05 27]])
+     ;; Optical butt-coupling: line with T-cap at the device facet
+     (when (or (= tp "led") (= tp "photodiode"))
+       [lines [[[2.5 1.5] [2.0 1.5]]
+               [[2.0 1.3] [2.0 1.7]]]])
+     ;; Modulator: optical transmission line through the diode
+     (when (= tp "modulator")
+       [lines [[[0.5 1.5] [2.5 1.5]]]])]))
+
+;; Photonic component symbols
+;;
+;; Coordinate reference:
+;;   bg [w,h] → device size = 2 + max(w,h), bg rect at pixel (50,50) size (w*50, h*50)
+;;   Port at grid (gx,gy) → pixel center ((gx+0.5)*50, (gy+0.5)*50)
+;;   Lines use grid coords (auto-scaled by grid-size=50)
+;;   Paths use raw pixel coords in the size*50 px canvas
+
+;; bg [1,1], size 3, 150x150px
+;; Ports: (0,1)→px(25,75)  (2,1)→px(125,75)
+(def straight-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [2.5 1.5]]]]]})
+
+;; bg [1,1], size 3, 150x150px
+;; Ports: (0,1)→px(25,75) left  (1,2)→px(75,125) bottom
+;; Quarter-arc from left port curving down to bottom port
+(def bend-elements
+  {::size 3
+   ::elements [[:path {:d "M25,75 H50 Q75,75 75,100 V125"}]]})
+
+;; bg [1,2], size 4, 200x200px
+;; Ports: (0,1)→px(25,75)  (2,2)→px(125,125)
+;; S-curve connecting offset ports
+(def sbend-elements
+  {::size 4
+   ::elements [[:path {:d "M25,75 C75,75 75,125 125,125"}]]})
+
+;; bg [1,1], size 3, 150x150px
+;; Ports: (0,1)→px(25,75)  (2,1)→px(125,75)
+(def taper-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [1.0 1.5]]
+                        [[2.0 1.5] [2.5 1.5]]]]
+               [:polygon.outline {:points [1.0 1.2 2.0 1.4 2.0 1.6 1.0 1.8]}]]})
+
+;; bg [1,1], size 3, 150x150px
+;; Ports: (0,1)→px(25,75)  (2,1)→px(125,75)
+(def transition-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [1.0 1.5]]
+                        [[2.0 1.5] [2.5 1.5]]]]
+               [:polygon.outline {:points [1.0 1.35 1.5 1.45 2.0 1.35
+                                           2.0 1.65 1.5 1.55 1.0 1.65]}]]})
+
+;; bg [1,1], size 3, 150x150px
+;; Port: (0,1)→px(25,75) only
+(def terminator-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [1.3 1.5]]]]
+               [:polygon.outline {:points [1.3 1.3 1.7 1.5 1.3 1.7]}]]})
+
+;; bg [1,1], size 3, 150x150px
+;; Ports: (0,1)→px(25,75)  (2,1)→px(125,75)  (1,0)→px(75,25)  (1,2)→px(75,125)
+(def crossing-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [2.5 1.5]]
+                        [[1.5 0.5] [1.5 2.5]]]]]})
+
+;; bg [1,2], size 4, 200x200px
+;; bg rect at (50,50) size 50x100, center at px(75,100) = grid(1.5,2.0)
+;; Ring centered on bg, waveguide passes below ring
+;; Ports: (0,2)→px(25,125)  (2,2)→px(125,125)
+(def ring-single-elements
+  {::size 4
+   ::elements [[:lines [[[0.5 2.5] [2.5 2.5]]]]
+               [:circle.outline {:cx 1.5 :cy 2.0 :r 0.45}]]})
+
+;; bg [1,2], size 4, 200x200px
+;; Two waveguides top and bottom, ring centered on bg between them
+;; Ports: (0,1)→px(25,75)  (2,1)→px(125,75)  (0,2)→px(25,125)  (2,2)→px(125,125)
+(def ring-double-elements
+  {::size 4
+   ::elements [[:lines [[[0.5 1.5] [2.5 1.5]]
+                        [[0.5 2.5] [2.5 2.5]]]]
+               [:circle.outline {:cx 1.5 :cy 2.0 :r 0.45}]]})
+
+;; bg [1,1], size 3, 150x150px
+;; Ports: (0,1)→px(25,75)  (2,1)→px(125,75)
+;; Spiral: alternating semicircular arcs spiraling inward
+;; Left lead to spiral start at px(50,75), right lead from px(100,75)
+(def spiral-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [1.0 1.5]]]]
+               [:lines [[[2.5 1.5] [2.0 1.5]]]]
+               [:path {:d (str "M50,75 "
+                               "A20.83,20.83 0 0,0 91.67,75 "
+                               "A12.5,12.5 0 0,0 66.67,75 "
+                               "A4.17,4.17 0 0,0 75,75 "
+                               "A4.17,4.17 0 0,1 83.33,75 "
+                               "A12.5,12.5 0 0,1 58.33,75 "
+                               "A20.83,20.83 0 0,1 100,75"
+                               )}]
+               ]})
+
+;; bg [1,1], size 3. Ports: split-1x2-conn
+;; Y-junction: two S-curves sharing input
+(def splitter-1x2-elements
+  {::size 5
+   ::elements [[:path {:d "M25,125 C65,125 85,75 125,75"}]
+               [:path {:d "M25,125 C65,125 85,175 125,175"}]]})
+
+;; bg [1,2], size 4, 200x200px
+;; Ports like ring-double: (0,1)(2,1)(0,2)(2,2) → px (25,75)(125,75)(25,125)(125,125)
+;; Directional coupler: two waveguides approaching closely in the middle
+(def coupler-elements
+  {::size 4
+   ::elements [[:path {:d "M25,75 C55,75 45,95 75,95 C105,95 95,75 125,75"}]
+               [:path {:d "M25,125 C55,125 45,105 75,105 C105,105 95,125 125,125"}]]})
+
+;; Coupler-ring: 2x2 with ports inside, no padding
+;; size 2, 100x100px. Ports: (0,0)(1,0)(0,1)(1,1) → px (25,25)(75,25)(25,75)(75,75)
+(defn coupler-ring-bg [k v]
+  [device 2 k v
+   [:rect.tetris {:x 0 :y 0 :width (* 2 grid-size) :height (* 2 grid-size)}]])
+
+(def coupler-ring-elements
+  {::size 2
+   ::elements [[:path {:d "M25,25 A25,23 0 0,0 75,25"}]
+               [:path {:d "M25,75 A25,23 0 0,1 75,75"}]]})
+
+;; bg [1,3], size 5, 250x250px — ckt-block style rect with port leads
+;; MMI 1x2: Ports: (0,2)→px(25,125), (2,1)→px(125,75), (2,3)→px(125,175)
+(def mmi-1x2-elements
+  {::size 5
+   ::elements [[:lines [[[0.5 2.5] [1.0 2.5]]
+                        [[2.0 1.5] [2.5 1.5]]
+                        [[2.0 3.5] [2.5 3.5]]]]
+               [:rect.outline {:x 1.0 :y 1.0 :width 1.0 :height 3.0}]]})
+
+;; bg [1,3], size 5, 250x250px — ckt-block style rect with port leads
+;; MMI 2x2: Ports: (0,1)→px(25,75), (2,1)→px(125,75), (0,3)→px(25,175), (2,3)→px(125,175)
+(def mmi-2x2-elements
+  {::size 5
+   ::elements [[:lines [[[0.5 1.5] [1.0 1.5]]
+                        [[0.5 3.5] [1.0 3.5]]
+                        [[2.0 1.5] [2.5 1.5]]
+                        [[2.0 3.5] [2.5 3.5]]]]
+               [:rect.outline {:x 1.0 :y 1.0 :width 1.0 :height 3.0}]]})
+
+;; bg [1,1], size 3. Ports: split-1x2-conn
+;; MZI 1x2: S-curve from center input to top/bottom outputs
+;; bg [1,3], size 5, 250x250px
+;; Ports: (0,2)→px(25,125) input, (2,1)→px(125,75) top, (2,3)→px(125,175) bottom
+;; Each arm: 4 quarter-circle arcs (r=12.5), alternating sweep, tangent-continuous
+(def mzi-1x2-elements
+  {::size 5
+   ::elements [[:path {:d (str "M25,125 H50 "
+                               "A12.5,12.5 0 0,0 62.5,112.5 "
+                               "V62.5 "
+                               "A12.5,12.5 0 0,1 87.5,62.5 "
+                               "V110 "
+                               "A12.5,12.5 0 0,0 112.5,110 "
+                               "V87.5 "
+                               "A12.5,12.5 0 0,1 125,75")}]
+               [:path {:d (str "M25,125 H50 "
+                               "A12.5,12.5 0 0,1 62.5,137.5 "
+                               "V187.5 "
+                               "A12.5,12.5 0 0,0 87.5,187.5 "
+                               "V140 "
+                               "A12.5,12.5 0 0,1 112.5,140 "
+                               "V162.5 "
+                               "A12.5,12.5 0 0,0 125,175")}]]})
+
+;; MZI 2x2: sinusoidal wave with two coupling dips per arm
+;; bg [1,3], size 5, 250x250px
+;; Ports: (0,1)→px(25,75), (2,1)→px(125,75), (0,3)→px(25,175), (2,3)→px(125,175)
+;; Each arm: 5 arcs (quarter+semi+semi+semi+quarter, r=12.5), alternating sweep
+;; Top arm dips to y=100 at x=50,100; bottom rises to y=150 at x=50,100
+(def mzi-2x2-elements
+  {::size 5
+   ::elements [[:path {:d (str "M25,75 "
+                               "A12.5,12.5 0 0,1 37.5,87.5 "
+                               "V110 "
+                               "A12.5,12.5 0 0,0 62.5,110 "
+                               "V62.5 "
+                               "A12.5,12.5 0 0,1 87.5,62.5 "
+                               "V110 "
+                               "A12.5,12.5 0 0,0 112.5,110 "
+                               "V87.5 "
+                               "A12.5,12.5 0 0,1 125,75")}]
+               [:path {:d (str "M25,175 "
+                               "A12.5,12.5 0 0,0 37.5,162.5 "
+                               "V140 "
+                               "A12.5,12.5 0 0,1 62.5,140 "
+                               "V187.5 "
+                               "A12.5,12.5 0 0,0 87.5,187.5 "
+                               "V140 "
+                               "A12.5,12.5 0 0,1 112.5,140 "
+                               "V162.5 "
+                               "A12.5,12.5 0 0,0 125,175")}]]})
+
+
+;; bg [1,1], size 3. Port: (0,1)→px(25,75) left only
+;; Grating coupler: narrow concentric arcs (~60°) opening right, wifi-style
+;; Each arc at radius R from center (45,75), spanning ±30° from horizontal
+;; Start: (45+R*cos30°, 75-R*sin30°)  End: (45+R*cos30°, 75+R*sin30°)
+(def grating-coupler-elements
+  {::size 3
+   ::elements [[:lines [[[0.5 1.5] [0.9 1.5]]]]
+               [:path {:d "M57,67 A15,15 0 0,1 57,83"}]
+               [:path {:d "M66,61 A25,25 0 0,1 66,89"}]
+               [:path {:d "M75,55 A35,35 0 0,1 75,95"}]
+               [:path {:d "M84,49 A45,45 0 0,1 84,101"}]]})
 
 (defn circuit-shape [k v]
   (let [model (:model v)
@@ -371,7 +582,7 @@
         ports (get-in @modeldb [(cm/model-key model) :ports])
         shape (when (= (:type v) "amp") :amp)
         [width height] (if ports (cm/port-perimeter ports shape) [1 1])
-        pattern (if ports (apply concat (cm/port-locations ports shape)) [])]
+        pattern (if ports (cm/port-locations ports shape) [])]
     (draw-pattern (+ 2 (max width height)) pattern
                   port k v)))
 
@@ -398,7 +609,7 @@
         [dx dy] (apply max-key (fn [[x y]] (- x y)) rotated)
         desig-offset-x (+ dx 0.1)
         desig-offset-y (+ dy 0.25)]
-    (when-let [text (get v :template "{self.name}")]
+    (when-let [text (get v :template (get-in models [(:type v) ::template] "{self.name}"))]
       [:text.identifier
        {:transform (-> (:transform v) transform
                        (.translate (* grid-size (/ size -2)) (* grid-size (/ size -2)))
@@ -424,7 +635,12 @@
         ports (:ports model-def)
         has-model? (and model (seq model) ports)
         [width height] (if ports (cm/port-perimeter ports) [1 1])
-        [top-locs bottom-locs left-locs right-locs] (cm/port-locations ports)
+        all-locs (cm/port-locations ports)
+        by-side (group-by :side all-locs)
+        top-locs (:top by-side)
+        bottom-locs (:bottom by-side)
+        left-locs (:left by-side)
+        right-locs (:right by-side)
         size (+ 2 (max width height))
         ;; Box center in device-local coords (pixels)
         cx (* grid-size (+ 1 (/ width 2)))
@@ -435,21 +651,21 @@
       ;; Port lines (only when model selected)
       (when has-model?
         [:<>
-         [lines (for [[x y _] top-locs] [[(+ x 0.5) (+ y 0.5)] [(+ x 0.5) (+ y 1)]])]
-         [lines (for [[x y _] bottom-locs] [[(+ x 0.5) (+ y 0)] [(+ x 0.5) (+ y 0.5)]])]
-         [lines (for [[x y _] right-locs] [[(+ x 0) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]
-         [lines (for [[x y _] left-locs] [[(+ x 1) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]])
+         [lines (for [{:keys [x y]} top-locs] [[(+ x 0.5) (+ y 0.5)] [(+ x 0.5) (+ y 1)]])]
+         [lines (for [{:keys [x y]} bottom-locs] [[(+ x 0.5) (+ y 0)] [(+ x 0.5) (+ y 0.5)]])]
+         [lines (for [{:keys [x y]} right-locs] [[(+ x 0) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]
+         [lines (for [{:keys [x y]} left-locs] [[(+ x 1) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]])
       ;; Port labels inside box
       (when has-model?
         [:<>
-         (for [[_ y pname] left-locs]
-           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" pname))
-         (for [[_ y pname] right-locs]
-           (port-label v (* (+ width 0.85) grid-size) (* (+ y 0.5) grid-size) "end" "middle" pname))
-         (for [[x _ pname] top-locs]
-           (port-label v (* (+ x 0.5) grid-size) (* 1.3 grid-size) "middle" "hanging" pname))
-         (for [[x _ pname] bottom-locs]
-           (port-label v (* (+ x 0.5) grid-size) (* (+ height 0.7) grid-size) "middle" "baseline" pname))])
+         (for [{:keys [y name]} left-locs]
+           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" name))
+         (for [{:keys [y name]} right-locs]
+           (port-label v (* (+ width 0.85) grid-size) (* (+ y 0.5) grid-size) "end" "middle" name))
+         (for [{:keys [x name]} top-locs]
+           (port-label v (* (+ x 0.5) grid-size) (* 1.3 grid-size) "middle" "hanging" name))
+         (for [{:keys [x name]} bottom-locs]
+           (port-label v (* (+ x 0.5) grid-size) (* (+ height 0.7) grid-size) "middle" "baseline" name))])
       ;; Symbol image replaces box, otherwise box outline with model name
       (if-let [symbol-url (and has-model? (some-> model-def :symbol resolve-symbol-url deref))]
         [:image {:href symbol-url
@@ -478,7 +694,12 @@
         ports (:ports model-def)
         has-model? (and model (seq model) ports)
         [width height] (if ports (cm/port-perimeter ports :amp) [1 1])
-        [top-locs bottom-locs left-locs right-locs] (cm/port-locations ports :amp)
+        all-locs (cm/port-locations ports :amp)
+        by-side (group-by :side all-locs)
+        top-locs (:top by-side)
+        bottom-locs (:bottom by-side)
+        left-locs (:left by-side)
+        right-locs (:right by-side)
         size (+ 2 (max width height))
         ;; Triangle vertices (pointing right)
         tri-left 1
@@ -501,18 +722,18 @@
       (when has-model?
         [:<>
          ;; Top ports - lines extend down to meet triangle's top edge
-         [lines (for [[x y _] top-locs
+         [lines (for [{:keys [x y]} top-locs
                       :let [tri-y (+ tri-top (* (- (+ x 0.5) tri-left) (/ (- tri-apex-y tri-top) width)))]]
                   [[(+ x 0.5) (+ y 0.5)] [(+ x 0.5) tri-y]])]
          ;; Bottom ports - lines extend up to meet triangle's bottom edge
-         [lines (for [[x y _] bottom-locs
+         [lines (for [{:keys [x y]} bottom-locs
                       :let [tri-y (+ tri-bottom (* (- (+ x 0.5) tri-left) (/ (- tri-apex-y tri-bottom) width)))]]
                   [[(+ x 0.5) (+ y 0.5)] [(+ x 0.5) tri-y]])]
          ;; Left ports - lines extend right to left edge
-         [lines (for [[x y _] left-locs]
+         [lines (for [{:keys [x y]} left-locs]
                   [[(+ x 0.5) (+ y 0.5)] [tri-left (+ y 0.5)]])]
          ;; Right ports - lines extend left to meet triangle edge
-         [lines (for [[x y _] right-locs
+         [lines (for [{:keys [x y]} right-locs
                       :let [port-dy (- (+ y 0.5) tri-apex-y)
                             tri-x (if (< port-dy 0)
                                     (+ tri-right (* port-dy (/ width (- tri-top tri-apex-y))))
@@ -521,20 +742,20 @@
       ;; Port labels inside triangle
       (when has-model?
         [:<>
-         (for [[_ y pname] left-locs]
-           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" pname))
-         (for [[_ y pname] right-locs]
-           (port-label v (* (+ width 0.6) grid-size) (* (+ y 0.5) grid-size) "end" "middle" pname))
+         (for [{:keys [y name]} left-locs]
+           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" name))
+         (for [{:keys [y name]} right-locs]
+           (port-label v (* (+ width 0.6) grid-size) (* (+ y 0.5) grid-size) "end" "middle" name))
          ;; Top port labels - follow diagonal edge
-         (for [[x _ pname] top-locs
+         (for [{:keys [x name]} top-locs
                :let [px (+ x 0.5)
                      edge-y (+ tri-top (* (- px tri-left) (/ (- tri-apex-y tri-top) width)))]]
-           (port-label v (* px grid-size) (* (+ edge-y 0.3) grid-size) "middle" "hanging" pname))
+           (port-label v (* px grid-size) (* (+ edge-y 0.3) grid-size) "middle" "hanging" name))
          ;; Bottom port labels - follow diagonal edge
-         (for [[x _ pname] bottom-locs
+         (for [{:keys [x name]} bottom-locs
                :let [px (+ x 0.5)
                      edge-y (+ tri-bottom (* (- px tri-left) (/ (- tri-apex-y tri-bottom) width)))]]
-           (port-label v (* px grid-size) (* (- edge-y 0.3) grid-size) "middle" "baseline" pname))])
+           (port-label v (* px grid-size) (* (- edge-y 0.3) grid-size) "middle" "baseline" name))])
       ;; Model name or "?"
       [:text.model-name
        {:x cx :y cy
@@ -551,62 +772,254 @@
 (def models {"pmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
+                     ::category "pchan"
                      ::template "{self.name}"
                      ::props []}
              "nmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
+                     ::category "nchan"
                      ::template "{self.name}"
                      ::props []}
              "npn" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
+                    ::category "nchan"
                     ::template "{self.name}"
                     ::props []}
              "pnp" {::bg cm/active-bg
                     ::conn bjt-conn
                     ::sym bjt-sym
+                    ::category "pchan"
                     ::template "{self.name}"
                     ::props []}
              "resistor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
-                         ::sym resistor-sym
+                         ::sym resistor-elements
+                         ::category "passive"
                          ::template "{self.name}: {self.props.resistance}Ω"
                          ::props [{:name "resistance" :tooltip "Resistance value" :spice "resistance"}]}
              "capacitor" {::bg cm/twoport-bg
                           ::conn cm/twoport-conn
-                          ::sym capacitor-sym
+                          ::sym capacitor-elements
+                          ::category "passive"
                           ::template "{self.name}: {self.props.capacitance}F"
                           ::props [{:name "capacitance" :tooltip "Capacitance value" :spice "capacitance"}]}
              "inductor" {::bg cm/twoport-bg
                          ::conn cm/twoport-conn
-                         ::sym inductor-sym
+                         ::sym inductor-elements
+                         ::category "passive"
                          ::template "{self.name}: {self.props.inductance}H"
                          ::props [{:name "inductance" :tooltip "Inductance value" :spice "inductance"}]}
              "vsource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
-                        ::sym vsource-sym
+                        ::sym vsource-elements
+                        ::category "source"
                         ::template "{self.name}: {self.props.dc}V"
                         ::props [{:name "dc" :tooltip "DC voltage" :spice "dc"}
                                  {:name "ac" :tooltip "AC voltage" :spice "ac"}
                                  {:name "tran" :tooltip "Transient voltage" :spice "tran"}]}
              "isource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
-                        ::sym isource-sym
+                        ::sym isource-elements
+                        ::category "source"
                         ::template "{self.name}: {self.props.dc}I"
                         ::props [{:name "dc" :tooltip "DC current" :spice "dc"}
                                  {:name "ac" :tooltip "AC current" :spice "ac"}
                                  {:name "tran" :tooltip "Transient current" :spice "tran"}]}
              "diode" {::bg cm/twoport-bg
                       ::conn cm/twoport-conn
-                      ::sym diode-sym
+                      ::sym #'diode-sym
+                      ::category "passive"
                       ::props []}
+             "led" {::bg [1 1]
+                    ::conn [{:name "P" :x 1 :y 0 :type :electric}
+                            {:name "O" :x 2 :y 1 :type :photonic}
+                            {:name "N" :x 1 :y 2 :type :electric}]
+                    ::sym #'diode-sym
+                    ::category "photonic-active"
+                    ::template "{self.name}"
+                    ::props []}
+             "photodiode" {::bg [1 1]
+                           ::conn [{:name "P" :x 1 :y 0 :type :electric}
+                                   {:name "O" :x 2 :y 1 :type :photonic}
+                                   {:name "N" :x 1 :y 2 :type :electric}]
+                           ::sym #'diode-sym
+                           ::category "photonic-active"
+                           ::template "{self.name}"
+                           ::props []}
+             "modulator" {::bg [1 1]
+                          ::conn [{:name "P" :x 1 :y 0 :type :electric}
+                                  {:name "1" :x 0 :y 1 :type :photonic}
+                                  {:name "2" :x 2 :y 1 :type :photonic}
+                                  {:name "N" :x 1 :y 2 :type :electric}]
+                          ::sym #'diode-sym
+                          ::category "photonic-active"
+                          ::template "{self.name}"
+                          ::props []}
+             ;; Photonic components
+             "straight" {::bg [1 1]
+                         ::conn cm/horizontal-conn
+                         ::sym straight-elements
+                         ::category "photonic"
+                         ::template "{self.name}"
+                         ::props []}
+             "bend" {::bg [1 1]
+                     ::conn (cm/ascii-patern :photonic
+                             ["   "
+                              "1  "
+                              " 2 "])
+                     ::sym bend-elements
+                     ::category "photonic"
+                     ::template "{self.name}"
+                     ::props []}
+             "sbend" {::bg [1 2]
+                      ::conn (cm/ascii-patern :photonic
+                              ["   "
+                               "1  "
+                               "  2"])
+                      ::sym sbend-elements
+                      ::category "photonic"
+                      ::template "{self.name}"
+                      ::props []}
+             "taper" {::bg [1 1]
+                      ::conn cm/horizontal-conn
+                      ::sym taper-elements
+                      ::category "photonic"
+                      ::template "{self.name}"
+                      ::props []}
+             "transition" {::bg [1 1]
+                           ::conn cm/horizontal-conn
+                           ::sym transition-elements
+                           ::category "photonic"
+                           ::template "{self.name}"
+                           ::props []}
+             "terminator" {::bg [1 1]
+                           ::conn (cm/ascii-patern :photonic
+                                   ["   "
+                                    "1  "
+                                    "   "])
+                           ::sym terminator-elements
+                           ::category "photonic"
+                           ::template "{self.name}"
+                           ::props []}
+             "crossing" {::bg [1 1]
+                         ::conn cm/cross-conn
+                         ::sym crossing-elements
+                         ::category "photonic"
+                         ::template "{self.name}"
+                         ::props []}
+             "ring-single" {::bg [1 2]
+                            ::conn (cm/ascii-patern :photonic
+                                    ["   "
+                                     "   "
+                                     "1 2"])
+                            ::sym ring-single-elements
+                            ::category "photonic"
+                            ::template "{self.name}"
+                            ::props []}
+             "ring-double" {::bg [1 2]
+                            ::conn (cm/ascii-patern :photonic
+                                    ["   "
+                                     "1 2"
+                                     "3 4"])
+                            ::sym ring-double-elements
+                            ::category "photonic"
+                            ::template "{self.name}"
+                            ::props []}
+             "spiral" {::bg [1 1]
+                       ::conn cm/horizontal-conn
+                       ::sym spiral-elements
+                       ::category "photonic"
+                       ::template "{self.name}"
+                       ::props []}
+             "splitter-1x2" {::bg [1 3]
+                             ::conn (cm/ascii-patern :photonic
+                                     ["   "
+                                      "  2"
+                                      "1  "
+                                      "  3"
+                                      "   "])
+                             ::sym splitter-1x2-elements
+                             ::category "photonic"
+                             ::template "{self.name}"
+                             ::props []}
+             "coupler" {::bg [1 2]
+                        ::conn (cm/ascii-patern :photonic
+                                ["   "
+                                 "1 2"
+                                 "3 4"])
+                        ::sym coupler-elements
+                        ::category "photonic"
+                        ::template "{self.name}"
+                        ::props []}
+             "coupler-ring" {::bg #'coupler-ring-bg
+                             ::conn (cm/ascii-patern :photonic
+                                     ["12"
+                                      "34"])
+                             ::sym coupler-ring-elements
+                             ::category "photonic"
+                             ::template "{self.name}"
+                             ::props []}
+             "mmi-1x2" {::bg [1 3]
+                        ::conn (cm/ascii-patern :photonic
+                                ["   "
+                                 "  2"
+                                 "1  "
+                                 "  3"
+                                 "   "])
+                        ::sym mmi-1x2-elements
+                        ::category "photonic"
+                        ::template "{self.name}"
+                        ::props []}
+             "mmi-2x2" {::bg [1 3]
+                        ::conn (cm/ascii-patern :photonic
+                                ["   "
+                                 "1 2"
+                                 "   "
+                                 "3 4"
+                                 "   "])
+                        ::sym mmi-2x2-elements
+                        ::category "photonic"
+                        ::template "{self.name}"
+                        ::props []}
+             "mzi-1x2" {::bg [1 3]
+                        ::conn (cm/ascii-patern :photonic
+                                ["   "
+                                 "  2"
+                                 "1  "
+                                 "  3"
+                                 "   "])
+                        ::sym mzi-1x2-elements
+                        ::category "photonic"
+                        ::template "{self.name}"
+                        ::props []}
+             "mzi-2x2" {::bg [1 3]
+                        ::conn (cm/ascii-patern :photonic
+                                ["   "
+                                 "1 2"
+                                 "   "
+                                 "3 4"
+                                 "   "])
+                        ::sym mzi-2x2-elements
+                        ::category "photonic"
+                        ::template "{self.name}"
+                        ::props []}
+"grating-coupler" {::bg [1 1]
+                                ::conn (cm/ascii-patern :photonic
+                                        ["   "
+                                         "1  "
+                                         "   "])
+                                ::sym grating-coupler-elements
+                                ::category "source"
+                                ::template "{self.name}"
+                                ::props []}
              "wire" {::bg []
                      ::conn []
                      ::sym wire-sym
                      ::props []}
              "port" {::bg []
-                     ::conn [[0 0 "P"]]
+                     ::conn [{:name "P" :x 0 :y 0 :type :electric}]
                      ::sym port-sym
                      ::template "{self.name}: {res.op[self.name.toLowerCase()]:.2f}V"
                      ::props []}
@@ -616,16 +1029,21 @@
                      ::template "Operating Point:\n{res.op}"
                      ::props []}})
 
-(defn rotate-shape [shape [a b c d e f] devx, devy]
-  (let [size (cm/pattern-size shape)
-        mid (- (/ size 2) 0.5)]
-    (map (fn [[px py _]]
-           (let [x (- px mid)
-                 y (- py mid)
-                 nx (+ (* a x) (* c y) e)
-                 ny (+ (* b x) (* d y) f)]
-             [(math/round (+ devx nx mid))
-              (math/round (+ devy ny mid))])) shape)))
+(defn rotate-shape
+  ([shape transform devx devy]
+   (rotate-shape shape (cm/pattern-size shape) transform devx devy))
+  ([shape size [a b c d e f] devx devy]
+   (let [mid (- (/ size 2) 0.5)]
+     (map (fn [port]
+            (let [px (:x port)
+                  py (:y port)
+                  x (- px mid)
+                  y (- py mid)
+                  nx (+ (* a x) (* c y) e)
+                  ny (+ (* b x) (* d y) f)]
+              (assoc port
+                     :x (math/round (+ devx nx mid))
+                     :y (math/round (+ devy ny mid))))) shape))))
 
 (defn exrange [start width]
   (next (take-while #(not= % (+ start width))
@@ -650,22 +1068,26 @@
 (defn builtin-locations [{:keys [:x :y :type :transform]}]
   (let [mod (get models type)
         conn (::conn mod)
-        [w h] (::bg mod)]
-    [(rotate-shape conn transform x y)
-     (rotate-shape (for [x (range w) y (range h)]
-                     [(inc x) (inc y) "%"])
-                   transform x y)]))
+        bg (::bg mod)
+        [w h] (when (vector? bg) bg)
+        size (if (and (number? w) (number? h))
+               (+ 2 (max w h))
+               (cm/pattern-size conn))]
+    [(map (juxt :x :y) (rotate-shape conn size transform x y))
+     (map (juxt :x :y) (rotate-shape (for [bx (range (or w 0)) by (range (or h 0))]
+                                        {:x (+ (if w 1 0) bx) :y (+ (if h 1 0) by)})
+                                      size transform x y))]))
 
 (defn circuit-locations [{:keys [:x :y :model :transform :type]}]
   (let [mod (get @modeldb (cm/model-key model))
         ports (:ports mod)
         shape (when (= type "amp") :amp)
-        conn (if ports (apply concat (cm/port-locations ports shape)) [])
+        conn (if ports (cm/port-locations ports shape) [])
         [w h] (if ports (cm/port-perimeter ports shape) [1 1])]
-    [(rotate-shape conn transform x y)
-     (rotate-shape (for [x (range w) y (range h)]
-                     [(inc x) (inc y) "%"])
-                   transform x y)]))
+    [(map (juxt :x :y) (rotate-shape conn transform x y))
+     (map (juxt :x :y) (rotate-shape (for [bx (range w) by (range h)]
+                                        {:x (inc bx) :y (inc by)})
+                                      transform x y))]))
 
 (defn device-locations [dev]
   (let [cell (:type dev)]
@@ -687,6 +1109,96 @@
 ; [conn body]
 (def location-index (r/track #(build-location-index @schematic)))
 
+(defn device-port-types
+  "Return typed port maps [{:x :y :type ...}] for a device after rotation."
+  [dev]
+  (let [cell (:type dev)
+        {:keys [x y transform model]} dev]
+    (cond
+      (= cell "wire") nil
+      (= cell "text") nil
+      (contains? models cell)
+      (let [mod (get models cell)
+            conn (::conn mod)
+            bg (::bg mod)
+            [w h] (when (vector? bg) bg)
+            size (if (and (number? w) (number? h))
+                   (+ 2 (max w h))
+                   (cm/pattern-size conn))]
+        (rotate-shape conn size transform x y))
+      :else
+      (let [mod (get @modeldb (cm/model-key model))
+            ports (:ports mod)
+            shape (when (= (:type dev) "amp") :amp)
+            conn (if ports (cm/port-locations ports shape) [])]
+        (rotate-shape conn transform x y)))))
+
+(defn build-point-type-index
+  "Build {[x y] => {:types #{:photonic :electric} :photonic-count N :electric-count N}}
+   from all non-wire devices in the schematic."
+  [sch]
+  (reduce
+   (fn [idx [_id dev]]
+     (if-let [ports (device-port-types dev)]
+       (reduce
+        (fn [idx port]
+          (let [pt [(:x port) (:y port)]
+                t (:type port)]
+            (-> idx
+                (update-in [pt :types] (fnil conj #{}) t)
+                (update-in [pt (keyword (str (name t) "-count"))] (fnil inc 0)))))
+        idx ports)
+       idx))
+   {} sch))
+
+(def point-type-index (r/track #(build-point-type-index @schematic)))
+
+(defn build-wire-type-index
+  "Propagate port types to wires via BFS through connected wire networks.
+   Returns {wire-id => :photonic|:electric|nil}."
+  [sch [connidx _] point-types]
+  (let [wires (into {} (filter #(= "wire" (:type (val %)))) sch)
+        ;; Build adjacency: for each wire, find other wires sharing endpoints
+        wire-endpoints (into {}
+                             (map (fn [[id {:keys [x y rx ry]}]]
+                                    [id [[x y] [(+ x rx) (+ y ry)]]]))
+                             wires)
+        ;; BFS from typed points to find wire types
+        wire-types (atom {})
+        visited (atom #{})]
+    (doseq [[wire-id endpoints] wire-endpoints
+            :when (not (contains? @visited wire-id))]
+      ;; BFS from this wire through connected wires
+      (loop [queue (conj #queue [] wire-id)
+             network-type nil
+             network #{}]
+        (if-let [wid (peek queue)]
+          (if (contains? network wid)
+            (recur (pop queue) network-type network)
+            (let [eps (get wire-endpoints wid)
+                  ;; Check if any endpoint has a typed port
+                  ep-type (some (fn [pt]
+                                  (let [types (get-in point-types [pt :types])]
+                                    (first types)))
+                                eps)
+                  new-type (or network-type ep-type)
+                  ;; Find connected wires at endpoints
+                  neighbors (for [pt eps
+                                  neighbor-id (get connidx pt)
+                                  :when (and (contains? wires neighbor-id)
+                                             (not (contains? network neighbor-id)))]
+                              neighbor-id)]
+              (recur (into (pop queue) neighbors) new-type (conj network wid))))
+          ;; Done with this network
+          (do
+            (swap! visited into network)
+            (doseq [wid network]
+              (swap! wire-types assoc wid network-type))))))
+    @wire-types))
+
+(def wire-type-index
+  (r/track #(build-wire-type-index @schematic @location-index @point-type-index)))
+
 (defn build-wire-split-index [[connidx bodyidx]]
   (reduce (fn [result [key val]]
             (if (contains? connidx key)
@@ -704,7 +1216,7 @@
     "vh" [x (+ y ry)]
     nil))
 
-(defn split-wire [wirename coords]
+(defn split-wire [wirename coords loc-idx]
   (let [{:keys [x y rx ry variant] :as wire} (get @schematic wirename)
         x2 (+ x rx)
         y2 (+ y ry)
@@ -712,10 +1224,9 @@
         ;; body is already in path order (including corner for elbows)
         split-set (set coords)
         ordered (concat [[x y]] (filter split-set body) [[x2 y2]])
-        ;; Corner of the segment being created (computed per segment in loop)
         ;; Check if two points share a non-wire device, or a wire with same corner
         shared-device? (fn [p1 p2 seg-corner]
-                         (let [connidx (first @location-index)
+                         (let [connidx (first loc-idx)
                                shared (clojure.set/intersection (get connidx p1) (get connidx p2))]
                            (some #(let [dev (get @schematic %)]
                                     (or (not= "wire" (:type dev))
@@ -725,14 +1236,13 @@
                      [[x1 y1] & [[x2 y2] & _ :as other]] ordered
                      schem {}]
                 (if other
-                  (let [;; Compute corner of the segment being created
-                        seg-corner (case variant
+                  (let [seg-corner (case variant
                                      "hv" [x2 y1]
                                      "vh" [x1 y2]
                                      nil)]
                     (recur (name (gensym wirename)) other
                            (if (shared-device? [x1 y1] [x2 y2] seg-corner)
-                             schem  ; skip - points already connected by a device
+                             schem
                              (assoc schem w
                                     {:type "wire" :transform cm/IV :variant variant
                                      :x x1 :y y1 :rx (- x2 x1) :ry (- y2 y1)}))))
@@ -908,9 +1418,10 @@
 
 (defn drag-staged-device [e]
   (let [[x y] (cm/viewbox-coord e)
-        [width height] (get-in models [(:type @staging) ::bg])
-        xm (math/round (- x width 0.5))
-        ym (math/round (- y height 0.5))]
+        bg (get-in models [(:type @staging) ::bg])
+        [width height] (when (vector? bg) bg)
+        xm (math/round (- x (or width 0) 0.5))
+        ym (math/round (- y (or height 0) 0.5))]
     (swap! staging assoc :x xm :y ym)))
 
 (defn wire-drag [e]
@@ -1193,17 +1704,22 @@
       (eraser-drag k e))))
 
 (defn get-model [layer model k v]
-  (let [m (-> models
-              (get (:type model)
-                   {::bg #'circuit-shape
-                    ::conn #'circuit-conn
-                    ::sym #'circuit-sym})
-              (get layer))]
+  (let [model-entry (get models (:type model)
+                         {::bg #'circuit-shape
+                          ::conn #'circuit-conn
+                          ::sym #'circuit-sym})
+        m (get model-entry layer)]
     ;; (assert m "no model")
     (cond
       (fn? m) ^{:key k} [m k v]
+      (map? m) ^{:key k} [render-symbol-data m k v]
       (= layer ::bg) ^{:key k} [draw-background m k v]
-      (= layer ::conn) ^{:key k} [draw-pattern (cm/pattern-size m) m port k v]
+      (= layer ::conn) (let [bg (::bg model-entry)
+                             [w h] (when (vector? bg) bg)
+                             size (if (and (number? w) (number? h))
+                                    (+ 2 (max w h))
+                                    (cm/pattern-size m))]
+                          ^{:key k} [draw-pattern size m port k v])
       :else ^{:key k} [(fn [k _v] (println "invalid model for" k))])))
 
 (defn end-ui [bg? selected dx dy]
@@ -1266,9 +1782,10 @@
 
 (defn add-device [cell [x y] & args]
   (let [kwargs (apply array-map args)
-        [width height] (get-in models [cell ::bg])
-        mx (math/round (- x (/ width 2) 1))
-        my (math/round (- y (/ height 2) 1))]
+        bg (get-in models [cell ::bg])
+        [width height] (when (vector? bg) bg)
+        mx (math/round (- x (/ (or width 0) 2) (if width 1 0)))
+        my (math/round (- y (/ (or height 0) 2) (if height 1 0)))]
     (swap! ui assoc
            ::staging (into {:transform cm/IV, :type cell :x mx :y my} kwargs)
            ::tool ::device)))
@@ -1684,7 +2201,92 @@
     [:button {:title "Add amplifier [a]"
               :class (device-active "amp")
               :on-pointer-up #(add-device "amp" (cm/viewbox-coord %))}
-     [cm/amp-icon]]]])
+     [cm/amp-icon]]]
+   [variant-tray
+    [:button {:title "Add straight waveguide"
+              :class (device-active "straight")
+              :on-pointer-up #(add-device "straight" (cm/viewbox-coord %))}
+     [cm/photonic-icon]]
+    [:button {:title "Add bend"
+              :class (device-active "bend")
+              :on-pointer-up #(add-device "bend" (cm/viewbox-coord %))}
+     "↱"]
+    [:button {:title "Add S-bend"
+              :class (device-active "sbend")
+              :on-pointer-up #(add-device "sbend" (cm/viewbox-coord %))}
+     "∿"]
+    [:button {:title "Add taper"
+              :class (device-active "taper")
+              :on-pointer-up #(add-device "taper" (cm/viewbox-coord %))}
+     "⊳"]
+    [:button {:title "Add transition"
+              :class (device-active "transition")
+              :on-pointer-up #(add-device "transition" (cm/viewbox-coord %))}
+     "⋈"]
+    [:button {:title "Add terminator"
+              :class (device-active "terminator")
+              :on-pointer-up #(add-device "terminator" (cm/viewbox-coord %))}
+     "▸"]
+    [:button {:title "Add crossing"
+              :class (device-active "crossing")
+              :on-pointer-up #(add-device "crossing" (cm/viewbox-coord %))}
+     "✚"]
+    [:button {:title "Add ring resonator"
+              :class (device-active "ring-single")
+              :on-pointer-up #(add-device "ring-single" (cm/viewbox-coord %))}
+     "◎"]
+    [:button {:title "Add double ring resonator"
+              :class (device-active "ring-double")
+              :on-pointer-up #(add-device "ring-double" (cm/viewbox-coord %))}
+     "⊚"]
+    [:button {:title "Add spiral"
+              :class (device-active "spiral")
+              :on-pointer-up #(add-device "spiral" (cm/viewbox-coord %))}
+     "🌀"]
+    [:button {:title "Add 1x2 splitter"
+              :class (device-active "splitter-1x2")
+              :on-pointer-up #(add-device "splitter-1x2" (cm/viewbox-coord %))}
+     "⑃"]
+    [:button {:title "Add directional coupler"
+              :class (device-active "coupler")
+              :on-pointer-up #(add-device "coupler" (cm/viewbox-coord %))}
+     ")("]
+    [:button {:title "Add ring coupler"
+              :class (device-active "coupler-ring")
+              :on-pointer-up #(add-device "coupler-ring" (cm/viewbox-coord %))}
+     "⤫"]
+    [:button {:title "Add MMI 1x2"
+              :class (device-active "mmi-1x2")
+              :on-pointer-up #(add-device "mmi-1x2" (cm/viewbox-coord %))}
+     "⊏⊐"]
+    [:button {:title "Add MMI 2x2"
+              :class (device-active "mmi-2x2")
+              :on-pointer-up #(add-device "mmi-2x2" (cm/viewbox-coord %))}
+     "⊏⊐"]
+    [:button {:title "Add MZI 1x2"
+              :class (device-active "mzi-1x2")
+              :on-pointer-up #(add-device "mzi-1x2" (cm/viewbox-coord %))}
+     "◇"]
+    [:button {:title "Add MZI 2x2"
+              :class (device-active "mzi-2x2")
+              :on-pointer-up #(add-device "mzi-2x2" (cm/viewbox-coord %))}
+     "◈"]
+    [:button {:title "Add LED/laser diode"
+              :class (device-active "led")
+              :on-pointer-up #(add-device "led" (cm/viewbox-coord %))}
+     "💡"]
+    [:button {:title "Add photodiode"
+              :class (device-active "photodiode")
+              :on-pointer-up #(add-device "photodiode" (cm/viewbox-coord %))}
+     "👁"]
+    [:button {:title "Add PN modulator"
+              :class (device-active "modulator")
+              :on-pointer-up #(add-device "modulator" (cm/viewbox-coord %))}
+     "⇌"]
+    [:button {:title "Add grating coupler"
+              :class (device-active "grating-coupler")
+              :on-pointer-up #(add-device "grating-coupler" (cm/viewbox-coord %))}
+     "▦"]]])
 
 (defn schematic-elements [schem]
   [:<>
@@ -1699,18 +2301,74 @@
    (for [[k v] schem]
      (get-model ::conn v k v))])
 
+(defn build-wire-errors
+  "Detect type mismatches and photonic forks.
+   Checks both device port types and wire types at each connection point."
+  [sch connidx point-types wire-types]
+  (reduce-kv
+   (fn [errors pt ids]
+     (let [;; Collect types at this point: from device ports and from wires
+           port-types (get-in point-types [pt :types])
+           wire-type-set (into #{}
+                               (keep (fn [id]
+                                       (when (= "wire" (:type (get sch id)))
+                                         (get wire-types id))))
+                               ids)
+           all-types (into (or port-types #{}) wire-type-set)
+           n (count (remove #(= (get-in sch [% :variant]) "text") ids))
+           mismatch? (and (contains? all-types :photonic) (contains? all-types :electric))
+           fork? (and (contains? all-types :photonic) (not (contains? all-types :electric)) (> n 2))]
+       (cond-> errors
+         mismatch? (conj {:type :mismatch :pos pt})
+         fork? (conj {:type :fork :pos pt}))))
+   [] connidx))
+
+(def wire-errors
+  (r/track #(build-wire-errors @schematic (first @location-index) @point-type-index @wire-type-index)))
+
+(defn point-connection-type
+  "Get the dominant connection type at a point from device ports and wire types."
+  [x y ids]
+  (let [port-types (get-in @point-type-index [[x y] :types])
+        wire-type-set (into #{}
+                            (keep #(get @wire-type-index %))
+                            ids)
+        all-types (into (or port-types #{}) wire-type-set)]
+    (cond
+      (contains? all-types :photonic) :photonic
+      (contains? all-types :electric) :electric
+      :else nil)))
+
 (defn schematic-dots []
-  [:<>
-   (doall
-    (for [[[x y] ids] (first @location-index)
-          :let [n (count (remove #(= (get-in @schematic [% :variant]) "text") ids))]
-          :when (not= n 2)]
-      [:circle
-       {:key [x y]
-        :class (if (> n 2) "wire" "nc")
-        :cx (* grid-size (+ x 0.5))
-        :cy (* grid-size (+ y 0.5))
-        :r (/ grid-size 10)}]))])
+  (let [icon-size (/ grid-size 2.5)
+        icon-offset (- (/ grid-size 2) (/ icon-size 2))
+        error-points (into #{} (map :pos) @wire-errors)]
+    [:<>
+     (doall
+      (for [[[x y] ids] (first @location-index)
+            :let [n (count (remove #(= (get-in @schematic [% :variant]) "text") ids))
+                  nc? (< n 2)
+                  pt (when nc? (point-connection-type x y ids))]
+            :when (and (not= n 2)
+                       (not (contains? error-points [x y])))]
+        [:circle
+         {:key [x y]
+          :class [(if nc? "nc" "wire")
+                  (when pt (name pt))]
+          :cx (* grid-size (+ x 0.5))
+          :cy (* grid-size (+ y 0.5))
+          :r (/ grid-size 10)}]))
+     (doall
+      (for [{err-type :type [x y] :pos} @wire-errors]
+        [:g.wire-error
+         {:key [:error x y err-type]
+          :class (case err-type :mismatch "type-error" :fork "fork-error")
+          :transform (str "translate(" (+ (* grid-size x) icon-offset) "," (+ (* grid-size y) icon-offset) ")")}
+         [:title (case err-type
+                   :mismatch "Type mismatch: incompatible domains meet"
+                   :fork "Photonic fork: waveguides cannot branch")]
+         [:circle {:cx (/ icon-size 2) :cy (/ icon-size 2) :r (/ icon-size 3) :fill "white"}]
+          [cm/exclamation-diamond {:size icon-size}]]))]))
 
 (defn tool-elements []
   (let [{sel ::selected
@@ -1768,7 +2426,8 @@
                   :width grid-size
                   :height grid-size}
         [:line.grid {:x1 0 :y1 0 :x2 grid-size :y2 0}]
-        [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]]
+        [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]
+]
       [:rect {:fill "url(#gridfill)"
               :on-pointer-up on-pointer-up-bg
               :x (* -500 grid-size)

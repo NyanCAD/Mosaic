@@ -232,7 +232,13 @@
 
 ; Device type specs
 (def device-types #{"pmos" "nmos" "npn" "pnp" "resistor" "capacitor"
-                    "inductor" "vsource" "isource" "diode" "ckt" "amp"})
+                    "inductor" "vsource" "isource" "diode" "led" "photodiode" "modulator"
+                    "ckt" "amp"
+                    "straight" "bend" "sbend" "taper" "transition"
+                    "terminator" "crossing" "ring-single" "ring-double" "spiral"
+                    "splitter-1x2" "coupler" "coupler-ring"
+                    "mmi-1x2" "mmi-2x2" "mzi-1x2" "mzi-2x2"
+                    "grating-coupler"})
 
 (def schematic-only-types #{"wire" "port" "text"})
 
@@ -310,11 +316,13 @@
   (swap! ut #(if (undo-state (zip/down %)) (zip/down %) %))
   (undo-state @ut))
 
-(defn ascii-patern [pattern]
-  (for [[y s] (map-indexed vector pattern)
-        [x c] (map-indexed vector s)
-        :when (not= c " ")]
-    [x y c]))
+(defn ascii-patern
+  ([pattern] (ascii-patern :electric pattern))
+  ([port-type pattern]
+   (for [[y s] (map-indexed vector pattern)
+         [x c] (map-indexed vector s)
+         :when (not= c " ")]
+     {:name (str c) :x x :y y :type port-type})))
 
 (def active-bg [1 1])
 
@@ -338,21 +346,51 @@
     "  "
     " N"]))
 
+;; Photonic connection patterns (horizontal orientation)
+(def horizontal-conn
+  "Two ports, left and right"
+  (ascii-patern :photonic
+   ["   "
+    "1 2"
+    "   "]))
+
+(def split-1x2-conn
+  "One port left, two ports right"
+  (ascii-patern :photonic
+   ["  2"
+    "1  "
+    "  3"]))
+
+(def split-2x2-conn
+  "Two ports left, two ports right"
+  (ascii-patern :photonic
+   ["1 3"
+    "   "
+    "2 4"]))
+
+(def cross-conn
+  "Four ports in a cross pattern"
+  (ascii-patern :photonic
+   [" 3 "
+    "1 2"
+    " 4 "]))
+
 (defn pattern-size [pattern]
-  (let [size (inc (apply max (mapcat (partial take 2) pattern)))]
+  (let [size (inc (apply max (mapcat (juxt :x :y) pattern)))]
     (if (js/isFinite size)
       size
       1)))
 
 (defn port-perimeter
   "Calculate device perimeter [width height] based on ports.
-   Optional shape parameter: :amp constrains aspect ratio."
+   Ports are [{:name :side :type}]. Optional shape parameter: :amp constrains aspect ratio."
   ([ports] (port-perimeter ports nil))
   ([ports shape]
-   (let [left-n (count (:left ports))
-         right-n (count (:right ports))
-         top-n (count (:top ports))
-         bottom-n (count (:bottom ports))
+   (let [by-side (group-by :side ports)
+         left-n (count (:left by-side))
+         right-n (count (:right by-side))
+         top-n (count (:top by-side))
+         bottom-n (count (:bottom by-side))
          raw-height (max 1 left-n right-n)
          raw-width (max 1 top-n bottom-n)
          ;; Widen to odd if parities differ on opposite sides
@@ -387,15 +425,17 @@
     :else (vec (range 1 (inc n)))))
 
 (defn port-locations
-  "Calculate port locations as [top-locs bottom-locs left-locs right-locs].
+  "Calculate port positions from [{:name :side :type}].
+   Returns flat list of port maps with :x :y added.
    Optional shape parameter: :amp left-aligns top/bottom ports."
   ([ports] (port-locations ports nil))
   ([ports shape]
    (let [[width height] (port-perimeter ports shape)
-         left (or (:left ports) [])
-         right (or (:right ports) [])
-         top (or (:top ports) [])
-         bottom (or (:bottom ports) [])
+         by-side (group-by :side ports)
+         left (or (:left by-side) [])
+         right (or (:right by-side) [])
+         top (or (:top by-side) [])
+         bottom (or (:bottom by-side) [])
          ;; Spread ports with gap in middle when fewer than dimension
          left-ys (spread-ports (count left) height)
          right-ys (spread-ports (count right) height)
@@ -406,11 +446,11 @@
          bottom-xs (if (= shape :amp)
                      (vec (range 1 (inc (count bottom))))
                      (spread-ports (count bottom) width))
-         left-locs (map-indexed (fn [i n] [0 (nth left-ys i) n]) left)
-         right-locs (map-indexed (fn [i n] [(inc width) (nth right-ys i) n]) right)
-         top-locs (map-indexed (fn [i n] [(nth top-xs i) 0 n]) top)
-         bottom-locs (map-indexed (fn [i n] [(nth bottom-xs i) (inc height) n]) bottom)]
-     [top-locs bottom-locs left-locs right-locs])))
+         left-locs (map-indexed (fn [i p] (assoc p :x 0 :y (nth left-ys i))) left)
+         right-locs (map-indexed (fn [i p] (assoc p :x (inc width) :y (nth right-ys i))) right)
+         top-locs (map-indexed (fn [i p] (assoc p :x (nth top-xs i) :y 0)) top)
+         bottom-locs (map-indexed (fn [i p] (assoc p :x (nth bottom-xs i) :y (inc height))) bottom)]
+     (concat top-locs bottom-locs left-locs right-locs))))
 
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
@@ -448,7 +488,10 @@
 (def help (r/adapt-react-class icons/QuestionCircle))
 (def external-link (r/adapt-react-class icons/BoxArrowUpRight))
 (def amp-icon (r/adapt-react-class icons/CaretRight))
+(def photonic-icon (r/adapt-react-class icons/Lightbulb))
 (def search (r/adapt-react-class icons/Search))
+(def exclamation-triangle (r/adapt-react-class icons/ExclamationTriangleFill))
+(def exclamation-diamond (r/adapt-react-class icons/ExclamationDiamondFill))
 (def x-circle (r/adapt-react-class icons/XCircle))
 (def x-circle-fill (r/adapt-react-class icons/XCircleFill))
 (def plus-circle (r/adapt-react-class icons/PlusCircle))

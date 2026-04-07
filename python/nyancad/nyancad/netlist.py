@@ -79,11 +79,11 @@ class SchemId(namedtuple("SchemId", ["schem", "device"])):
         return cls(schem, dev)
 
 
-def shape_ports(shape):
+def shape_ports(shape, port_type='electric'):
     for y, s in enumerate(shape):
         for x, c in enumerate(s):
             if c != ' ':
-                yield x, y, c
+                yield {'name': c, 'x': x, 'y': y, 'type': port_type}
 
 
 mosfet_shape = list(shape_ports([
@@ -108,29 +108,33 @@ twoport_shape = list(shape_ports([
 
 def rotate(shape, transform, devx, devy):
     a, b, c, d, e, f = transform
-    width = max(max(x, y) for x, y, _ in shape)+1
+    width = max(max(p['x'], p['y']) for p in shape)+1
     mid = width/2-0.5
     res = {}
-    for px, py, p in shape:
-        x = px-mid
-        y = py-mid
+    for port in shape:
+        x = port['x']-mid
+        y = port['y']-mid
         nx = a*x+c*y+e
         ny = b*x+d*y+f
-        res[round(devx+nx+mid), round(devy+ny+mid)] = p
+        res[round(devx+nx+mid), round(devy+ny+mid)] = port['name']
     return res
 
 
 def port_perimeter(ports, shape=None):
     """Calculate device perimeter [width, height] based on ports.
 
+    Ports are [{name, side, type}].
     Height is determined by left/right port counts (vertical sides).
     Width is determined by top/bottom port counts (horizontal sides).
     Optional shape parameter: 'amp' constrains aspect ratio.
     """
-    left_n = len(ports.get('left', []))
-    right_n = len(ports.get('right', []))
-    top_n = len(ports.get('top', []))
-    bottom_n = len(ports.get('bottom', []))
+    by_side = {}
+    for p in ports:
+        by_side.setdefault(p['side'], []).append(p)
+    left_n = len(by_side.get('left', []))
+    right_n = len(by_side.get('right', []))
+    top_n = len(by_side.get('top', []))
+    bottom_n = len(by_side.get('bottom', []))
     raw_height = max(1, left_n, right_n)
     raw_width = max(1, top_n, bottom_n)
     # Widen to odd if parities differ on opposite sides
@@ -159,15 +163,19 @@ def spread_ports(n, size):
         return list(range(1, n + 1))
 
 def port_locations(ports, shape=None):
-    """Calculate port locations as list of (x, y, port_name) tuples.
+    """Calculate port positions from [{name, side, type}].
 
+    Returns list of port dicts with x, y added.
     Optional shape parameter: 'amp' left-aligns top/bottom ports.
     """
     width, height = port_perimeter(ports, shape)
-    top = ports.get('top', [])
-    bottom = ports.get('bottom', [])
-    left = ports.get('left', [])
-    right = ports.get('right', [])
+    by_side = {}
+    for p in ports:
+        by_side.setdefault(p['side'], []).append(p)
+    top = by_side.get('top', [])
+    bottom = by_side.get('bottom', [])
+    left = by_side.get('left', [])
+    right = by_side.get('right', [])
     left_ys = spread_ports(len(left), height)
     right_ys = spread_ports(len(right), height)
     # For amp: left-align top/bottom (triangle narrows to right)
@@ -177,10 +185,10 @@ def port_locations(ports, shape=None):
     else:
         top_xs = spread_ports(len(top), width)
         bottom_xs = spread_ports(len(bottom), width)
-    top_locs = [(top_xs[i], 0, n) for i, n in enumerate(top)]
-    bottom_locs = [(bottom_xs[i], height + 1, n) for i, n in enumerate(bottom)]
-    left_locs = [(0, left_ys[i], n) for i, n in enumerate(left)]
-    right_locs = [(width + 1, right_ys[i], n) for i, n in enumerate(right)]
+    top_locs = [{**p, 'x': top_xs[i], 'y': 0} for i, p in enumerate(top)]
+    bottom_locs = [{**p, 'x': bottom_xs[i], 'y': height + 1} for i, p in enumerate(bottom)]
+    left_locs = [{**p, 'x': 0, 'y': left_ys[i]} for i, p in enumerate(left)]
+    right_locs = [{**p, 'x': width + 1, 'y': right_ys[i]} for i, p in enumerate(right)]
     return top_locs + bottom_locs + left_locs + right_locs
 
 def getports(doc, models):
@@ -392,7 +400,7 @@ class NyanCADMixin:
                 m = models[model_id]
                 shape = 'amp' if device_type == 'amp' else None
                 port_locs = port_locations(m['ports'], shape)
-                port_list = [p(c[2]) for c in port_locs]
+                port_list = [p(c['name']) for c in port_locs]
             else:
                 # Fallback for built-in types: use known default port orders
                 port_list = self._default_port_list(device_type, ports, p)
@@ -443,7 +451,7 @@ class NyanCADMixin:
                 m = models[model_id]
                 shape = 'amp' if device_type == 'amp' else None
                 port_locs = port_locations(m['ports'], shape)
-                port_list = [p(c[2]) for c in port_locs]
+                port_list = [p(c['name']) for c in port_locs]
                 params = props.copy()
                 model_name = params.pop('model', model_id)
                 self.X(name, model_name, *port_list, **params)
@@ -495,7 +503,7 @@ class NyanCircuit(NyanCADMixin, Circuit):
                     # Create subcircuit for models with schematic implementations
                     docs = schem[model_id]
                     shape = 'amp' if model_def.get('type') == 'amp' else None
-                    nodes = [c[2] for c in port_locations(model_def['ports'], shape)]
+                    nodes = [c['name'] for c in port_locations(model_def['ports'], shape)]
                     # Pass model parameter definitions as subcircuit parameters (default to 0)
                     model_params = {p['name']: p.get('default', '0')
                                     for p in model_def.get('props', [])
