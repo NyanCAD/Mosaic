@@ -97,7 +97,7 @@
                                :title "Remove"} [x-circle] [x-circle-fill]]]
          [recursive-editor children item-cursor on-change]])))
    [:button.add-btn {:on-click #(do (swap! list-cursor (fnil conj [])
-                                          (into {} (map (fn [{:keys [name]}] [(keyword name) ""]) children)))
+                                          (into {} (map (fn [{:keys [name default]}] [(keyword name) (or default "")]) children)))
                                     (when on-change (on-change)))}
     [plus-circle] [plus-circle-fill] " Add"]])
 
@@ -258,12 +258,10 @@
 
 ; Model specs for modeldb
 (s/def ::tags (s/coll-of string? :kind vector?))
-(s/def ::port-list (s/coll-of string? :kind vector?))
-(s/def ::ports (s/keys :opt-un [::top ::bottom ::left ::right]))
-(s/def ::top ::port-list)
-(s/def ::bottom ::port-list)
-(s/def ::left ::port-list)
-(s/def ::right ::port-list)
+(s/def ::side #{"top" "bottom" "left" "right" :top :bottom :left :right})
+(s/def ::port-type #{"electric" "photonic" :electric :photonic})
+(s/def ::port-entry (s/keys :req-un [::name ::side]))
+(s/def ::ports (s/coll-of ::port-entry :kind vector?))
 (s/def ::code string?)
 (s/def ::language string?)
 (s/def ::spice-type string?)
@@ -381,12 +379,18 @@
       size
       1)))
 
+(defn- group-ports-by-side
+  "Group ports by :side, accepting both keyword and string values."
+  [ports]
+  (let [by-side (group-by (comp keyword :side) ports)]
+    by-side))
+
 (defn port-perimeter
   "Calculate device perimeter [width height] based on ports.
    Ports are [{:name :side :type}]. Optional shape parameter: :amp constrains aspect ratio."
   ([ports] (port-perimeter ports nil))
   ([ports shape]
-   (let [by-side (group-by :side ports)
+   (let [by-side (group-ports-by-side ports)
          left-n (count (:left by-side))
          right-n (count (:right by-side))
          top-n (count (:top by-side))
@@ -431,7 +435,7 @@
   ([ports] (port-locations ports nil))
   ([ports shape]
    (let [[width height] (port-perimeter ports shape)
-         by-side (group-by :side ports)
+         by-side (group-ports-by-side ports)
          left (or (:left by-side) [])
          right (or (:right by-side) [])
          top (or (:top by-side) [])
@@ -446,10 +450,10 @@
          bottom-xs (if (= shape :amp)
                      (vec (range 1 (inc (count bottom))))
                      (spread-ports (count bottom) width))
-         left-locs (map-indexed (fn [i p] (assoc p :x 0 :y (nth left-ys i))) left)
-         right-locs (map-indexed (fn [i p] (assoc p :x (inc width) :y (nth right-ys i))) right)
-         top-locs (map-indexed (fn [i p] (assoc p :x (nth top-xs i) :y 0)) top)
-         bottom-locs (map-indexed (fn [i p] (assoc p :x (nth bottom-xs i) :y (inc height))) bottom)]
+         left-locs (map-indexed (fn [i p] (assoc p :side :left :x 0 :y (nth left-ys i))) left)
+         right-locs (map-indexed (fn [i p] (assoc p :side :right :x (inc width) :y (nth right-ys i))) right)
+         top-locs (map-indexed (fn [i p] (assoc p :side :top :x (nth top-xs i) :y 0)) top)
+         bottom-locs (map-indexed (fn [i p] (assoc p :side :bottom :x (nth bottom-xs i) :y (inc height))) bottom)]
      (concat top-locs bottom-locs left-locs right-locs))))
 
 ; icons

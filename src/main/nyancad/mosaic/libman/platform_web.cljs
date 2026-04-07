@@ -159,12 +159,11 @@
           port-xf (comp
                    (filter #(= (:type %) "port"))
                    (remove #(= (:variant %) "text"))
-                   (map (juxt cm/transform-direction :name)))]
-      (swap! mod update :ports
-             #(transduce port-xf
-                         (fn [acc [side name]] (update acc side conj name))
-                         {:top [] :bottom [] :left [] :right []}
-                         (vals schematic-docs))))))
+                   (map (fn [doc] {:name (:name doc)
+                                   :side (name (cm/transform-direction doc))
+                                   :type "electric"})))]
+      (swap! mod assoc :ports
+             (into [] port-xf (vals schematic-docs))))))
 
 ;; --- Workspace management ---
 

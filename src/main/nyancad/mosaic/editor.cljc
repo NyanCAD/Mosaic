@@ -1083,11 +1083,12 @@
         ports (:ports mod)
         shape (when (= type "amp") :amp)
         conn (if ports (cm/port-locations ports shape) [])
-        [w h] (if ports (cm/port-perimeter ports shape) [1 1])]
-    [(map (juxt :x :y) (rotate-shape conn transform x y))
+        [w h] (if ports (cm/port-perimeter ports shape) [1 1])
+        size (+ 2 (max w h))]
+    [(map (juxt :x :y) (rotate-shape conn size transform x y))
      (map (juxt :x :y) (rotate-shape (for [bx (range w) by (range h)]
                                         {:x (inc bx) :y (inc by)})
-                                      transform x y))]))
+                                      size transform x y))]))
 
 (defn device-locations [dev]
   (let [cell (:type dev)]

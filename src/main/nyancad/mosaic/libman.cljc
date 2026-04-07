@@ -86,14 +86,6 @@
      ;; Available models section (platform-specific: web shows remote DB, VS Code is no-op)
      [remote-models-section selcat filter-text]]))
 
-(defn port-editor [cell side]
-  (let [path [:ports side]]
-    [:<>
-     [:label {:for (name side)} (name side)]
-     [cm/dbfield :input {:id (name side), :type "text"} cell
-      #(clojure.string/join " " (get-in % path))
-      #(swap! %1 assoc-in path (vec (remove empty? (clojure.string/split %2 #"[, ]+"))))]]))
-
 (defn parameters-editor [cell]
   [cm/recursive-editor
    [{:name "props" :tooltip "Parameters" :type :h4
@@ -124,14 +116,22 @@
           [cm/dbfield :input {:id "symbol-url" :type "url" :placeholder "https://..."} mod
            :symbol
            #(swap! %1 assoc :symbol %2)]
-          [:h4 "Port Configuration"]
           (when (not (cm/has-code-models? @mod))
             [:button {:on-click #(import-ports @selmodel mod)}
              "Import from schematic"])
-          [port-editor mod :top]
-          [port-editor mod :bottom]
-          [port-editor mod :left]
-          [port-editor mod :right]])
+          [cm/recursive-editor
+           [{:name "ports" :tooltip "Port Configuration" :type :h4
+             :children
+             [{:name "name" :tooltip "Port name"}
+              {:name "side" :tooltip "Side" :type :select :default "left"
+               :options [{:value "left" :label "Left"}
+                         {:value "right" :label "Right"}
+                         {:value "top" :label "Top"}
+                         {:value "bottom" :label "Bottom"}]}
+              {:name "type" :tooltip "Port type" :type :select :default "electric"
+               :options [{:value "electric" :label "Electric"}
+                         {:value "photonic" :label "Photonic"}]}]}]
+           mod]])
        (when (cm/has-code-models? @mod)
          [cm/recursive-editor
            [{:name "models" :tooltip "Model Configuration" :type :h4

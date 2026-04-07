@@ -166,6 +166,13 @@ class ModelEntry(BaseModel):
     )
 
 
+class PortEntry(BaseModel):
+    """A single port on a component symbol."""
+    name: str = Field(..., description="Port name")
+    side: Literal["top", "bottom", "left", "right"] = Field(..., description="Which side of the symbol")
+    type: Literal["electric", "photonic"] = Field("electric", description="Port type")
+
+
 class ModelMetadata(BaseModel):
     """Component model metadata from the library.
 
@@ -193,7 +200,7 @@ class ModelMetadata(BaseModel):
     )
 
     # Port and parameter definitions
-    ports: Optional[Dict[str, list[str]]] = Field(None, description="Port definitions by position")
+    ports: Optional[list[PortEntry]] = Field(None, description="Port definitions as typed entries with side")
     props: Optional[list[Dict[str, str]]] = Field(None, description="Parameter definitions")
 
     # Symbol graphics
