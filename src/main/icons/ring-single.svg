@@ -1,0 +1,5 @@
+<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <!-- Ring resonator: ring above a through-waveguide -->
+  <circle cx="20" cy="15" r="9" fill="none" stroke="black" stroke-width="2.5"/>
+  <line x1="4" y1="30" x2="36" y2="30" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

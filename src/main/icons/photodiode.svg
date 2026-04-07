@@ -1,0 +1,7 @@
+<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <!-- Photodiode: same diode as LED, arrows reversed (pointing inward) -->
+  <polygon points="8,10 8,30 22,20" fill="none" stroke="black" stroke-width="2.5" stroke-linejoin="round"/>
+  <line x1="22" y1="10" x2="22" y2="30" stroke="black" stroke-width="2.5"/>
+  <path d="M28,4 L18,12 M18,9 L18,12 L21,12" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M28,12 L18,20 M18,17 L18,20 L21,20" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

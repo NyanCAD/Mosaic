@@ -1,0 +1,4 @@
+<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <!-- S-bend: smooth S-curve connecting offset ports -->
+  <path d="M4,12 C18,12 22,28 36,28" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,5 @@
+<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <!-- Directional coupler: two waveguides approaching closely in middle -->
+  <path d="M4,12 C12,12 14,18 20,18 C26,18 28,12 36,12" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M4,28 C12,28 14,22 20,22 C26,22 28,28 36,28" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,7 @@
+<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <!-- MMI 1x2: box with 1 input left, 2 outputs right -->
+  <rect x="12" y="8" width="16" height="24" rx="1" fill="none" stroke="black" stroke-width="2.5"/>
+  <line x1="4" y1="20" x2="12" y2="20" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="28" y1="14" x2="36" y2="14" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="28" y1="26" x2="36" y2="26" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

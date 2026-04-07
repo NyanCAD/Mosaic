@@ -1,0 +1,5 @@
+<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <!-- 1x2 splitter: Y-junction, one input splitting to two outputs -->
+  <path d="M4,20 C16,20 20,10 36,10" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M4,20 C16,20 20,30 36,30" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

@@ -258,8 +258,8 @@
 
 ; Model specs for modeldb
 (s/def ::tags (s/coll-of string? :kind vector?))
-(s/def ::side #{"top" "bottom" "left" "right" :top :bottom :left :right})
-(s/def ::port-type #{"electric" "photonic" :electric :photonic})
+(s/def ::side #{"top" "bottom" "left" "right"})
+(s/def ::port-type #{"electric" "photonic"})
 (s/def ::port-entry (s/keys :req-un [::name ::side]))
 (s/def ::ports (s/coll-of ::port-entry :kind vector?))
 (s/def ::code string?)
@@ -315,7 +315,7 @@
   (undo-state @ut))
 
 (defn ascii-patern
-  ([pattern] (ascii-patern :electric pattern))
+  ([pattern] (ascii-patern "electric" pattern))
   ([port-type pattern]
    (for [[y s] (map-indexed vector pattern)
          [x c] (map-indexed vector s)
@@ -347,28 +347,28 @@
 ;; Photonic connection patterns (horizontal orientation)
 (def horizontal-conn
   "Two ports, left and right"
-  (ascii-patern :photonic
+  (ascii-patern "photonic"
    ["   "
     "1 2"
     "   "]))
 
 (def split-1x2-conn
   "One port left, two ports right"
-  (ascii-patern :photonic
+  (ascii-patern "photonic"
    ["  2"
     "1  "
     "  3"]))
 
 (def split-2x2-conn
   "Two ports left, two ports right"
-  (ascii-patern :photonic
+  (ascii-patern "photonic"
    ["1 3"
     "   "
     "2 4"]))
 
 (def cross-conn
   "Four ports in a cross pattern"
-  (ascii-patern :photonic
+  (ascii-patern "photonic"
    [" 3 "
     "1 2"
     " 4 "]))
@@ -837,6 +837,27 @@
                "port" (rc/inline "icons/port.svg")
                "ground" (rc/inline "icons/ground.svg")
                "supply" (rc/inline "icons/supply.svg")
+               "straight" (rc/inline "icons/straight.svg")
+               "bend" (rc/inline "icons/bend.svg")
+               "sbend" (rc/inline "icons/sbend.svg")
+               "taper" (rc/inline "icons/taper.svg")
+               "transition" (rc/inline "icons/transition.svg")
+               "terminator" (rc/inline "icons/terminator.svg")
+               "crossing" (rc/inline "icons/crossing.svg")
+               "ring-single" (rc/inline "icons/ring-single.svg")
+               "ring-double" (rc/inline "icons/ring-double.svg")
+               "spiral" (rc/inline "icons/spiral.svg")
+               "splitter-1x2" (rc/inline "icons/splitter-1x2.svg")
+               "coupler" (rc/inline "icons/coupler.svg")
+               "coupler-ring" (rc/inline "icons/coupler-ring.svg")
+               "mmi-1x2" (rc/inline "icons/mmi-1x2.svg")
+               "mmi-2x2" (rc/inline "icons/mmi-2x2.svg")
+               "mzi-1x2" (rc/inline "icons/mzi-1x2.svg")
+               "mzi-2x2" (rc/inline "icons/mzi-2x2.svg")
+               "led" (rc/inline "icons/led.svg")
+               "photodiode" (rc/inline "icons/photodiode.svg")
+               "modulator" (rc/inline "icons/modulator.svg")
+               "grating-coupler" (rc/inline "icons/grating-coupler.svg")
                "")]
     [:span.device-icon {:dangerouslySetInnerHTML (r/unsafe-html icon)}]))
 

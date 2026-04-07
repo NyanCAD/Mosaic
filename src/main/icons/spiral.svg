@@ -1,0 +1,6 @@
+<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <!-- Spiral: alternating semicircular arcs spiraling inward, with leads -->
+  <line x1="4" y1="20" x2="8" y2="20" stroke="black" stroke-width="2" stroke-linecap="round"/>
+  <path d="M8,20 A12,12 0 0,0 32,20 A8,8 0 0,0 16,20 A4,4 0 0,0 24,20 A4,4 0 0,1 16,20 A8,8 0 0,1 32,20 A12,12 0 0,1 8,20" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"/>
+  <line x1="32" y1="20" x2="36" y2="20" stroke="black" stroke-width="2" stroke-linecap="round"/>
+</svg>

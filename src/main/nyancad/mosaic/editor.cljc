@@ -126,7 +126,7 @@
   [:circle.port {:cx (+ x (/ grid-size 2))
                  :cy (+ y (/ grid-size 2))
                  :r (/ grid-size 10)
-                 :class (when port-type (name port-type))}])
+                 :class port-type}])
 
 (defn draw-background [[width height] k v]
   [device (+ 2 (max width height)) k v
@@ -833,26 +833,26 @@
                       ::category "passive"
                       ::props []}
              "led" {::bg [1 1]
-                    ::conn [{:name "P" :x 1 :y 0 :type :electric}
-                            {:name "O" :x 2 :y 1 :type :photonic}
-                            {:name "N" :x 1 :y 2 :type :electric}]
+                    ::conn [{:name "P" :x 1 :y 0 :type "electric"}
+                            {:name "O" :x 2 :y 1 :type "photonic"}
+                            {:name "N" :x 1 :y 2 :type "electric"}]
                     ::sym #'diode-sym
                     ::category "photonic-active"
                     ::template "{self.name}"
                     ::props []}
              "photodiode" {::bg [1 1]
-                           ::conn [{:name "P" :x 1 :y 0 :type :electric}
-                                   {:name "O" :x 2 :y 1 :type :photonic}
-                                   {:name "N" :x 1 :y 2 :type :electric}]
+                           ::conn [{:name "P" :x 1 :y 0 :type "electric"}
+                                   {:name "O" :x 2 :y 1 :type "photonic"}
+                                   {:name "N" :x 1 :y 2 :type "electric"}]
                            ::sym #'diode-sym
                            ::category "photonic-active"
                            ::template "{self.name}"
                            ::props []}
              "modulator" {::bg [1 1]
-                          ::conn [{:name "P" :x 1 :y 0 :type :electric}
-                                  {:name "1" :x 0 :y 1 :type :photonic}
-                                  {:name "2" :x 2 :y 1 :type :photonic}
-                                  {:name "N" :x 1 :y 2 :type :electric}]
+                          ::conn [{:name "P" :x 1 :y 0 :type "electric"}
+                                  {:name "1" :x 0 :y 1 :type "photonic"}
+                                  {:name "2" :x 2 :y 1 :type "photonic"}
+                                  {:name "N" :x 1 :y 2 :type "electric"}]
                           ::sym #'diode-sym
                           ::category "photonic-active"
                           ::template "{self.name}"
@@ -865,7 +865,7 @@
                          ::template "{self.name}"
                          ::props []}
              "bend" {::bg [1 1]
-                     ::conn (cm/ascii-patern :photonic
+                     ::conn (cm/ascii-patern "photonic"
                              ["   "
                               "1  "
                               " 2 "])
@@ -874,7 +874,7 @@
                      ::template "{self.name}"
                      ::props []}
              "sbend" {::bg [1 2]
-                      ::conn (cm/ascii-patern :photonic
+                      ::conn (cm/ascii-patern "photonic"
                               ["   "
                                "1  "
                                "  2"])
@@ -895,7 +895,7 @@
                            ::template "{self.name}"
                            ::props []}
              "terminator" {::bg [1 1]
-                           ::conn (cm/ascii-patern :photonic
+                           ::conn (cm/ascii-patern "photonic"
                                    ["   "
                                     "1  "
                                     "   "])
@@ -910,7 +910,7 @@
                          ::template "{self.name}"
                          ::props []}
              "ring-single" {::bg [1 2]
-                            ::conn (cm/ascii-patern :photonic
+                            ::conn (cm/ascii-patern "photonic"
                                     ["   "
                                      "   "
                                      "1 2"])
@@ -919,7 +919,7 @@
                             ::template "{self.name}"
                             ::props []}
              "ring-double" {::bg [1 2]
-                            ::conn (cm/ascii-patern :photonic
+                            ::conn (cm/ascii-patern "photonic"
                                     ["   "
                                      "1 2"
                                      "3 4"])
@@ -934,7 +934,7 @@
                        ::template "{self.name}"
                        ::props []}
              "splitter-1x2" {::bg [1 3]
-                             ::conn (cm/ascii-patern :photonic
+                             ::conn (cm/ascii-patern "photonic"
                                      ["   "
                                       "  2"
                                       "1  "
@@ -945,7 +945,7 @@
                              ::template "{self.name}"
                              ::props []}
              "coupler" {::bg [1 2]
-                        ::conn (cm/ascii-patern :photonic
+                        ::conn (cm/ascii-patern "photonic"
                                 ["   "
                                  "1 2"
                                  "3 4"])
@@ -954,7 +954,7 @@
                         ::template "{self.name}"
                         ::props []}
              "coupler-ring" {::bg #'coupler-ring-bg
-                             ::conn (cm/ascii-patern :photonic
+                             ::conn (cm/ascii-patern "photonic"
                                      ["12"
                                       "34"])
                              ::sym coupler-ring-elements
@@ -962,7 +962,7 @@
                              ::template "{self.name}"
                              ::props []}
              "mmi-1x2" {::bg [1 3]
-                        ::conn (cm/ascii-patern :photonic
+                        ::conn (cm/ascii-patern "photonic"
                                 ["   "
                                  "  2"
                                  "1  "
@@ -973,7 +973,7 @@
                         ::template "{self.name}"
                         ::props []}
              "mmi-2x2" {::bg [1 3]
-                        ::conn (cm/ascii-patern :photonic
+                        ::conn (cm/ascii-patern "photonic"
                                 ["   "
                                  "1 2"
                                  "   "
@@ -984,7 +984,7 @@
                         ::template "{self.name}"
                         ::props []}
              "mzi-1x2" {::bg [1 3]
-                        ::conn (cm/ascii-patern :photonic
+                        ::conn (cm/ascii-patern "photonic"
                                 ["   "
                                  "  2"
                                  "1  "
@@ -995,7 +995,7 @@
                         ::template "{self.name}"
                         ::props []}
              "mzi-2x2" {::bg [1 3]
-                        ::conn (cm/ascii-patern :photonic
+                        ::conn (cm/ascii-patern "photonic"
                                 ["   "
                                  "1 2"
                                  "   "
@@ -1006,7 +1006,7 @@
                         ::template "{self.name}"
                         ::props []}
 "grating-coupler" {::bg [1 1]
-                                ::conn (cm/ascii-patern :photonic
+                                ::conn (cm/ascii-patern "photonic"
                                         ["   "
                                          "1  "
                                          "   "])
@@ -1019,7 +1019,7 @@
                      ::sym wire-sym
                      ::props []}
              "port" {::bg []
-                     ::conn [{:name "P" :x 0 :y 0 :type :electric}]
+                     ::conn [{:name "P" :x 0 :y 0}]
                      ::sym port-sym
                      ::template "{self.name}: {res.op[self.name.toLowerCase()]:.2f}V"
                      ::props []}
@@ -1135,7 +1135,7 @@
         (rotate-shape conn transform x y)))))
 
 (defn build-point-type-index
-  "Build {[x y] => {:types #{:photonic :electric} :photonic-count N :electric-count N}}
+  "Build {[x y] => {:types #{\"photonic\" \"electric\"} :photonic-count N :electric-count N}}
    from all non-wire devices in the schematic."
   [sch]
   (reduce
@@ -1145,9 +1145,11 @@
         (fn [idx port]
           (let [pt [(:x port) (:y port)]
                 t (:type port)]
-            (-> idx
-                (update-in [pt :types] (fnil conj #{}) t)
-                (update-in [pt (keyword (str (name t) "-count"))] (fnil inc 0)))))
+            (if t
+              (-> idx
+                  (update-in [pt :types] (fnil conj #{}) t)
+                  (update-in [pt (keyword (str (name t) "-count"))] (fnil inc 0)))
+              idx)))
         idx ports)
        idx))
    {} sch))
@@ -1156,7 +1158,7 @@
 
 (defn build-wire-type-index
   "Propagate port types to wires via BFS through connected wire networks.
-   Returns {wire-id => :photonic|:electric|nil}."
+   Returns {wire-id => \"photonic\"|\"electric\"|nil}."
   [sch [connidx _] point-types]
   (let [wires (into {} (filter #(= "wire" (:type (val %)))) sch)
         ;; Build adjacency: for each wire, find other wires sharing endpoints
@@ -2204,90 +2206,90 @@
               :on-pointer-up #(add-device "amp" (cm/viewbox-coord %))}
      [cm/amp-icon]]]
    [variant-tray
-    [:button {:title "Add straight waveguide"
-              :class (device-active "straight")
-              :on-pointer-up #(add-device "straight" (cm/viewbox-coord %))}
-     [cm/photonic-icon]]
-    [:button {:title "Add bend"
-              :class (device-active "bend")
-              :on-pointer-up #(add-device "bend" (cm/viewbox-coord %))}
-     "↱"]
-    [:button {:title "Add S-bend"
-              :class (device-active "sbend")
-              :on-pointer-up #(add-device "sbend" (cm/viewbox-coord %))}
-     "∿"]
-    [:button {:title "Add taper"
-              :class (device-active "taper")
-              :on-pointer-up #(add-device "taper" (cm/viewbox-coord %))}
-     "⊳"]
-    [:button {:title "Add transition"
-              :class (device-active "transition")
-              :on-pointer-up #(add-device "transition" (cm/viewbox-coord %))}
-     "⋈"]
-    [:button {:title "Add terminator"
-              :class (device-active "terminator")
-              :on-pointer-up #(add-device "terminator" (cm/viewbox-coord %))}
-     "▸"]
-    [:button {:title "Add crossing"
-              :class (device-active "crossing")
-              :on-pointer-up #(add-device "crossing" (cm/viewbox-coord %))}
-     "✚"]
     [:button {:title "Add ring resonator"
               :class (device-active "ring-single")
               :on-pointer-up #(add-device "ring-single" (cm/viewbox-coord %))}
-     "◎"]
+     [cm/device-icon "ring-single"]]
+    [:button {:title "Add straight waveguide"
+              :class (device-active "straight")
+              :on-pointer-up #(add-device "straight" (cm/viewbox-coord %))}
+     [cm/device-icon "straight"]]
+    [:button {:title "Add bend"
+              :class (device-active "bend")
+              :on-pointer-up #(add-device "bend" (cm/viewbox-coord %))}
+     [cm/device-icon "bend"]]
+    [:button {:title "Add S-bend"
+              :class (device-active "sbend")
+              :on-pointer-up #(add-device "sbend" (cm/viewbox-coord %))}
+     [cm/device-icon "sbend"]]
+    [:button {:title "Add taper"
+              :class (device-active "taper")
+              :on-pointer-up #(add-device "taper" (cm/viewbox-coord %))}
+     [cm/device-icon "taper"]]
+    [:button {:title "Add transition"
+              :class (device-active "transition")
+              :on-pointer-up #(add-device "transition" (cm/viewbox-coord %))}
+     [cm/device-icon "transition"]]
+    [:button {:title "Add terminator"
+              :class (device-active "terminator")
+              :on-pointer-up #(add-device "terminator" (cm/viewbox-coord %))}
+     [cm/device-icon "terminator"]]
+    [:button {:title "Add crossing"
+              :class (device-active "crossing")
+              :on-pointer-up #(add-device "crossing" (cm/viewbox-coord %))}
+     [cm/device-icon "crossing"]]
     [:button {:title "Add double ring resonator"
               :class (device-active "ring-double")
               :on-pointer-up #(add-device "ring-double" (cm/viewbox-coord %))}
-     "⊚"]
+     [cm/device-icon "ring-double"]]
     [:button {:title "Add spiral"
               :class (device-active "spiral")
               :on-pointer-up #(add-device "spiral" (cm/viewbox-coord %))}
-     "🌀"]
+     [cm/device-icon "spiral"]]
     [:button {:title "Add 1x2 splitter"
               :class (device-active "splitter-1x2")
               :on-pointer-up #(add-device "splitter-1x2" (cm/viewbox-coord %))}
-     "⑃"]
+     [cm/device-icon "splitter-1x2"]]
     [:button {:title "Add directional coupler"
               :class (device-active "coupler")
               :on-pointer-up #(add-device "coupler" (cm/viewbox-coord %))}
-     ")("]
+     [cm/device-icon "coupler"]]
     [:button {:title "Add ring coupler"
               :class (device-active "coupler-ring")
               :on-pointer-up #(add-device "coupler-ring" (cm/viewbox-coord %))}
-     "⤫"]
+     [cm/device-icon "coupler-ring"]]
     [:button {:title "Add MMI 1x2"
               :class (device-active "mmi-1x2")
               :on-pointer-up #(add-device "mmi-1x2" (cm/viewbox-coord %))}
-     "⊏⊐"]
+     [cm/device-icon "mmi-1x2"]]
     [:button {:title "Add MMI 2x2"
               :class (device-active "mmi-2x2")
               :on-pointer-up #(add-device "mmi-2x2" (cm/viewbox-coord %))}
-     "⊏⊐"]
+     [cm/device-icon "mmi-2x2"]]
     [:button {:title "Add MZI 1x2"
               :class (device-active "mzi-1x2")
               :on-pointer-up #(add-device "mzi-1x2" (cm/viewbox-coord %))}
-     "◇"]
+     [cm/device-icon "mzi-1x2"]]
     [:button {:title "Add MZI 2x2"
               :class (device-active "mzi-2x2")
               :on-pointer-up #(add-device "mzi-2x2" (cm/viewbox-coord %))}
-     "◈"]
+     [cm/device-icon "mzi-2x2"]]
     [:button {:title "Add LED/laser diode"
               :class (device-active "led")
               :on-pointer-up #(add-device "led" (cm/viewbox-coord %))}
-     "💡"]
+     [cm/device-icon "led"]]
     [:button {:title "Add photodiode"
               :class (device-active "photodiode")
               :on-pointer-up #(add-device "photodiode" (cm/viewbox-coord %))}
-     "👁"]
+     [cm/device-icon "photodiode"]]
     [:button {:title "Add PN modulator"
               :class (device-active "modulator")
               :on-pointer-up #(add-device "modulator" (cm/viewbox-coord %))}
-     "⇌"]
+     [cm/device-icon "modulator"]]
     [:button {:title "Add grating coupler"
               :class (device-active "grating-coupler")
               :on-pointer-up #(add-device "grating-coupler" (cm/viewbox-coord %))}
-     "▦"]]])
+     [cm/device-icon "grating-coupler"]]]])
 
 (defn schematic-elements [schem]
   [:<>
@@ -2317,8 +2319,8 @@
                                ids)
            all-types (into (or port-types #{}) wire-type-set)
            n (count (remove #(= (get-in sch [% :variant]) "text") ids))
-           mismatch? (and (contains? all-types :photonic) (contains? all-types :electric))
-           fork? (and (contains? all-types :photonic) (not (contains? all-types :electric)) (> n 2))]
+           mismatch? (> (count all-types) 1)
+           fork? (and (contains? all-types "photonic") (> n 2))]
        (cond-> errors
          mismatch? (conj {:type :mismatch :pos pt})
          fork? (conj {:type :fork :pos pt}))))
@@ -2328,17 +2330,14 @@
   (r/track #(build-wire-errors @schematic (first @location-index) @point-type-index @wire-type-index)))
 
 (defn point-connection-type
-  "Get the dominant connection type at a point from device ports and wire types."
+  "Get the connection type at a point from device ports and wire types."
   [x y ids]
   (let [port-types (get-in @point-type-index [[x y] :types])
         wire-type-set (into #{}
                             (keep #(get @wire-type-index %))
                             ids)
         all-types (into (or port-types #{}) wire-type-set)]
-    (cond
-      (contains? all-types :photonic) :photonic
-      (contains? all-types :electric) :electric
-      :else nil)))
+    (first all-types)))
 
 (defn schematic-dots []
   (let [icon-size (/ grid-size 2.5)
@@ -2355,7 +2354,7 @@
         [:circle
          {:key [x y]
           :class [(if nc? "nc" "wire")
-                  (when pt (name pt))]
+                  pt]
           :cx (* grid-size (+ x 0.5))
           :cy (* grid-size (+ y 0.5))
           :r (/ grid-size 10)}]))
