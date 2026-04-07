@@ -76,7 +76,7 @@
 
 (defonce undotree (cm/newundotree))
 
-(declare build-wire-split-index split-wire location-index wire-type-index)
+(declare build-wire-split-index build-location-index split-wire location-index wire-type-index)
 
 (defn post-action!
   "Record undo checkpoint and split wires after a user action completes.
@@ -85,9 +85,10 @@
   (go
     (<! (done? schematic))
     (cm/newdo undotree @schematic)
-    (doseq [[w coords] (build-wire-split-index @location-index)]
-      (split-wire w coords)
-      (<! (done? schematic)))))
+    (let [loc-idx (build-location-index @schematic)]
+      (doseq [[w coords] (build-wire-split-index loc-idx)]
+        (split-wire w coords loc-idx)
+        (<! (done? schematic))))))
 
 (defn restore [state]
   (let [;; Ensure keys are strings (schematic uses string device IDs)
@@ -1215,7 +1216,7 @@
     "vh" [x (+ y ry)]
     nil))
 
-(defn split-wire [wirename coords]
+(defn split-wire [wirename coords loc-idx]
   (let [{:keys [x y rx ry variant] :as wire} (get @schematic wirename)
         x2 (+ x rx)
         y2 (+ y ry)
@@ -1225,7 +1226,7 @@
         ordered (concat [[x y]] (filter split-set body) [[x2 y2]])
         ;; Check if two points share a non-wire device, or a wire with same corner
         shared-device? (fn [p1 p2 seg-corner]
-                         (let [connidx (first @location-index)
+                         (let [connidx (first loc-idx)
                                shared (clojure.set/intersection (get connidx p1) (get connidx p2))]
                            (some #(let [dev (get @schematic %)]
                                     (or (not= "wire" (:type dev))
