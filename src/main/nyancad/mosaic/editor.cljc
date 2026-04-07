@@ -76,7 +76,7 @@
 
 (defonce undotree (cm/newundotree))
 
-(declare build-wire-split-index split-wire location-index)
+(declare build-wire-split-index split-wire location-index wire-type-index)
 
 (defn post-action!
   "Record undo checkpoint and split wires after a user action completes.
@@ -121,10 +121,11 @@
                     :class [(:type v) (:variant v) (::category (get models (:type v))) (when (contains? @selected k) :selected)]}]
         elements))
 
-(defn port [x y]
+(defn port [x y port-type]
   [:circle.port {:cx (+ x (/ grid-size 2))
                  :cy (+ y (/ grid-size 2))
-                 :r (/ grid-size 10)}])
+                 :r (/ grid-size 10)
+                 :class (when port-type (name port-type))}])
 
 (defn draw-background [[width height] k v]
   [device (+ 2 (max width height)) k v
@@ -134,8 +135,8 @@
 
 (defn draw-pattern [size pattern prim k v]
   [apply device size k v
-   (for [[x y _] pattern]
-     ^{:key [x y]} [prim (* x grid-size) (* y grid-size)])])
+   (for [{:keys [x y type]} pattern]
+     ^{:key [x y]} [prim (* x grid-size) (* y grid-size) type])])
 
 (defn lines [arcs]
   [:<>
@@ -185,13 +186,16 @@
         [mx my] (case variant "hv" [x2 y1] "vh" [x1 y2] nil)
         pts (if mx
               (str x1 "," y1 " " mx "," my " " x2 "," y2)
-              (str x1 "," y1 " " x2 "," y2))]
+              (str x1 "," y1 " " x2 "," y2))
+        wire-type (get @wire-type-index key)]
     [:g.wire {:on-pointer-down #(on-pointer-down-element key %)
               :on-pointer-move #(on-pointer-move-element key %)
               :on-pointer-up on-pointer-up-bg
-              :class (when (contains? @selected key) :selected)}
+              :class [(when (contains? @selected key) :selected)
+                      (when wire-type (name wire-type))]}
      [:polyline.wirebb {:points pts}]
-     [:polyline.wire {:points pts}]]))
+     [:polyline.wire {:points pts
+                      :class (when wire-type (name wire-type))}]]))
 
 (defn schem-template [dev fmt]
   (let [res (if-let [l (last @simulations)] (val l) {})
@@ -577,7 +581,7 @@
         ports (get-in @modeldb [(cm/model-key model) :ports])
         shape (when (= (:type v) "amp") :amp)
         [width height] (if ports (cm/port-perimeter ports shape) [1 1])
-        pattern (if ports (apply concat (cm/port-locations ports shape)) [])]
+        pattern (if ports (cm/port-locations ports shape) [])]
     (draw-pattern (+ 2 (max width height)) pattern
                   port k v)))
 
@@ -630,7 +634,12 @@
         ports (:ports model-def)
         has-model? (and model (seq model) ports)
         [width height] (if ports (cm/port-perimeter ports) [1 1])
-        [top-locs bottom-locs left-locs right-locs] (cm/port-locations ports)
+        all-locs (cm/port-locations ports)
+        by-side (group-by :side all-locs)
+        top-locs (:top by-side)
+        bottom-locs (:bottom by-side)
+        left-locs (:left by-side)
+        right-locs (:right by-side)
         size (+ 2 (max width height))
         ;; Box center in device-local coords (pixels)
         cx (* grid-size (+ 1 (/ width 2)))
@@ -641,21 +650,21 @@
       ;; Port lines (only when model selected)
       (when has-model?
         [:<>
-         [lines (for [[x y _] top-locs] [[(+ x 0.5) (+ y 0.5)] [(+ x 0.5) (+ y 1)]])]
-         [lines (for [[x y _] bottom-locs] [[(+ x 0.5) (+ y 0)] [(+ x 0.5) (+ y 0.5)]])]
-         [lines (for [[x y _] right-locs] [[(+ x 0) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]
-         [lines (for [[x y _] left-locs] [[(+ x 1) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]])
+         [lines (for [{:keys [x y]} top-locs] [[(+ x 0.5) (+ y 0.5)] [(+ x 0.5) (+ y 1)]])]
+         [lines (for [{:keys [x y]} bottom-locs] [[(+ x 0.5) (+ y 0)] [(+ x 0.5) (+ y 0.5)]])]
+         [lines (for [{:keys [x y]} right-locs] [[(+ x 0) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]
+         [lines (for [{:keys [x y]} left-locs] [[(+ x 1) (+ y 0.5)] [(+ x 0.5) (+ y 0.5)]])]])
       ;; Port labels inside box
       (when has-model?
         [:<>
-         (for [[_ y pname] left-locs]
-           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" pname))
-         (for [[_ y pname] right-locs]
-           (port-label v (* (+ width 0.85) grid-size) (* (+ y 0.5) grid-size) "end" "middle" pname))
-         (for [[x _ pname] top-locs]
-           (port-label v (* (+ x 0.5) grid-size) (* 1.3 grid-size) "middle" "hanging" pname))
-         (for [[x _ pname] bottom-locs]
-           (port-label v (* (+ x 0.5) grid-size) (* (+ height 0.7) grid-size) "middle" "baseline" pname))])
+         (for [{:keys [y name]} left-locs]
+           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" name))
+         (for [{:keys [y name]} right-locs]
+           (port-label v (* (+ width 0.85) grid-size) (* (+ y 0.5) grid-size) "end" "middle" name))
+         (for [{:keys [x name]} top-locs]
+           (port-label v (* (+ x 0.5) grid-size) (* 1.3 grid-size) "middle" "hanging" name))
+         (for [{:keys [x name]} bottom-locs]
+           (port-label v (* (+ x 0.5) grid-size) (* (+ height 0.7) grid-size) "middle" "baseline" name))])
       ;; Symbol image replaces box, otherwise box outline with model name
       (if-let [symbol-url (and has-model? (some-> model-def :symbol resolve-symbol-url deref))]
         [:image {:href symbol-url
@@ -684,7 +693,12 @@
         ports (:ports model-def)
         has-model? (and model (seq model) ports)
         [width height] (if ports (cm/port-perimeter ports :amp) [1 1])
-        [top-locs bottom-locs left-locs right-locs] (cm/port-locations ports :amp)
+        all-locs (cm/port-locations ports :amp)
+        by-side (group-by :side all-locs)
+        top-locs (:top by-side)
+        bottom-locs (:bottom by-side)
+        left-locs (:left by-side)
+        right-locs (:right by-side)
         size (+ 2 (max width height))
         ;; Triangle vertices (pointing right)
         tri-left 1
@@ -707,18 +721,18 @@
       (when has-model?
         [:<>
          ;; Top ports - lines extend down to meet triangle's top edge
-         [lines (for [[x y _] top-locs
+         [lines (for [{:keys [x y]} top-locs
                       :let [tri-y (+ tri-top (* (- (+ x 0.5) tri-left) (/ (- tri-apex-y tri-top) width)))]]
                   [[(+ x 0.5) (+ y 0.5)] [(+ x 0.5) tri-y]])]
          ;; Bottom ports - lines extend up to meet triangle's bottom edge
-         [lines (for [[x y _] bottom-locs
+         [lines (for [{:keys [x y]} bottom-locs
                       :let [tri-y (+ tri-bottom (* (- (+ x 0.5) tri-left) (/ (- tri-apex-y tri-bottom) width)))]]
                   [[(+ x 0.5) (+ y 0.5)] [(+ x 0.5) tri-y]])]
          ;; Left ports - lines extend right to left edge
-         [lines (for [[x y _] left-locs]
+         [lines (for [{:keys [x y]} left-locs]
                   [[(+ x 0.5) (+ y 0.5)] [tri-left (+ y 0.5)]])]
          ;; Right ports - lines extend left to meet triangle edge
-         [lines (for [[x y _] right-locs
+         [lines (for [{:keys [x y]} right-locs
                       :let [port-dy (- (+ y 0.5) tri-apex-y)
                             tri-x (if (< port-dy 0)
                                     (+ tri-right (* port-dy (/ width (- tri-top tri-apex-y))))
@@ -727,20 +741,20 @@
       ;; Port labels inside triangle
       (when has-model?
         [:<>
-         (for [[_ y pname] left-locs]
-           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" pname))
-         (for [[_ y pname] right-locs]
-           (port-label v (* (+ width 0.6) grid-size) (* (+ y 0.5) grid-size) "end" "middle" pname))
+         (for [{:keys [y name]} left-locs]
+           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" name))
+         (for [{:keys [y name]} right-locs]
+           (port-label v (* (+ width 0.6) grid-size) (* (+ y 0.5) grid-size) "end" "middle" name))
          ;; Top port labels - follow diagonal edge
-         (for [[x _ pname] top-locs
+         (for [{:keys [x name]} top-locs
                :let [px (+ x 0.5)
                      edge-y (+ tri-top (* (- px tri-left) (/ (- tri-apex-y tri-top) width)))]]
-           (port-label v (* px grid-size) (* (+ edge-y 0.3) grid-size) "middle" "hanging" pname))
+           (port-label v (* px grid-size) (* (+ edge-y 0.3) grid-size) "middle" "hanging" name))
          ;; Bottom port labels - follow diagonal edge
-         (for [[x _ pname] bottom-locs
+         (for [{:keys [x name]} bottom-locs
                :let [px (+ x 0.5)
                      edge-y (+ tri-bottom (* (- px tri-left) (/ (- tri-apex-y tri-bottom) width)))]]
-           (port-label v (* px grid-size) (* (- edge-y 0.3) grid-size) "middle" "baseline" pname))])
+           (port-label v (* px grid-size) (* (- edge-y 0.3) grid-size) "middle" "baseline" name))])
       ;; Model name or "?"
       [:text.model-name
        {:x cx :y cy
@@ -818,28 +832,26 @@
                       ::category "passive"
                       ::props []}
              "led" {::bg [1 1]
-                    ::conn (cm/ascii-patern
-                            [" P "
-                             "  O"
-                             " N "])
+                    ::conn [{:name "P" :x 1 :y 0 :type :electric}
+                            {:name "O" :x 2 :y 1 :type :photonic}
+                            {:name "N" :x 1 :y 2 :type :electric}]
                     ::sym #'diode-sym
                     ::category "photonic-active"
                     ::template "{self.name}"
                     ::props []}
              "photodiode" {::bg [1 1]
-                           ::conn (cm/ascii-patern
-                                   [" P "
-                                    "  O"
-                                    " N "])
+                           ::conn [{:name "P" :x 1 :y 0 :type :electric}
+                                   {:name "O" :x 2 :y 1 :type :photonic}
+                                   {:name "N" :x 1 :y 2 :type :electric}]
                            ::sym #'diode-sym
                            ::category "photonic-active"
                            ::template "{self.name}"
                            ::props []}
              "modulator" {::bg [1 1]
-                          ::conn (cm/ascii-patern
-                                  [" P "
-                                   "1 2"
-                                   " N "])
+                          ::conn [{:name "P" :x 1 :y 0 :type :electric}
+                                  {:name "1" :x 0 :y 1 :type :photonic}
+                                  {:name "2" :x 2 :y 1 :type :photonic}
+                                  {:name "N" :x 1 :y 2 :type :electric}]
                           ::sym #'diode-sym
                           ::category "photonic-active"
                           ::template "{self.name}"
@@ -852,7 +864,7 @@
                          ::template "{self.name}"
                          ::props []}
              "bend" {::bg [1 1]
-                     ::conn (cm/ascii-patern
+                     ::conn (cm/ascii-patern :photonic
                              ["   "
                               "1  "
                               " 2 "])
@@ -861,7 +873,7 @@
                      ::template "{self.name}"
                      ::props []}
              "sbend" {::bg [1 2]
-                      ::conn (cm/ascii-patern
+                      ::conn (cm/ascii-patern :photonic
                               ["   "
                                "1  "
                                "  2"])
@@ -882,7 +894,7 @@
                            ::template "{self.name}"
                            ::props []}
              "terminator" {::bg [1 1]
-                           ::conn (cm/ascii-patern
+                           ::conn (cm/ascii-patern :photonic
                                    ["   "
                                     "1  "
                                     "   "])
@@ -897,7 +909,7 @@
                          ::template "{self.name}"
                          ::props []}
              "ring-single" {::bg [1 2]
-                            ::conn (cm/ascii-patern
+                            ::conn (cm/ascii-patern :photonic
                                     ["   "
                                      "   "
                                      "1 2"])
@@ -906,7 +918,7 @@
                             ::template "{self.name}"
                             ::props []}
              "ring-double" {::bg [1 2]
-                            ::conn (cm/ascii-patern
+                            ::conn (cm/ascii-patern :photonic
                                     ["   "
                                      "1 2"
                                      "3 4"])
@@ -921,7 +933,7 @@
                        ::template "{self.name}"
                        ::props []}
              "splitter-1x2" {::bg [1 3]
-                             ::conn (cm/ascii-patern
+                             ::conn (cm/ascii-patern :photonic
                                      ["   "
                                       "  2"
                                       "1  "
@@ -932,7 +944,7 @@
                              ::template "{self.name}"
                              ::props []}
              "coupler" {::bg [1 2]
-                        ::conn (cm/ascii-patern
+                        ::conn (cm/ascii-patern :photonic
                                 ["   "
                                  "1 2"
                                  "3 4"])
@@ -941,7 +953,7 @@
                         ::template "{self.name}"
                         ::props []}
              "coupler-ring" {::bg #'coupler-ring-bg
-                             ::conn (cm/ascii-patern
+                             ::conn (cm/ascii-patern :photonic
                                      ["12"
                                       "34"])
                              ::sym coupler-ring-elements
@@ -949,7 +961,7 @@
                              ::template "{self.name}"
                              ::props []}
              "mmi-1x2" {::bg [1 3]
-                        ::conn (cm/ascii-patern
+                        ::conn (cm/ascii-patern :photonic
                                 ["   "
                                  "  2"
                                  "1  "
@@ -960,7 +972,7 @@
                         ::template "{self.name}"
                         ::props []}
              "mmi-2x2" {::bg [1 3]
-                        ::conn (cm/ascii-patern
+                        ::conn (cm/ascii-patern :photonic
                                 ["   "
                                  "1 2"
                                  "   "
@@ -971,7 +983,7 @@
                         ::template "{self.name}"
                         ::props []}
              "mzi-1x2" {::bg [1 3]
-                        ::conn (cm/ascii-patern
+                        ::conn (cm/ascii-patern :photonic
                                 ["   "
                                  "  2"
                                  "1  "
@@ -982,7 +994,7 @@
                         ::template "{self.name}"
                         ::props []}
              "mzi-2x2" {::bg [1 3]
-                        ::conn (cm/ascii-patern
+                        ::conn (cm/ascii-patern :photonic
                                 ["   "
                                  "1 2"
                                  "   "
@@ -993,7 +1005,7 @@
                         ::template "{self.name}"
                         ::props []}
 "grating-coupler" {::bg [1 1]
-                                ::conn (cm/ascii-patern
+                                ::conn (cm/ascii-patern :photonic
                                         ["   "
                                          "1  "
                                          "   "])
@@ -1006,7 +1018,7 @@
                      ::sym wire-sym
                      ::props []}
              "port" {::bg []
-                     ::conn [[0 0 "P"]]
+                     ::conn [{:name "P" :x 0 :y 0 :type :electric}]
                      ::sym port-sym
                      ::template "{self.name}: {res.op[self.name.toLowerCase()]:.2f}V"
                      ::props []}
@@ -1021,13 +1033,16 @@
    (rotate-shape shape (cm/pattern-size shape) transform devx devy))
   ([shape size [a b c d e f] devx devy]
    (let [mid (- (/ size 2) 0.5)]
-     (map (fn [[px py _]]
-            (let [x (- px mid)
+     (map (fn [port]
+            (let [px (:x port)
+                  py (:y port)
+                  x (- px mid)
                   y (- py mid)
                   nx (+ (* a x) (* c y) e)
                   ny (+ (* b x) (* d y) f)]
-              [(math/round (+ devx nx mid))
-               (math/round (+ devy ny mid))])) shape))))
+              (assoc port
+                     :x (math/round (+ devx nx mid))
+                     :y (math/round (+ devy ny mid))))) shape))))
 
 (defn exrange [start width]
   (next (take-while #(not= % (+ start width))
@@ -1057,21 +1072,21 @@
         size (if (and (number? w) (number? h))
                (+ 2 (max w h))
                (cm/pattern-size conn))]
-    [(rotate-shape conn size transform x y)
-     (rotate-shape (for [x (range (or w 0)) y (range (or h 0))]
-                     [(+ (if w 1 0) x) (+ (if h 1 0) y) "%"])
-                   size transform x y)]))
+    [(map (juxt :x :y) (rotate-shape conn size transform x y))
+     (map (juxt :x :y) (rotate-shape (for [bx (range (or w 0)) by (range (or h 0))]
+                                        {:x (+ (if w 1 0) bx) :y (+ (if h 1 0) by)})
+                                      size transform x y))]))
 
 (defn circuit-locations [{:keys [:x :y :model :transform :type]}]
   (let [mod (get @modeldb (cm/model-key model))
         ports (:ports mod)
         shape (when (= type "amp") :amp)
-        conn (if ports (apply concat (cm/port-locations ports shape)) [])
+        conn (if ports (cm/port-locations ports shape) [])
         [w h] (if ports (cm/port-perimeter ports shape) [1 1])]
-    [(rotate-shape conn transform x y)
-     (rotate-shape (for [x (range w) y (range h)]
-                     [(inc x) (inc y) "%"])
-                   transform x y)]))
+    [(map (juxt :x :y) (rotate-shape conn transform x y))
+     (map (juxt :x :y) (rotate-shape (for [bx (range w) by (range h)]
+                                        {:x (inc bx) :y (inc by)})
+                                      transform x y))]))
 
 (defn device-locations [dev]
   (let [cell (:type dev)]
@@ -1092,6 +1107,96 @@
 
 ; [conn body]
 (def location-index (r/track #(build-location-index @schematic)))
+
+(defn device-port-types
+  "Return typed port maps [{:x :y :type ...}] for a device after rotation."
+  [dev]
+  (let [cell (:type dev)
+        {:keys [x y transform model]} dev]
+    (cond
+      (= cell "wire") nil
+      (= cell "text") nil
+      (contains? models cell)
+      (let [mod (get models cell)
+            conn (::conn mod)
+            bg (::bg mod)
+            [w h] (when (vector? bg) bg)
+            size (if (and (number? w) (number? h))
+                   (+ 2 (max w h))
+                   (cm/pattern-size conn))]
+        (rotate-shape conn size transform x y))
+      :else
+      (let [mod (get @modeldb (cm/model-key model))
+            ports (:ports mod)
+            shape (when (= (:type dev) "amp") :amp)
+            conn (if ports (cm/port-locations ports shape) [])]
+        (rotate-shape conn transform x y)))))
+
+(defn build-point-type-index
+  "Build {[x y] => {:types #{:photonic :electric} :photonic-count N :electric-count N}}
+   from all non-wire devices in the schematic."
+  [sch]
+  (reduce
+   (fn [idx [_id dev]]
+     (if-let [ports (device-port-types dev)]
+       (reduce
+        (fn [idx port]
+          (let [pt [(:x port) (:y port)]
+                t (:type port)]
+            (-> idx
+                (update-in [pt :types] (fnil conj #{}) t)
+                (update-in [pt (keyword (str (name t) "-count"))] (fnil inc 0)))))
+        idx ports)
+       idx))
+   {} sch))
+
+(def point-type-index (r/track #(build-point-type-index @schematic)))
+
+(defn build-wire-type-index
+  "Propagate port types to wires via BFS through connected wire networks.
+   Returns {wire-id => :photonic|:electric|nil}."
+  [sch [connidx _] point-types]
+  (let [wires (into {} (filter #(= "wire" (:type (val %)))) sch)
+        ;; Build adjacency: for each wire, find other wires sharing endpoints
+        wire-endpoints (into {}
+                             (map (fn [[id {:keys [x y rx ry]}]]
+                                    [id [[x y] [(+ x rx) (+ y ry)]]]))
+                             wires)
+        ;; BFS from typed points to find wire types
+        wire-types (atom {})
+        visited (atom #{})]
+    (doseq [[wire-id endpoints] wire-endpoints
+            :when (not (contains? @visited wire-id))]
+      ;; BFS from this wire through connected wires
+      (loop [queue (conj #queue [] wire-id)
+             network-type nil
+             network #{}]
+        (if-let [wid (peek queue)]
+          (if (contains? network wid)
+            (recur (pop queue) network-type network)
+            (let [eps (get wire-endpoints wid)
+                  ;; Check if any endpoint has a typed port
+                  ep-type (some (fn [pt]
+                                  (let [types (get-in point-types [pt :types])]
+                                    (first types)))
+                                eps)
+                  new-type (or network-type ep-type)
+                  ;; Find connected wires at endpoints
+                  neighbors (for [pt eps
+                                  neighbor-id (get connidx pt)
+                                  :when (and (contains? wires neighbor-id)
+                                             (not (contains? network neighbor-id)))]
+                              neighbor-id)]
+              (recur (into (pop queue) neighbors) new-type (conj network wid))))
+          ;; Done with this network
+          (do
+            (swap! visited into network)
+            (doseq [wid network]
+              (swap! wire-types assoc wid network-type))))))
+    @wire-types))
+
+(def wire-type-index
+  (r/track #(build-wire-type-index @schematic @location-index @point-type-index)))
 
 (defn build-wire-split-index [[connidx bodyidx]]
   (reduce (fn [result [key val]]
@@ -1118,7 +1223,6 @@
         ;; body is already in path order (including corner for elbows)
         split-set (set coords)
         ordered (concat [[x y]] (filter split-set body) [[x2 y2]])
-        ;; Corner of the segment being created (computed per segment in loop)
         ;; Check if two points share a non-wire device, or a wire with same corner
         shared-device? (fn [p1 p2 seg-corner]
                          (let [connidx (first @location-index)
@@ -1131,14 +1235,13 @@
                      [[x1 y1] & [[x2 y2] & _ :as other]] ordered
                      schem {}]
                 (if other
-                  (let [;; Compute corner of the segment being created
-                        seg-corner (case variant
+                  (let [seg-corner (case variant
                                      "hv" [x2 y1]
                                      "vh" [x1 y2]
                                      nil)]
                     (recur (name (gensym wirename)) other
                            (if (shared-device? [x1 y1] [x2 y2] seg-corner)
-                             schem  ; skip - points already connected by a device
+                             schem
                              (assoc schem w
                                     {:type "wire" :transform cm/IV :variant variant
                                      :x x1 :y y1 :rx (- x2 x1) :ry (- y2 y1)}))))
@@ -2197,18 +2300,74 @@
    (for [[k v] schem]
      (get-model ::conn v k v))])
 
+(defn build-wire-errors
+  "Detect type mismatches and photonic forks.
+   Checks both device port types and wire types at each connection point."
+  [sch connidx point-types wire-types]
+  (reduce-kv
+   (fn [errors pt ids]
+     (let [;; Collect types at this point: from device ports and from wires
+           port-types (get-in point-types [pt :types])
+           wire-type-set (into #{}
+                               (keep (fn [id]
+                                       (when (= "wire" (:type (get sch id)))
+                                         (get wire-types id))))
+                               ids)
+           all-types (into (or port-types #{}) wire-type-set)
+           n (count (remove #(= (get-in sch [% :variant]) "text") ids))
+           mismatch? (and (contains? all-types :photonic) (contains? all-types :electric))
+           fork? (and (contains? all-types :photonic) (not (contains? all-types :electric)) (> n 2))]
+       (cond-> errors
+         mismatch? (conj {:type :mismatch :pos pt})
+         fork? (conj {:type :fork :pos pt}))))
+   [] connidx))
+
+(def wire-errors
+  (r/track #(build-wire-errors @schematic (first @location-index) @point-type-index @wire-type-index)))
+
+(defn point-connection-type
+  "Get the dominant connection type at a point from device ports and wire types."
+  [x y ids]
+  (let [port-types (get-in @point-type-index [[x y] :types])
+        wire-type-set (into #{}
+                            (keep #(get @wire-type-index %))
+                            ids)
+        all-types (into (or port-types #{}) wire-type-set)]
+    (cond
+      (contains? all-types :photonic) :photonic
+      (contains? all-types :electric) :electric
+      :else nil)))
+
 (defn schematic-dots []
-  [:<>
-   (doall
-    (for [[[x y] ids] (first @location-index)
-          :let [n (count (remove #(= (get-in @schematic [% :variant]) "text") ids))]
-          :when (not= n 2)]
-      [:circle
-       {:key [x y]
-        :class (if (> n 2) "wire" "nc")
-        :cx (* grid-size (+ x 0.5))
-        :cy (* grid-size (+ y 0.5))
-        :r (/ grid-size 10)}]))])
+  (let [icon-size (/ grid-size 2.5)
+        icon-offset (- (/ grid-size 2) (/ icon-size 2))
+        error-points (into #{} (map :pos) @wire-errors)]
+    [:<>
+     (doall
+      (for [[[x y] ids] (first @location-index)
+            :let [n (count (remove #(= (get-in @schematic [% :variant]) "text") ids))
+                  nc? (< n 2)
+                  pt (when nc? (point-connection-type x y ids))]
+            :when (and (not= n 2)
+                       (not (contains? error-points [x y])))]
+        [:circle
+         {:key [x y]
+          :class [(if nc? "nc" "wire")
+                  (when pt (name pt))]
+          :cx (* grid-size (+ x 0.5))
+          :cy (* grid-size (+ y 0.5))
+          :r (/ grid-size 10)}]))
+     (doall
+      (for [{err-type :type [x y] :pos} @wire-errors]
+        [:g.wire-error
+         {:key [:error x y err-type]
+          :class (case err-type :mismatch "type-error" :fork "fork-error")
+          :transform (str "translate(" (+ (* grid-size x) icon-offset) "," (+ (* grid-size y) icon-offset) ")")}
+         [:title (case err-type
+                   :mismatch "Type mismatch: incompatible domains meet"
+                   :fork "Photonic fork: waveguides cannot branch")]
+         [:circle {:cx (/ icon-size 2) :cy (/ icon-size 2) :r (/ icon-size 3) :fill "white"}]
+          [cm/exclamation-diamond {:size icon-size}]]))]))
 
 (defn tool-elements []
   (let [{sel ::selected
@@ -2266,7 +2425,8 @@
                   :width grid-size
                   :height grid-size}
         [:line.grid {:x1 0 :y1 0 :x2 grid-size :y2 0}]
-        [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]]
+        [:line.grid {:x1 0 :y1 0 :x2 0 :y2 grid-size}]]
+]
       [:rect {:fill "url(#gridfill)"
               :on-pointer-up on-pointer-up-bg
               :x (* -500 grid-size)
