@@ -613,9 +613,9 @@ html {
 
 .mosaic-container .menu {
     grid-row: 1;
-    background-color: white;
-    box-shadow: 0px 0px 8px #00000008;
-    border: 0.5px solid #7070701f;
+    background-color: var(--theme-chrome-bg, white);
+    box-shadow: 0px 0px 8px var(--theme-chrome-shadow, #00000008);
+    border: 0.5px solid var(--theme-chrome-border, #7070701f);
     z-index: 1;
     display: flex;
     justify-content: space-between;
@@ -652,9 +652,9 @@ html {
     position: absolute;
     top: 25px;
     left: 25px;
-    background: #ffffff 0% 0% no-repeat padding-box;
-    box-shadow: 0px 0px 8px #00000008;
-    border: 0.5px solid #7070701f;
+    background: var(--theme-chrome-bg, #ffffff) 0% 0% no-repeat padding-box;
+    box-shadow: 0px 0px 8px var(--theme-chrome-shadow, #00000008);
+    border: 0.5px solid var(--theme-chrome-border, #7070701f);
     border-radius: 15px;
     display: flex;
     flex-direction: column;
@@ -672,9 +672,9 @@ html {
     position: absolute;
     top: 25px;
     right: 25px;
-    background: #ffffff 0% 0% no-repeat padding-box;
-    box-shadow: 0px 0px 8px #00000008;
-    border: 0.5px solid #70707040;
+    background: var(--theme-chrome-bg, #ffffff) 0% 0% no-repeat padding-box;
+    box-shadow: 0px 0px 8px var(--theme-chrome-shadow, #00000008);
+    border: 0.5px solid var(--theme-chrome-border, #70707040);
     border-radius: 10px;
     width: 300px;
     max-height: calc(100% - 50px);
@@ -683,8 +683,8 @@ html {
     box-sizing: border-box;
 }
 .mosaic-container .sidebar h1 {
-    background-color: #0e1a32;
-    color: white;
+    background-color: var(--theme-chrome-accent, #0e1a32);
+    color: var(--theme-chrome-accent-text, white);
     margin: 0;
     border-radius: 10px 10px 0 0;
     padding: 15px 20px;
@@ -702,43 +702,43 @@ html {
 .mosaic-container .chrome label {
     padding: 0.5em;
     margin: 0.75em 0.5em;
-    background-color: white;
-    box-shadow: 0px 0px 8px #0000001a;
+    background-color: var(--theme-chrome-btn-bg, white);
+    box-shadow: 0px 0px 8px var(--theme-chrome-shadow, #0000001a);
     border-radius: 5px;
     width: 1em;
     height: 1em;
-    color: #222222a5;
+    color: var(--theme-chrome-text, #222222a5);
     border: none;
     box-sizing: content-box;
     cursor: pointer;
 }
 
 .mosaic-container .chrome svg {
-    fill: #222222a5;
+    fill: var(--theme-chrome-text, #222222a5);
 }
 
 .mosaic-container .chrome span.sep {
-    border-right: 1px solid lightgray;
+    border-right: 1px solid var(--theme-chrome-border, lightgray);
     padding: 0;
     margin: 0.75em 0.5em;
 }
 
 .mosaic-container .chrome a:hover,
 .mosaic-container .chrome button:hover {
-    background-color: lightgray;
+    background-color: var(--theme-chrome-hover, lightgray);
 }
 .mosaic-container .chrome a:active,
 .mosaic-container .chrome a.active,
 .mosaic-container .chrome button.active,
 .mosaic-container .chrome input[type="radio"]:checked + label {
-    background-color: #0e1a32;
-    color: white;
+    background-color: var(--theme-chrome-accent, #0e1a32);
+    color: var(--theme-chrome-accent-text, white);
 }
 .mosaic-container .chrome a:active svg,
 .mosaic-container .chrome a.active svg,
 .mosaic-container .chrome button.active svg,
 .mosaic-container .chrome input[type="radio"]:checked + label svg {
-    fill: white;
+    fill: var(--theme-chrome-accent-text, white);
 }
 
 .mosaic-container .chrome input[type="radio"] {
@@ -894,263 +894,546 @@ rect.select {
     fill: #0000001a;
 }
 
-/* tetris theme */
+/* ============================================================
+   THEME SYSTEM - CSS Custom Properties
+   Each theme class sets variables; shared rules consume them.
+   Note: rect.tetris is the CSS class for ALL device background
+   rects regardless of active theme (baked into SVG rendering).
+   ============================================================ */
 
-.tetris {
-    background-color: #f9f9f9;
+/* --- Shared theme rules (consume CSS variables) --- */
+
+.mosaic-container {
+    background-color: var(--theme-bg);
 }
 
-.tetris.pan {
-    cursor:
-        url(icons/arrows-move.svg) 6 0,
-        grab;
+.mosaic-container.pan {
+    cursor: var(--theme-cursor-pan, grab);
+}
+.mosaic-container.wire {
+    cursor: var(--theme-cursor-wire, crosshair);
+}
+.mosaic-container.probe {
+    cursor: var(--theme-cursor-probe, crosshair);
+}
+.mosaic-container.eraser .wire:hover,
+.mosaic-container.eraser .device {
+    cursor: var(--theme-cursor-eraser, crosshair);
 }
 
-.tetris.wire {
-    cursor:
-        url(icons/pencil.svg) 0 16,
-        crosshair;
-}
-
-.tetris.probe {
-    cursor:
-        url(icons/search.svg) 5 5,
-        crosshair;
-}
-
-.tetris.eraser .wire:hover,
-.tetris.eraser .device {
-    cursor:
-        url(icons/eraser.svg) 6 14,
-        crosshair;
-}
-
-.tetris line.grid {
-    stroke: lightgray;
-    stroke-width: 0.5px;
+.mosaic-container line.grid {
+    stroke: var(--theme-grid-stroke);
+    stroke-width: var(--theme-grid-width, 0.5px);
+    stroke-dasharray: var(--theme-grid-dasharray, none);
+    stroke-linecap: var(--theme-grid-linecap, auto);
     fill: none;
+    vector-effect: var(--theme-grid-vector-effect, none);
 }
 
-.tetris rect.tetris {
-    fill: rgb(238, 238, 238);
-    stroke: rgb(238, 238, 238);
-    stroke-width: calc(10px * 0.8284271247461903); /* 2*rx*(sqrt(2)-1) */
-    rx: 10px;
+.mosaic-container #mosaic_canvas {
+    shape-rendering: var(--theme-shape-rendering, auto);
+    background-color: var(--theme-canvas-bg, transparent);
 }
 
-.tetris g.device.selected rect.tetris,
-.tetris rect.tetris.selected {
-    fill: rgb(229, 216, 243) !important;
-    stroke: rgb(229, 216, 243) !important;
+.mosaic-container rect.tetris {
+    fill: var(--theme-device-bg);
+    stroke: var(--theme-device-bg);
+    stroke-width: var(--theme-device-bg-stroke-width, calc(10px * 0.8284271247461903));
+    rx: var(--theme-device-bg-rx, 10px);
 }
 
-.tetris .port.selected polyline {
-    fill: rgb(229, 216, 243) !important;
+.mosaic-container g.device.selected rect.tetris,
+.mosaic-container rect.tetris.selected {
+    fill: var(--theme-selected-bg) !important;
+    stroke: var(--theme-selected-bg) !important;
 }
 
-.tetris g.device.nmos rect.tetris,
-.tetris g.device.npn rect.tetris {
-    fill: rgb(216, 236, 243);
-    stroke: rgb(216, 236, 243);
+.mosaic-container .port.selected polyline {
+    fill: var(--theme-selected-bg) !important;
 }
 
-.tetris g.device.pmos rect.tetris,
-.tetris g.device.pnp rect.tetris {
-    fill: rgb(243, 231, 216);
-    stroke: rgb(243, 231, 216);
+.mosaic-container g.device.nmos rect.tetris,
+.mosaic-container g.device.npn rect.tetris {
+    fill: var(--theme-nmos-bg);
+    stroke: var(--theme-nmos-bg);
 }
 
-.tetris g.device.capacitor rect.tetris,
-.tetris g.device.inductor rect.tetris,
-.tetris g.device.resistor rect.tetris,
-.tetris g.device.diode rect.tetris {
-    fill: rgb(216, 243, 226);
-    stroke: rgb(216, 243, 226);
+.mosaic-container g.device.pmos rect.tetris,
+.mosaic-container g.device.pnp rect.tetris {
+    fill: var(--theme-pmos-bg);
+    stroke: var(--theme-pmos-bg);
 }
 
-.tetris g.device.vsource rect.tetris,
-.tetris g.device.isource rect.tetris {
-    fill: rgb(243, 243, 216);
-    stroke: rgb(243, 243, 216);
+.mosaic-container g.device.capacitor rect.tetris,
+.mosaic-container g.device.inductor rect.tetris,
+.mosaic-container g.device.resistor rect.tetris,
+.mosaic-container g.device.diode rect.tetris {
+    fill: var(--theme-passive-bg);
+    stroke: var(--theme-passive-bg);
 }
 
-.tetris g.device.port polyline {
-    fill: rgb(243, 243, 216);
+.mosaic-container g.device.vsource rect.tetris,
+.mosaic-container g.device.isource rect.tetris {
+    fill: var(--theme-source-bg);
+    stroke: var(--theme-source-bg);
 }
 
-.tetris circle.port {
-    fill: rgb(145, 0, 0);
-    stroke: rgb(53, 0, 0);
+.mosaic-container g.device.port polyline {
+    fill: var(--theme-port-device-fill);
 }
 
-.tetris g.device circle.port {
-    display: none;
+.mosaic-container circle.port {
+    fill: var(--theme-port-fill);
+    stroke: var(--theme-port-stroke, var(--theme-port-fill));
 }
 
-.tetris g.device.selected circle.port {
+.mosaic-container g.device circle.port {
+    display: var(--theme-device-port-display, none);
+}
+
+.mosaic-container g.device.selected circle.port {
     display: inherit;
 }
 
-.tetris g.device polyline,
-.tetris g.device circle.outline,
-.tetris g.device rect.outline,
-.tetris g.device polygon.outline,
-.tetris g.device path {
-    stroke: black;
-    stroke-width: 2px;
+.mosaic-container g.device polyline,
+.mosaic-container g.device circle.outline,
+.mosaic-container g.device rect.outline,
+.mosaic-container g.device polygon.outline,
+.mosaic-container g.device path {
+    stroke: var(--theme-device-stroke);
+    stroke-width: var(--theme-device-stroke-width, 2px);
     fill: none;
+    vector-effect: var(--theme-device-vector-effect, none);
 }
 
-.tetris polyline.wire {
-    stroke: black;
-    stroke-width: 2px;
+.mosaic-container polyline.wire {
+    stroke: var(--theme-wire-stroke);
+    stroke-width: var(--theme-wire-width, 2px);
     fill: none;
     stroke-linejoin: round;
+    vector-effect: var(--theme-wire-vector-effect, none);
 }
-.tetris circle.wire {
-    fill: black;
+
+.mosaic-container circle.wire {
+    fill: var(--theme-wire-dot, var(--theme-wire-stroke));
 }
-.tetris g.wire.selected polyline.wire {
+
+.mosaic-container g.wire.selected polyline.wire {
     stroke-dasharray: 10px 3px;
 }
 
-.tetris g.device.selected polyline,
-.tetris g.device.selected circle.outline,
-.tetris g.device.selected rect.outline,
-.tetris g.device.selected polygon.outline,
-.tetris g.device.selected path {
+.mosaic-container g.device.selected polyline,
+.mosaic-container g.device.selected circle.outline,
+.mosaic-container g.device.selected rect.outline,
+.mosaic-container g.device.selected polygon.outline,
+.mosaic-container g.device.selected path {
     stroke-dasharray: 10px 3px;
 }
 
-.tetris circle.nc {
-    fill: none;
-    stroke: red;
-    stroke-dasharray: 1 4;
+.mosaic-container circle.nc {
+    fill: var(--theme-nc-fill, none);
+    stroke: var(--theme-nc-stroke, red);
+    stroke-dasharray: var(--theme-nc-dasharray, 1 4);
 }
 
-/* eyesore theme */
-
-.eyesore line.grid {
-    stroke: lightgray;
-    stroke-width: 1px;
-    stroke-dasharray: 1 99999;
-    stroke-linecap: butt;
-    fill: none;
-    vector-effect: non-scaling-stroke;
+.mosaic-container text {
+    fill: var(--theme-text-fill, inherit);
 }
 
-.eyesore #mosaic_canvas {
-    shape-rendering: crispEdges;
-    background-color: black;
+.mosaic-container g.device text {
+    stroke: var(--theme-device-text-stroke, none);
+    fill: var(--theme-device-text-fill, inherit);
+    vector-effect: var(--theme-device-text-vector-effect, none);
 }
 
-.eyesore rect.tetris {
-    fill: transparent;
+/* Subcircuit (ckt) and amplifier (amp) shared rules */
+.mosaic-container g.device.ckt rect.tetris,
+.mosaic-container g.device.amp rect.tetris {
+    fill: var(--theme-ckt-bg);
+    stroke: var(--theme-ckt-bg);
 }
 
-.eyesore circle.port {
-    fill: red;
-}
-
-.eyesore circle.nc {
-    fill: red;
-}
-
-.eyesore text {
-    fill: red;
-}
-
-.eyesore g.device polyline,
-.eyesore g.device path,
-.eyesore g.device circle.outline,
-.eyesore g.device rect.outline,
-.eyesore g.device polygon {
-    stroke: #00cc66;
-    stroke-width: 1px;
-    fill: none;
-    vector-effect: non-scaling-stroke;
-}
-
-.eyesore g.device.port polyline {
-    fill: rgb(255, 0, 0);
-    stroke: none;
-}
-.eyesore g.device.port circle.port {
-    fill: none;
-}
-.eyesore g.device.port.supply polyline,
-.eyesore g.device.port.ground polyline {
-    stroke: #00cc66;
-    fill: transparent;
-}
-
-.eyesore g.device text {
-    stroke: #00cc66;
-    /* stroke-width: 1px; */
-    fill: #00cc66;
-    vector-effect: non-scaling-stroke;
-}
-
-/* Subcircuit (ckt) and amplifier (amp) styling - tetris theme */
-.tetris g.device.ckt rect.tetris,
-.tetris g.device.amp rect.tetris {
-    fill: rgb(243, 238, 216);
-    stroke: rgb(243, 238, 216);
-}
-
-.tetris g.device.ckt .outline.placeholder,
-.tetris g.device.amp .outline.placeholder {
+.mosaic-container g.device.ckt .outline.placeholder,
+.mosaic-container g.device.amp .outline.placeholder {
     stroke-dasharray: 5, 5;
-    stroke: #888;
+    stroke: var(--theme-ckt-outline-stroke, #888);
 }
 
-.tetris g.device.ckt text.model-name,
-.tetris g.device.amp text.model-name {
+.mosaic-container g.device.ckt text.model-name,
+.mosaic-container g.device.amp text.model-name {
     font-size: 0.5em;
-    fill: #444;
+    fill: var(--theme-ckt-name-fill);
 }
 
-.tetris g.device.ckt text.port-label,
-.tetris g.device.amp text.port-label {
+.mosaic-container g.device.ckt text.port-label,
+.mosaic-container g.device.amp text.port-label {
     font-size: 0.35em;
-    fill: #666;
+    fill: var(--theme-ckt-label-fill);
 }
 
-.tetris g.device.amp polygon.outline {
-    fill: rgb(243, 238, 216);
+.mosaic-container g.device.amp polygon.outline {
+    fill: var(--theme-amp-fill, none);
 }
 
-/* Subcircuit (ckt) and amplifier (amp) styling - eyesore theme */
-.eyesore g.device.ckt .outline.placeholder,
-.eyesore g.device.amp .outline.placeholder {
-    stroke-dasharray: 5, 5;
+/* Port supply/ground overrides for dark themes */
+.mosaic-container g.device.port circle.port {
+    fill: var(--theme-port-device-circle-fill, var(--theme-port-fill));
+}
+.mosaic-container g.device.port.supply polyline,
+.mosaic-container g.device.port.ground polyline {
+    stroke: var(--theme-supply-ground-stroke, none);
+    fill: var(--theme-supply-ground-fill, var(--theme-port-device-fill));
 }
 
-.eyesore g.device.ckt text.model-name,
-.eyesore g.device.amp text.model-name {
-    font-size: 0.5em;
-    fill: #00cc66;
+/* --- Theme picker styling --- */
+.theme-picker {
+    font-size: 0.85em;
+    padding: 2px 4px;
+    border: 1px solid var(--theme-chrome-border, #ccc);
+    border-radius: 3px;
+    background: var(--theme-chrome-btn-bg, white);
+    color: var(--theme-chrome-text, #222);
+    cursor: pointer;
+    margin-left: 4px;
 }
 
-.eyesore g.device.ckt text.port-label,
-.eyesore g.device.amp text.port-label {
-    font-size: 0.35em;
-    fill: #00cc66;
+/* ============================================================
+   THEME DEFINITIONS
+   Each theme sets CSS custom property values.
+   ============================================================ */
+
+/* --- Tetris (Light) --- */
+.tetris {
+    --theme-bg: #f9f9f9;
+    --theme-grid-stroke: lightgray;
+    --theme-grid-width: 0.5px;
+    --theme-device-bg: rgb(238, 238, 238);
+    --theme-device-bg-stroke-width: calc(10px * 0.8284271247461903);
+    --theme-device-bg-rx: 10px;
+    --theme-selected-bg: rgb(229, 216, 243);
+    --theme-nmos-bg: rgb(216, 236, 243);
+    --theme-pmos-bg: rgb(243, 231, 216);
+    --theme-passive-bg: rgb(216, 243, 226);
+    --theme-source-bg: rgb(243, 243, 216);
+    --theme-port-device-fill: rgb(243, 243, 216);
+    --theme-port-fill: rgb(145, 0, 0);
+    --theme-port-stroke: rgb(53, 0, 0);
+    --theme-device-stroke: black;
+    --theme-device-stroke-width: 2px;
+    --theme-wire-stroke: black;
+    --theme-wire-width: 2px;
+    --theme-wire-dot: black;
+    --theme-ckt-bg: rgb(243, 238, 216);
+    --theme-ckt-outline-stroke: #888;
+    --theme-ckt-name-fill: #444;
+    --theme-ckt-label-fill: #666;
+    --theme-amp-fill: rgb(243, 238, 216);
+    --theme-cursor-pan: url(icons/arrows-move.svg) 6 0, grab;
+    --theme-cursor-wire: url(icons/pencil.svg) 0 16, crosshair;
+    --theme-cursor-probe: url(icons/search.svg) 5 5, crosshair;
+    --theme-cursor-eraser: url(icons/eraser.svg) 6 14, crosshair;
 }
 
-.eyesore g.device.amp polygon.outline {
-    fill: none;
+/* --- Eyesore (Dark/Neon) --- */
+.eyesore {
+    --theme-bg: black;
+    --theme-canvas-bg: black;
+    --theme-chrome-bg: #111;
+    --theme-chrome-btn-bg: #222;
+    --theme-chrome-text: #00cc66;
+    --theme-chrome-border: #333;
+    --theme-chrome-shadow: #00000040;
+    --theme-chrome-hover: #333;
+    --theme-chrome-accent: #00cc66;
+    --theme-chrome-accent-text: black;
+    --theme-shape-rendering: crispEdges;
+    --theme-grid-stroke: lightgray;
+    --theme-grid-width: 1px;
+    --theme-grid-dasharray: 1 99999;
+    --theme-grid-linecap: butt;
+    --theme-grid-vector-effect: non-scaling-stroke;
+    --theme-device-bg: transparent;
+    --theme-device-bg-stroke-width: 0;
+    --theme-device-bg-rx: 0;
+    --theme-selected-bg: transparent;
+    --theme-nmos-bg: transparent;
+    --theme-pmos-bg: transparent;
+    --theme-passive-bg: transparent;
+    --theme-source-bg: transparent;
+    --theme-port-device-fill: rgb(255, 0, 0);
+    --theme-port-device-circle-fill: none;
+    --theme-supply-ground-stroke: #00cc66;
+    --theme-supply-ground-fill: transparent;
+    --theme-port-fill: red;
+    --theme-port-stroke: red;
+    --theme-device-stroke: #00cc66;
+    --theme-device-stroke-width: 1px;
+    --theme-device-vector-effect: non-scaling-stroke;
+    --theme-wire-stroke: #39bfff;
+    --theme-wire-width: 1px;
+    --theme-wire-dot: #39bfff;
+    --theme-wire-vector-effect: non-scaling-stroke;
+    --theme-nc-fill: red;
+    --theme-nc-stroke: red;
+    --theme-nc-dasharray: none;
+    --theme-text-fill: red;
+    --theme-device-text-fill: #00cc66;
+    --theme-device-text-stroke: #00cc66;
+    --theme-device-text-vector-effect: non-scaling-stroke;
+    --theme-ckt-bg: transparent;
+    --theme-ckt-outline-stroke: #00cc66;
+    --theme-ckt-name-fill: #00cc66;
+    --theme-ckt-label-fill: #00cc66;
+    --theme-amp-fill: none;
 }
 
-.eyesore polyline.wire {
-    stroke: #39bfff;
-    stroke-width: 1px;
-    fill: none;
-    vector-effect: non-scaling-stroke;
-    stroke-linejoin: round;
+/* --- Solarized Light --- */
+.solarized-light {
+    --theme-bg: #fdf6e3;
+    --theme-grid-stroke: #eee8d5;
+    --theme-grid-width: 0.5px;
+    --theme-device-bg: #f5efd7;
+    --theme-selected-bg: #d8c4ee;
+    --theme-nmos-bg: #d3e8f0;
+    --theme-pmos-bg: #f0e4d3;
+    --theme-passive-bg: #d3f0de;
+    --theme-source-bg: #f0efd3;
+    --theme-port-device-fill: #f0efd3;
+    --theme-port-fill: #dc322f;
+    --theme-port-stroke: #a0201e;
+    --theme-device-stroke: #657b83;
+    --theme-device-stroke-width: 2px;
+    --theme-wire-stroke: #586e75;
+    --theme-wire-width: 2px;
+    --theme-wire-dot: #586e75;
+    --theme-ckt-bg: #f0ead3;
+    --theme-ckt-outline-stroke: #93a1a1;
+    --theme-ckt-name-fill: #586e75;
+    --theme-ckt-label-fill: #839496;
+    --theme-amp-fill: #f0ead3;
+    --theme-cursor-pan: url(icons/arrows-move.svg) 6 0, grab;
+    --theme-cursor-wire: url(icons/pencil.svg) 0 16, crosshair;
+    --theme-cursor-probe: url(icons/search.svg) 5 5, crosshair;
+    --theme-cursor-eraser: url(icons/eraser.svg) 6 14, crosshair;
 }
-.eyesore circle.wire {
-    fill: #39bfff;
+
+/* --- Solarized Dark --- */
+.solarized-dark {
+    --theme-bg: #002b36;
+    --theme-canvas-bg: #002b36;
+    --theme-chrome-bg: #073642;
+    --theme-chrome-btn-bg: #0a4050;
+    --theme-chrome-text: #93a1a1;
+    --theme-chrome-border: #586e75;
+    --theme-chrome-shadow: #00000040;
+    --theme-chrome-hover: #0d4f61;
+    --theme-chrome-accent: #268bd2;
+    --theme-chrome-accent-text: #fdf6e3;
+    --theme-grid-stroke: #073642;
+    --theme-grid-width: 0.5px;
+    --theme-device-bg: #073642;
+    --theme-selected-bg: #3b2d5e;
+    --theme-nmos-bg: #0a3d4a;
+    --theme-pmos-bg: #3d2e0a;
+    --theme-passive-bg: #0a3d2a;
+    --theme-source-bg: #3d3a0a;
+    --theme-port-device-fill: #3d3a0a;
+    --theme-port-fill: #dc322f;
+    --theme-port-stroke: #dc322f;
+    --theme-device-stroke: #839496;
+    --theme-device-stroke-width: 1.5px;
+    --theme-wire-stroke: #93a1a1;
+    --theme-wire-width: 1.5px;
+    --theme-wire-dot: #93a1a1;
+    --theme-text-fill: #839496;
+    --theme-device-text-fill: #93a1a1;
+    --theme-ckt-bg: #073642;
+    --theme-ckt-outline-stroke: #586e75;
+    --theme-ckt-name-fill: #93a1a1;
+    --theme-ckt-label-fill: #839496;
+    --theme-amp-fill: #073642;
+}
+
+/* --- Nord Light (Snow Storm) --- */
+.nord-light {
+    --theme-bg: #eceff4;
+    --theme-grid-stroke: #d8dee9;
+    --theme-grid-width: 0.5px;
+    --theme-device-bg: #e5e9f0;
+    --theme-selected-bg: #c9b8e8;
+    --theme-nmos-bg: #d1dce8;
+    --theme-pmos-bg: #e8ddd1;
+    --theme-passive-bg: #d1e8d9;
+    --theme-source-bg: #e8e6d1;
+    --theme-port-device-fill: #e8e6d1;
+    --theme-port-fill: #bf616a;
+    --theme-port-stroke: #993d45;
+    --theme-device-stroke: #4c566a;
+    --theme-device-stroke-width: 2px;
+    --theme-wire-stroke: #434c5e;
+    --theme-wire-width: 2px;
+    --theme-wire-dot: #434c5e;
+    --theme-ckt-bg: #e5e2d1;
+    --theme-ckt-outline-stroke: #7b88a1;
+    --theme-ckt-name-fill: #4c566a;
+    --theme-ckt-label-fill: #616e88;
+    --theme-amp-fill: #e5e2d1;
+    --theme-cursor-pan: url(icons/arrows-move.svg) 6 0, grab;
+    --theme-cursor-wire: url(icons/pencil.svg) 0 16, crosshair;
+    --theme-cursor-probe: url(icons/search.svg) 5 5, crosshair;
+    --theme-cursor-eraser: url(icons/eraser.svg) 6 14, crosshair;
+}
+
+/* --- Nord Dark (Polar Night) --- */
+.nord-dark {
+    --theme-bg: #2e3440;
+    --theme-canvas-bg: #2e3440;
+    --theme-chrome-bg: #3b4252;
+    --theme-chrome-btn-bg: #434c5e;
+    --theme-chrome-text: #d8dee9;
+    --theme-chrome-border: #4c566a;
+    --theme-chrome-shadow: #00000040;
+    --theme-chrome-hover: #4c566a;
+    --theme-chrome-accent: #88c0d0;
+    --theme-chrome-accent-text: #2e3440;
+    --theme-grid-stroke: #3b4252;
+    --theme-grid-width: 0.5px;
+    --theme-device-bg: #3b4252;
+    --theme-selected-bg: #4a3766;
+    --theme-nmos-bg: #2e3a4d;
+    --theme-pmos-bg: #4d3e2e;
+    --theme-passive-bg: #2e4d3a;
+    --theme-source-bg: #4d4a2e;
+    --theme-port-device-fill: #4d4a2e;
+    --theme-port-fill: #bf616a;
+    --theme-port-stroke: #bf616a;
+    --theme-device-stroke: #d8dee9;
+    --theme-device-stroke-width: 1.5px;
+    --theme-wire-stroke: #81a1c1;
+    --theme-wire-width: 1.5px;
+    --theme-wire-dot: #81a1c1;
+    --theme-text-fill: #d8dee9;
+    --theme-device-text-fill: #e5e9f0;
+    --theme-ckt-bg: #3b4252;
+    --theme-ckt-outline-stroke: #616e88;
+    --theme-ckt-name-fill: #d8dee9;
+    --theme-ckt-label-fill: #b0b8cc;
+    --theme-amp-fill: #3b4252;
+}
+
+/* --- Catppuccin Latte (Light) --- */
+.catppuccin-latte {
+    --theme-bg: #eff1f5;
+    --theme-grid-stroke: #ccd0da;
+    --theme-grid-width: 0.5px;
+    --theme-device-bg: #e6e9ef;
+    --theme-selected-bg: #dcc5f7;
+    --theme-nmos-bg: #cfe0f2;
+    --theme-pmos-bg: #f2dccf;
+    --theme-passive-bg: #cff2db;
+    --theme-source-bg: #f2efcf;
+    --theme-port-device-fill: #f2efcf;
+    --theme-port-fill: #d20f39;
+    --theme-port-stroke: #a00c2d;
+    --theme-device-stroke: #4c4f69;
+    --theme-device-stroke-width: 2px;
+    --theme-wire-stroke: #5c5f77;
+    --theme-wire-width: 2px;
+    --theme-wire-dot: #5c5f77;
+    --theme-ckt-bg: #e8e5cf;
+    --theme-ckt-outline-stroke: #8c8fa1;
+    --theme-ckt-name-fill: #4c4f69;
+    --theme-ckt-label-fill: #6c6f85;
+    --theme-amp-fill: #e8e5cf;
+    --theme-cursor-pan: url(icons/arrows-move.svg) 6 0, grab;
+    --theme-cursor-wire: url(icons/pencil.svg) 0 16, crosshair;
+    --theme-cursor-probe: url(icons/search.svg) 5 5, crosshair;
+    --theme-cursor-eraser: url(icons/eraser.svg) 6 14, crosshair;
+}
+
+/* --- Catppuccin Mocha (Dark) --- */
+.catppuccin-mocha {
+    --theme-bg: #1e1e2e;
+    --theme-canvas-bg: #1e1e2e;
+    --theme-chrome-bg: #313244;
+    --theme-chrome-btn-bg: #45475a;
+    --theme-chrome-text: #cdd6f4;
+    --theme-chrome-border: #585b70;
+    --theme-chrome-shadow: #00000040;
+    --theme-chrome-hover: #585b70;
+    --theme-chrome-accent: #cba6f7;
+    --theme-chrome-accent-text: #1e1e2e;
+    --theme-grid-stroke: #313244;
+    --theme-grid-width: 0.5px;
+    --theme-device-bg: #313244;
+    --theme-selected-bg: #45365e;
+    --theme-nmos-bg: #1e2d3d;
+    --theme-pmos-bg: #3d2d1e;
+    --theme-passive-bg: #1e3d2d;
+    --theme-source-bg: #3d3a1e;
+    --theme-port-device-fill: #3d3a1e;
+    --theme-port-fill: #f38ba8;
+    --theme-port-stroke: #f38ba8;
+    --theme-device-stroke: #cdd6f4;
+    --theme-device-stroke-width: 1.5px;
+    --theme-wire-stroke: #89b4fa;
+    --theme-wire-width: 1.5px;
+    --theme-wire-dot: #89b4fa;
+    --theme-text-fill: #cdd6f4;
+    --theme-device-text-fill: #cdd6f4;
+    --theme-ckt-bg: #313244;
+    --theme-ckt-outline-stroke: #585b70;
+    --theme-ckt-name-fill: #cdd6f4;
+    --theme-ckt-label-fill: #a6adc8;
+    --theme-amp-fill: #313244;
+}
+
+/* --- Pop n' Lock (Luxcium-inspired) --- */
+.pop-n-lock {
+    --theme-bg: #1d1f27;
+    --theme-canvas-bg: #1d1f27;
+    --theme-chrome-bg: #282a36;
+    --theme-chrome-btn-bg: #2a2d38;
+    --theme-chrome-text: #e4e4e4;
+    --theme-chrome-border: #3a3d4a;
+    --theme-chrome-shadow: #00000040;
+    --theme-chrome-hover: #3a3d4a;
+    --theme-chrome-accent: #e66ac1;
+    --theme-chrome-accent-text: #1d1f27;
+    --theme-grid-stroke: #2a2d38;
+    --theme-grid-width: 1px;
+    --theme-grid-dasharray: 1 99999;
+    --theme-grid-linecap: butt;
+    --theme-grid-vector-effect: non-scaling-stroke;
+    --theme-shape-rendering: crispEdges;
+    --theme-device-bg: #282a36;
+    --theme-selected-bg: #5e2d6e;
+    --theme-nmos-bg: #1a2a3d;
+    --theme-pmos-bg: #3d1a2a;
+    --theme-passive-bg: #1a3d2a;
+    --theme-source-bg: #3d3a1a;
+    --theme-port-device-fill: #e4f34a;
+    --theme-port-fill: #e4f34a;
+    --theme-port-stroke: #e4f34a;
+    --theme-device-stroke: #e66ac1;
+    --theme-device-stroke-width: 1.5px;
+    --theme-device-vector-effect: non-scaling-stroke;
+    --theme-wire-stroke: #41dbff;
+    --theme-wire-width: 1.5px;
+    --theme-wire-dot: #41dbff;
+    --theme-wire-vector-effect: non-scaling-stroke;
+    --theme-nc-fill: #fc618d;
+    --theme-nc-stroke: #fc618d;
+    --theme-nc-dasharray: none;
+    --theme-text-fill: #49e9a6;
+    --theme-device-text-fill: #49e9a6;
+    --theme-device-text-stroke: none;
+    --theme-device-text-vector-effect: non-scaling-stroke;
+    --theme-ckt-bg: #282a36;
+    --theme-ckt-outline-stroke: #e66ac1;
+    --theme-ckt-name-fill: #49e9a6;
+    --theme-ckt-label-fill: #41dbff;
+    --theme-amp-fill: #282a36;
 }
 
 /* Notebook sidebar styles */

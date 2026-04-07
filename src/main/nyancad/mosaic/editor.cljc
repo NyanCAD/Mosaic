@@ -47,7 +47,11 @@
                      ::pointer-cache {}}))
 
 (s/def ::zoom (s/coll-of number? :count 4))
-(s/def ::theme #{"tetris" "eyesore"})
+(s/def ::theme #{"tetris" "eyesore"
+                 "solarized-light" "solarized-dark"
+                 "nord-light" "nord-dark"
+                 "catppuccin-latte" "catppuccin-mocha"
+                 "pop-n-lock"})
 (s/def ::tool #{::cursor ::eraser ::wire ::pan ::device ::probe})
 (s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view ::box}))
@@ -1556,6 +1560,18 @@
 
    [:div.secondary
     [secondary-menu-items notebook-popped-out]
+    [:select.theme-picker {:value @theme
+                           :title "Change theme"
+                           :on-change #(reset! theme (.. % -target -value))}
+     [:option {:value "tetris"} "Tetris"]
+     [:option {:value "eyesore"} "Eyesore"]
+     [:option {:value "solarized-light"} "Solarized Light"]
+     [:option {:value "solarized-dark"} "Solarized Dark"]
+     [:option {:value "nord-light"} "Nord Light"]
+     [:option {:value "nord-dark"} "Nord Dark"]
+     [:option {:value "catppuccin-latte"} "Catppuccin Latte"]
+     [:option {:value "catppuccin-mocha"} "Catppuccin Mocha"]
+     [:option {:value "pop-n-lock"} "Pop n' Lock"]]
     [:a {:title "Keyboard shortcuts & help"
          :on-click cm/show-onboarding!}
      [cm/help]]
