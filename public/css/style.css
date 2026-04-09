@@ -1053,7 +1053,7 @@ rect.select {
 }
 
 
-.tetris polyline.wire {
+.tetris path.wire {
     stroke: black;
     stroke-width: 2px;
     fill: none;
@@ -1065,7 +1065,7 @@ rect.select {
     fill: black;
 }
 
-.tetris g.wire.selected polyline.wire {
+.tetris g.wire.selected path.wire {
     stroke-dasharray: 10px 3px;
 }
 
@@ -1213,7 +1213,7 @@ rect.select {
     fill: none;
 }
 
-.eyesore polyline.wire {
+.eyesore path.wire {
     stroke: #39bfff;
     stroke-width: 1px;
     fill: none;

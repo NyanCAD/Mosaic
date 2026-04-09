@@ -188,15 +188,23 @@
         pts (if mx
               (str x1 "," y1 " " mx "," my " " x2 "," y2)
               (str x1 "," y1 " " x2 "," y2))
-        wire-type (get @wire-type-index key)]
+        wire-type (get @wire-type-index key)
+        r (if (= wire-type "photonic") (/ grid-size 2) 0)
+        d (if mx
+            (let [dx1 (math/signum (- x1 mx)) dy1 (math/signum (- y1 my))
+                  dx2 (math/signum (- x2 mx)) dy2 (math/signum (- y2 my))]
+              (str "M" x1 "," y1 "L" (+ mx (* dx1 r)) "," (+ my (* dy1 r))
+                   "Q" mx "," my " " (+ mx (* dx2 r)) "," (+ my (* dy2 r))
+                   "L" x2 "," y2))
+            (str "M" x1 "," y1 "L" x2 "," y2))]
     [:g.wire {:on-pointer-down #(on-pointer-down-element key %)
               :on-pointer-move #(on-pointer-move-element key %)
               :on-pointer-up on-pointer-up-bg
               :class [(when (contains? @selected key) :selected)
                       (when wire-type (name wire-type))]}
      [:polyline.wirebb {:points pts}]
-     [:polyline.wire {:points pts
-                      :class (when wire-type (name wire-type))}]]))
+     [:path.wire {:d d :fill "none"
+                  :class (when wire-type (name wire-type))}]]))
 
 (defn schem-template [dev fmt]
   (let [res (if-let [l (last @simulations)] (val l) {})

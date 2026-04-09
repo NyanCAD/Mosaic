@@ -280,7 +280,7 @@
           ;; Create atom channel for the primary schematic document
           (let [schem-ch (create-atom-channel webview document "schematic")
                 atom-channels (atom {"schematic" schem-ch})]
-            (.push disposables (.-disposable schem-ch))
+            (.push disposables (:disposable schem-ch))
 
             ;; Set up atom channel for models.nyanlib (already exists from above)
             (go
@@ -289,7 +289,7 @@
                       nyanlib-doc (<p! (.. vscode/workspace (openTextDocument nyanlib-uri)))
                       models-ch (create-atom-channel webview nyanlib-doc "models")]
                   (swap! atom-channels assoc "models" models-ch)
-                  (.push disposables (.-disposable models-ch)))
+                  (.push disposables (:disposable models-ch)))
                 (catch :default e
                   (js/console.error "Failed to set up models.nyanlib:" (.-message e)))))
 
@@ -332,7 +332,7 @@
       ;; Create atom channel for the models document (primary)
       (let [models-ch (create-atom-channel webview document "models")
             atom-channels (atom {"models" models-ch})]
-        (.push disposables (.-disposable models-ch))
+        (.push disposables (:disposable models-ch))
 
         ;; Message router
         (setup-message-router! webview atom-channels doc-dir)
