@@ -2029,20 +2029,22 @@
 
 (defonce ^:private theme-clicks (atom []))
 
-(defn- dark-mode? []
-  (case @theme
-    "dark" true
-    "light" false
-    "eyesore" true
-    (.-matches (js/window.matchMedia "(prefers-color-scheme: dark)"))))
+(defn- dark-mode?
+  ([] (dark-mode? @theme))
+  ([t]
+   (case t
+     "dark" true
+     "light" false
+     (.-matches (js/window.matchMedia "(prefers-color-scheme: dark)")))))
 
 (defn toggle-theme! []
   (let [now (.now js/Date)
-        clicks (swap! theme-clicks #(conj (filterv (fn [t] (> t (- now 2000))) %) now))]
-    (if (>= (count clicks) 5)
-      (do (reset! theme-clicks [])
-          (reset! theme "eyesore"))
-      (reset! theme (if (dark-mode?) "light" "dark")))))
+        clicks (swap! theme-clicks #(conj (filterv (fn [t] (> t (- now 2000))) %) now))
+        eyesore? (>= (count clicks) 5)]
+    (when eyesore? (reset! theme-clicks []))
+    (swap! ui update ::theme
+           #(if eyesore? "eyesore"
+                (if (dark-mode? %) "light" "dark")))))
 
 (defn menu-items []
   [:<>
