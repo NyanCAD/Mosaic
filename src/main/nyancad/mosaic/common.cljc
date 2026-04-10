@@ -59,32 +59,40 @@
 (declare recursive-editor dissjoc x-circle x-circle-fill plus-circle plus-circle-fill)
 
 (defn- leaf-editor
-  "Render a single leaf field: label + input/textarea/select/csv."
-  [{:keys [name tooltip type options placeholder default] :or {type :input}} cursor on-change]
+  "Render a single leaf field: label + input/textarea/select/csv.
+   Optional extra-el is injected inline next to the input (like the model selector button)."
+  [{:keys [name tooltip type options placeholder default] :or {type :input}} cursor on-change extra-el]
   (let [k (keyword name)
         ph (or placeholder "")
         valfn #(or (get % k) default "")
-        wrap (fn [f] (fn [st v] (f st v) (when on-change (on-change))))]
+        wrap (fn [f] (fn [st v] (f st v) (when on-change (on-change))))
+        input (case type
+                :textarea [dbfield :textarea {:id name :rows 4 :placeholder ph} cursor
+                           valfn (wrap #(swap! %1 assoc k %2))]
+                :select   [:select {:id name :value (or (get @cursor k) default "")
+                                    :on-change #(do (swap! cursor assoc k (.. % -target -value))
+                                                    (when on-change (on-change)))}
+                           (for [{:keys [value label]} options]
+                             [:option {:key value :value value} label])]
+                :checkbox [:input {:id name :type "checkbox"
+                                   :checked (true? (get @cursor k))
+                                   :on-change #(do (swap! cursor assoc k (.. % -target -checked))
+                                                   (when on-change (on-change)))}]
+                :csv      [dbfield :input {:id name :type "text" :placeholder ph} cursor
+                           #(clojure.string/join " " (get % k []))
+                           (wrap #(swap! %1 assoc k (clojure.string/split %2 #"[, ]+" -1)))]
+                ;; default: text input
+                          [dbfield :input {:id name :type "text" :placeholder ph} cursor
+                           valfn (wrap #(swap! %1 assoc k %2))])]
     [:<>
      [:label {:for name :title tooltip} name]
-     (case type
-       :textarea [dbfield :textarea {:id name :rows 4 :placeholder ph} cursor
-                  valfn (wrap #(swap! %1 assoc k %2))]
-       :select   [:select {:id name :value (or (get @cursor k) default "")
-                           :on-change #(do (swap! cursor assoc k (.. % -target -value))
-                                           (when on-change (on-change)))}
-                  (for [{:keys [value label]} options]
-                    [:option {:key value :value value} label])]
-       :csv      [dbfield :input {:id name :type "text" :placeholder ph} cursor
-                  #(clojure.string/join " " (get % k []))
-                  (wrap #(swap! %1 assoc k (clojure.string/split %2 #"[, ]+" -1)))]
-       ;; default: text input
-                 [dbfield :input {:id name :type "text" :placeholder ph} cursor
-                  valfn (wrap #(swap! %1 assoc k %2))])]))
+     (if extra-el
+       [:div.field-with-extra input extra-el]
+       input)]))
 
 (defn- list-editor
   "Render a list of maps: fieldset per item with add/remove, recurse per item."
-  [{:keys [tooltip children type] :or {type :label}} list-cursor on-change]
+  [{:keys [tooltip children type] :or {type :label}} list-cursor on-change wrap-leaf path]
   [:<>
    [type tooltip]
    (doall
@@ -95,9 +103,9 @@
           [:button.remove-btn {:on-click #(do (swap! list-cursor dissjoc idx)
                                               (when on-change (on-change)))
                                :title "Remove"} [x-circle] [x-circle-fill]]]
-         [recursive-editor children item-cursor on-change]])))
+         [recursive-editor children item-cursor on-change wrap-leaf (conj path idx)]])))
    [:button.add-btn {:on-click #(do (swap! list-cursor (fnil conj [])
-                                          (into {} (map (fn [{:keys [name default]}] [(keyword name) (or default "")]) children)))
+                                          (into {} (map (fn [{:keys [name default type]}] [(keyword name) (if (some? default) default (if (= type :checkbox) false ""))]) children)))
                                     (when on-change (on-change)))}
     [plus-circle] [plus-circle-fill] " Add"]])
 
@@ -105,16 +113,22 @@
   "Render editors for nested data. Each field is either a leaf or a list of maps.
    fields: [{:name :tooltip :type :children ...}]
    cursor: cursor to a map
-   on-change: optional callback fired after data changes (debounced for text fields)"
+   on-change: optional callback fired after data changes (debounced for text fields)
+   wrap-leaf: optional (fn [path editor]) to wrap each leaf with extra UI
+   path: keyword vector tracking current nesting depth"
   ([fields cursor] (recursive-editor fields cursor nil))
-  ([fields cursor on-change]
+  ([fields cursor on-change] (recursive-editor fields cursor on-change nil []))
+  ([fields cursor on-change wrap-leaf] (recursive-editor fields cursor on-change wrap-leaf []))
+  ([fields cursor on-change wrap-leaf path]
    [:<>
     (doall
      (for [{:keys [name children] :as field} fields]
-       [:<> {:key name}
-        (if children
-          [list-editor field (r/cursor cursor [(keyword name)]) on-change]
-          [leaf-editor field cursor on-change])]))]))
+       (let [new-path (conj path (keyword name))]
+         [:<> {:key name}
+          (if children
+            [list-editor field (r/cursor cursor [(keyword name)]) on-change wrap-leaf new-path]
+            [leaf-editor field cursor on-change
+             (when wrap-leaf (wrap-leaf new-path))])])))]))
 
 (defn sign [n] (if (> n 0) 1 -1))
 
@@ -500,6 +514,7 @@
 (def x-circle-fill (r/adapt-react-class icons/XCircleFill))
 (def plus-circle (r/adapt-react-class icons/PlusCircle))
 (def plus-circle-fill (r/adapt-react-class icons/PlusCircleFill))
+(def eye (r/adapt-react-class icons/Eye))
 (def history (r/adapt-react-class icons/ClockHistory))
 (def sun-icon (r/adapt-react-class icons/SunFill))
 (def moon-icon (r/adapt-react-class icons/MoonFill))
@@ -702,6 +717,16 @@
       (aset bytes i (.charCodeAt binary-string i)))
     (let [blob (js/Blob. #js[bytes] #js{:type content-type})]
       (.createObjectURL js/URL blob))))
+
+(defn generate-important-template
+  "Build a template string from props marked :important. Returns nil if none."
+  [props]
+  (let [important (filter :important props)]
+    (when (seq important)
+      (clojure.string/join "\n"
+        (cons "{self.name}"
+              (map #(str (:name %) ": {self.props." (:name %) "}")
+                   important))))))
 
 ;; Model ID utilities
 (defn model-key

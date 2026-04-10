@@ -91,7 +91,8 @@
    [{:name "props" :tooltip "Parameters" :type :h4
      :children [{:name "name" :tooltip "Parameter name"}
                 {:name "tooltip" :tooltip "Description"}
-                {:name "default" :tooltip "Default value"}]}]
+                {:name "default" :tooltip "Default value"}
+                {:name "important" :tooltip "Show on schematic" :type :checkbox}]}]
    cell])
 
 (defn model-properties

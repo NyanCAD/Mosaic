@@ -32,6 +32,8 @@ Clojure docstrings come **before** the argument vector (unlike Python):
   (do-something arg1 arg2))
 ```
 
+Prefer `swap!` over `reset!` when the new value depends on the current atom state. The function passed to `swap!` should be idempotent, as it may be retried on conflict (especially with PouchDB-backed atoms). Avoid patterns like `(reset! atom (f @atom))` — use `(swap! atom f)` instead.
+
 ## Architecture Overview
 
 ### Module Structure
