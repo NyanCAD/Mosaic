@@ -1,7 +1,7 @@
 <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
   <!-- Grating coupler: lead into concentric arcs opening right -->
-  <line x1="4" y1="20" x2="12" y2="20" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
-  <path d="M16,14 A8,8 0 0,1 16,26" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
-  <path d="M22,9 A13,13 0 0,1 22,31" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
-  <path d="M28,4 A18,18 0 0,1 28,36" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="4" y1="20" x2="12" y2="20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M16,14 A8,8 0 0,1 16,26" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M22,9 A13,13 0 0,1 22,31" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M28,4 A18,18 0 0,1 28,36" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
 </svg>

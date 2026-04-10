@@ -501,6 +501,8 @@
 (def plus-circle (r/adapt-react-class icons/PlusCircle))
 (def plus-circle-fill (r/adapt-react-class icons/PlusCircleFill))
 (def history (r/adapt-react-class icons/ClockHistory))
+(def sun-icon (r/adapt-react-class icons/SunFill))
+(def moon-icon (r/adapt-react-class icons/MoonFill))
 (def upload (r/adapt-react-class icons/Upload))
 
 (defn radiobuttons
@@ -952,6 +954,7 @@
       [[history] "" "Snapshot History"]
       [[external-link] "" "Pop Out Notebook"]
       [[help] "" "Keyboard Shortcuts"]
+      [[sun-icon] "" "Toggle Theme"]
       [[login] "" "Account"]]]]
 
    [:div.actions
