@@ -2049,52 +2049,53 @@
 (defn menu-items []
   [:<>
    [:div.primary
-    [cm/radiobuttons tool
-   ; label, key, title
-     [[[cm/cursor] ::cursor "Cursor [esc]"]
-      [[cm/wire] ::wire "Wire [w]"]
-      [[cm/eraser] ::eraser "Eraser [e]"]
-      [[cm/move] ::pan "Pan [space]"]
-      [[cm/probe] ::probe "Probe nodes in a connected simulator"]]
-     nil nil cancel]
-    [:span.sep]
-    [:a {:title "Rotate selected clockwise [s]"
-         :on-click (fn [_] (transform-selected #(.rotate % 90)))}
-     [cm/rotatecw]]
-    [:a {:title "Rotate selected counter-clockwise [shift+s]"
-         :on-click (fn [_] (transform-selected #(.rotate % -90)))}
-     [cm/rotateccw]]
-    [:a {:title "Mirror selected horizontal [shift+f]"
-         :on-click (fn [_] (transform-selected #(.flipY %)))}
-     [cm/mirror-horizontal]]
-    [:a {:title "Mirror selected vertical [f]"
-         :on-click (fn [_] (transform-selected #(.flipX %)))}
-     [cm/mirror-vertical]]
-    [:a {:title "Delete selected [del]"
-         :on-click (fn [_] (delete-selected))}
-     [cm/delete]]
-    [:a {:title "Copy selected [ctrl+c]"
-         :on-click (fn [_] (copy))}
-     [cm/copyi]]
-    [:a {:title "Cut selected [ctrl+x]"
-         :on-click (fn [_] (cut))}
-     [cm/cuti]]
-    [:a {:title "Paste [ctrl+v]"
-         :on-click (fn [_] (paste))}
-     [cm/pastei]]
-    [:span.sep]
-    [:a {:title "zoom in [scroll wheel/pinch]"
-         :on-click #(button-zoom -1)}
-     [cm/zoom-in]]
-    [:a {:title "zoom out [scroll wheel/pinch]"
-         :on-click #(button-zoom 1)}
-     [cm/zoom-out]]
-    [:a {:title "undo [ctrl+z]"
-         :on-click undo-schematic}
-     [cm/undoi]]
-    [:a {:title "redo [ctrl+shift+z]"
-         :on-click redo-schematic}
-     [cm/redoi]]]
+    [:div.toolbar-group.tools-group
+     [cm/radiobuttons tool
+    ; label, key, title
+      [[[cm/cursor] ::cursor "Cursor [esc]"]
+       [[cm/wire] ::wire "Wire [w]"]
+       [[cm/eraser] ::eraser "Eraser [e]"]
+       [[cm/move] ::pan "Pan [space]"]
+       [[cm/probe] ::probe "Probe nodes in a connected simulator"]]
+      nil nil cancel]]
+    [:div.toolbar-group
+     [:a {:title "Rotate selected clockwise [s]"
+          :on-click (fn [_] (transform-selected #(.rotate % 90)))}
+      [cm/rotatecw]]
+     [:a {:title "Rotate selected counter-clockwise [shift+s]"
+          :on-click (fn [_] (transform-selected #(.rotate % -90)))}
+      [cm/rotateccw]]
+     [:a {:title "Mirror selected horizontal [shift+f]"
+          :on-click (fn [_] (transform-selected #(.flipY %)))}
+      [cm/mirror-horizontal]]
+     [:a {:title "Mirror selected vertical [f]"
+          :on-click (fn [_] (transform-selected #(.flipX %)))}
+      [cm/mirror-vertical]]
+     [:a {:title "Delete selected [del]"
+          :on-click (fn [_] (delete-selected))}
+      [cm/delete]]
+     [:a {:title "Copy selected [ctrl+c]"
+          :on-click (fn [_] (copy))}
+      [cm/copyi]]
+     [:a {:title "Cut selected [ctrl+x]"
+          :on-click (fn [_] (cut))}
+      [cm/cuti]]
+     [:a {:title "Paste [ctrl+v]"
+          :on-click (fn [_] (paste))}
+      [cm/pastei]]]
+    [:div.toolbar-group
+     [:a {:title "zoom in [scroll wheel/pinch]"
+          :on-click #(button-zoom -1)}
+      [cm/zoom-in]]
+     [:a {:title "zoom out [scroll wheel/pinch]"
+          :on-click #(button-zoom 1)}
+      [cm/zoom-out]]
+     [:a {:title "undo [ctrl+z]"
+          :on-click undo-schematic}
+      [cm/undoi]]
+     [:a {:title "redo [ctrl+shift+z]"
+          :on-click redo-schematic}
+      [cm/redoi]]]]
    [:div.status
     [cm/renamable (r/cursor modeldb [(cm/model-key group) :name]) "Untitled"]
     (if @syncactive
