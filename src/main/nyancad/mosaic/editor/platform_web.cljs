@@ -132,10 +132,16 @@
         :on-click (fn []
                     (let [nb-url (str js/window.location.origin "/" (notebook-url))
                           popup (.open js/window nb-url "mosaic_notebook" "width=1200,height=800")]
+                      (reset! notebook-state :nyancad.mosaic.editor/popped-out)
                       (when popup
-                        (reset! notebook-state :nyancad.mosaic.editor/popped-out)
-                        (set! (.-onbeforeunload popup)
-                              #(reset! notebook-state :nyancad.mosaic.editor/embedded)))))}
+                        (let [check (atom nil)]
+                          (reset! check
+                            (js/setInterval
+                              (fn []
+                                (when (.-closed popup)
+                                  (js/clearInterval @check)
+                                  (reset! notebook-state :nyancad.mosaic.editor/embedded)))
+                              500))))))}
     [cm/external-link]]
    [:a {:href "/auth/"
         :title "Login / Account"}
