@@ -38,7 +38,7 @@
   (first (make-names base)))
 
 (defonce ui (r/atom {::zoom [0 0 500 500]
-                     ::theme "tetris"
+                     ::theme nil
                      ::tool ::cursor
                      ::selected #{}
                      ::mouse [0 0]
@@ -47,7 +47,7 @@
                      ::pointer-cache {}}))
 
 (s/def ::zoom (s/coll-of number? :count 4))
-(s/def ::theme #{"tetris" "eyesore"})
+(s/def ::theme (s/nilable #{"light" "dark" "eyesore"}))
 (s/def ::tool #{::cursor ::eraser ::wire ::pan ::device ::probe})
 (s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view ::box}))
@@ -2027,6 +2027,23 @@
              ::selected (set (keys devmap)))
       (post-action!))))
 
+(defonce ^:private theme-clicks (atom []))
+
+(defn- dark-mode? []
+  (case @theme
+    "dark" true
+    "light" false
+    "eyesore" true
+    (.-matches (js/window.matchMedia "(prefers-color-scheme: dark)"))))
+
+(defn toggle-theme! []
+  (let [now (.now js/Date)
+        clicks (swap! theme-clicks #(conj (filterv (fn [t] (> t (- now 2000))) %) now))]
+    (if (>= (count clicks) 5)
+      (do (reset! theme-clicks [])
+          (reset! theme "eyesore"))
+      (reset! theme (if (dark-mode?) "light" "dark")))))
+
 (defn menu-items []
   [:<>
    [:div.primary
@@ -2084,6 +2101,9 @@
 
    [:div.secondary
     [secondary-menu-items notebook-popped-out]
+    [:a {:title "Toggle light/dark theme"
+         :on-click #(toggle-theme!)}
+     (if (dark-mode?) [cm/sun-icon] [cm/moon-icon])]
     [:a {:title "Keyboard shortcuts & help"
          :on-click cm/show-onboarding!}
      [cm/help]]
@@ -2405,8 +2425,22 @@
                      (let [schem @schematic]
                        (map #(vector % (get schem %)) sel))]])))
 
+(defn- set-color-scheme!
+  "Set color-scheme on :root so light-dark() CSS function responds correctly."
+  [scheme]
+  (.. js/document -documentElement -style (setProperty "color-scheme" scheme)))
+
+(defn- theme-attrs
+  "CSS attributes for the current theme. Returns {:class ...}"
+  []
+  (case @theme
+    "eyesore" (do (set-color-scheme! "light") {:class "eyesore dark-cursors"})
+    "light"   (do (set-color-scheme! "light") {})
+    "dark"    (do (set-color-scheme! "dark") {:class "dark-cursors"})
+    (do (set-color-scheme! "light dark") {})))
+
 (defn schematic-ui []
-  [:div.mosaic-container {:class @theme}
+  [:div.mosaic-container (theme-attrs)
    [:div.menu.chrome
     [menu-items]]
    [:div.content-wrapper
@@ -2417,17 +2451,18 @@
        [:div.sidebar
         (doall (for [key sel]
                  ^{:key key} [deviceprops key]))])
-     [:svg.mosaic-canvas {:xmlns "http://www.w3.org/2000/svg"
-                          :height "100%"
-                          :width "100%"
-                          :class [@theme @tool] ; for export
-                          :view-box @zoom
-                          :on-wheel scroll-zoom
-                          :on-pointer-down on-pointer-down-bg
-                          :on-pointer-up on-pointer-up-bg
-                          :on-pointer-move on-pointer-move-bg
-                          :on-pointer-cancel remove-pointer
-                          :on-context-menu context-menu}
+     [:svg.mosaic-canvas (merge (theme-attrs)
+                          {:xmlns "http://www.w3.org/2000/svg"
+                           :height "100%"
+                           :width "100%"
+                           :class [@tool] ; for export
+                           :view-box @zoom
+                           :on-wheel scroll-zoom
+                           :on-pointer-down on-pointer-down-bg
+                           :on-pointer-up on-pointer-up-bg
+                           :on-pointer-move on-pointer-move-bg
+                           :on-pointer-cancel remove-pointer
+                           :on-context-menu context-menu})
       [:defs
        [:pattern {:id "gridfill",
                   :pattern-units "userSpaceOnUse"

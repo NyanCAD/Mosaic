@@ -1,5 +1,5 @@
 <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
   <!-- MZI 1x2: one input splits into two arms with wiggles, two outputs -->
-  <path d="M4,20 C10,20 10,10 16,10 C22,10 20,18 26,18 C32,18 30,10 36,10" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
-  <path d="M4,20 C10,20 10,30 16,30 C22,30 20,22 26,22 C32,22 30,30 36,30" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M4,20 C10,20 10,10 16,10 C22,10 20,18 26,18 C32,18 30,10 36,10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M4,20 C10,20 10,30 16,30 C22,30 20,22 26,22 C32,22 30,30 36,30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
 </svg>

@@ -1,7 +1,7 @@
 <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
   <!-- PN modulator: diode with leads on both electrical and optical ports -->
-  <polygon points="12,8 12,32 28,20" fill="none" stroke="black" stroke-width="2.5" stroke-linejoin="round"/>
-  <line x1="28" y1="8" x2="28" y2="32" stroke="black" stroke-width="2.5"/>
-  <line x1="4" y1="20" x2="12" y2="20" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
-  <line x1="28" y1="20" x2="36" y2="20" stroke="black" stroke-width="2.5" stroke-linecap="round"/>
+  <polygon points="12,8 12,32 28,20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+  <line x1="28" y1="8" x2="28" y2="32" stroke="currentColor" stroke-width="2.5"/>
+  <line x1="4" y1="20" x2="12" y2="20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="28" y1="20" x2="36" y2="20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
 </svg>

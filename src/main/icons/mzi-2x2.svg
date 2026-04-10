@@ -1,5 +1,5 @@
 <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
   <!-- MZI 2x2: two arms, arcs + verticals, never crossing center -->
-  <path d="M3,8 A3,3 0 0,1 6,11 V15 A3,3 0 0,0 12,15 V8 A3,3 0 0,1 18,8 V15 A3,3 0 0,0 24,15 V11 A3,3 0 0,1 27,8" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"/>
-  <path d="M3,32 A3,3 0 0,0 6,29 V25 A3,3 0 0,1 12,25 V32 A3,3 0 0,0 18,32 V25 A3,3 0 0,1 24,25 V29 A3,3 0 0,0 27,32" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"/>
+  <path d="M3,8 A3,3 0 0,1 6,11 V15 A3,3 0 0,0 12,15 V8 A3,3 0 0,1 18,8 V15 A3,3 0 0,0 24,15 V11 A3,3 0 0,1 27,8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <path d="M3,32 A3,3 0 0,0 6,29 V25 A3,3 0 0,1 12,25 V32 A3,3 0 0,0 18,32 V25 A3,3 0 0,1 24,25 V29 A3,3 0 0,0 27,32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
 </svg>

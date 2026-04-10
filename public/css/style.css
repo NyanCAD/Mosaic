@@ -10,20 +10,69 @@ html {
     margin: 0;
 }
 
+:root {
+    color-scheme: light dark;
+
+    /* Chrome */
+    --color-bg: light-dark(#f9f9f9, #1a1a2e);
+    --color-surface: light-dark(white, #252540);
+    --color-surface-alt: light-dark(#f8f8f8, #2a2a4a);
+    --color-text: light-dark(#222222a5, #e0e0e0a5);
+    --color-text-strong: light-dark(#222222, #e0e0e0);
+    --color-text-muted: light-dark(#666, #999);
+    --color-border: light-dark(lightgray, #444);
+    --color-border-light: light-dark(#e7e7e7, #333);
+    --color-shadow: light-dark(#00000033, #00000066);
+    --color-accent: light-dark(#0e1a32, #2a4a6f);
+    --color-accent-strong: light-dark(#0e1a32, #4a9eff);
+    --color-accent-text: white;
+    --color-input-bg: light-dark(#00000008, #ffffff08);
+    --color-input-border: light-dark(#2222220d, #ffffff1a);
+    --color-hover: light-dark(#00000007, #ffffff0a);
+
+    /* Canvas */
+    --canvas-bg: light-dark(#f9f9f9, #1e1e2e);
+    --canvas-grid: light-dark(lightgray, #333);
+    --canvas-stroke: light-dark(black, #ccc);
+    --canvas-wire-stroke: light-dark(black, #ccc);
+    --canvas-text: light-dark(#444, #bbb);
+    --canvas-text-muted: light-dark(#666, #888);
+    --canvas-select: light-dark(rgb(229, 216, 243), rgb(80, 60, 100));
+    --canvas-nc: light-dark(red, #ff6666);
+    --canvas-error: light-dark(red, #ff6666);
+    --canvas-warning: light-dark(orange, #ffaa44);
+    --canvas-placeholder: light-dark(#888, #666);
+    --canvas-port-electric-fill: light-dark(rgb(145, 0, 0), rgb(200, 60, 60));
+    --canvas-port-electric-stroke: light-dark(rgb(53, 0, 0), rgb(120, 30, 30));
+    --canvas-port-photonic-fill: light-dark(rgb(0, 80, 160), rgb(40, 120, 200));
+    --canvas-port-photonic-stroke: light-dark(rgb(0, 20, 60), rgb(20, 60, 120));
+
+    /* Device backgrounds */
+    --device-bg: light-dark(rgb(238, 238, 238), rgb(50, 50, 65));
+    --device-bg-nchan: light-dark(rgb(216, 236, 243), rgb(30, 55, 70));
+    --device-bg-pchan: light-dark(rgb(243, 231, 216), rgb(70, 55, 30));
+    --device-bg-passive: light-dark(rgb(216, 243, 226), rgb(30, 65, 45));
+    --device-bg-source: light-dark(rgb(243, 243, 216), rgb(65, 65, 30));
+    --device-bg-photonic: light-dark(rgb(216, 243, 240), rgb(30, 65, 60));
+    --device-bg-photonic-active: light-dark(rgb(243, 224, 216), rgb(70, 45, 30));
+    --device-bg-amp: light-dark(rgb(243, 238, 216), rgb(65, 60, 30));
+}
+
 .mosaic-app {
     font:
         400 16px/18px "Roboto",
         sans-serif;
-    color: #222222a5;
+    color: var(--color-text);
 }
 
 .mosaic-app input,
 .mosaic-app textarea,
 .mosaic-app select {
-    background: #00000008 0% 0% no-repeat padding-box;
-    border: 2px solid #2222220d;
+    background: var(--color-input-bg) 0% 0% no-repeat padding-box;
+    border: 2px solid var(--color-input-border);
     border-radius: 5px;
     padding: 5px 10px;
+    color: var(--color-text);
 }
 
 /* Combobox styling - button-group appearance */
@@ -48,7 +97,7 @@ html {
     padding: 5px 8px;
     width: 30px;
     cursor: pointer;
-    border: 2px solid #2222220d;
+    border: 2px solid var(--color-input-border);
 }
 
 /* Focus styling with system default blue */
@@ -67,28 +116,29 @@ html {
 /* Global button styling (libman style as default) */
 .mosaic-app button,
 .mosaic-app input[type="submit"] {
-    background: #f8f8f8 0% 0% no-repeat padding-box;
-    box-shadow: 0px 1px 4px #00000033;
+    background: var(--color-surface-alt) 0% 0% no-repeat padding-box;
+    box-shadow: 0px 1px 4px var(--color-shadow);
     border-radius: 7px;
     border: none;
     padding: 10px 15px;
     cursor: pointer;
+    color: var(--color-text);
 }
 
 .mosaic-app button:active {
-    box-shadow: 0px 0px 4px hsla(0, 0%, 0%, 0.2);
+    box-shadow: 0px 0px 4px var(--color-shadow);
 }
 
 .mosaic-app button.primary,
 .mosaic-app input[type="submit"] {
-    background-color: #0e1a32;
-    color: white;
+    background-color: var(--color-accent);
+    color: var(--color-accent-text);
 }
 
 /* Global buttongroup styling */
 .mosaic-app .buttongroup {
-    background: #f8f8f8 0% 0% no-repeat padding-box;
-    box-shadow: 0px 1px 4px #00000033;
+    background: var(--color-surface-alt) 0% 0% no-repeat padding-box;
+    box-shadow: 0px 1px 4px var(--color-shadow);
     border-radius: 7px;
     border: none;
     padding: 0;
@@ -99,14 +149,14 @@ html {
 }
 
 .mosaic-app .buttongroup.primary {
-    background-color: #0e1a32;
-    color: white;
+    background-color: var(--color-accent);
+    color: var(--color-accent-text);
 }
 
 .mosaic-app .buttongroup.primary>button,
 .mosaic-app .buttongroup summary::after {
-    color: white;
-    border-color: white;
+    color: var(--color-accent-text);
+    border-color: var(--color-accent-text);
 }
 
 .mosaic-app .buttongroup.primary>button:disabled {
@@ -115,7 +165,7 @@ html {
 
 .mosaic-app .buttongroup summary {
     padding: 10px 15px;
-    border-left: 1px solid rgb(224, 224, 224);
+    border-left: 1px solid var(--color-border);
 }
 
 .mosaic-app .buttongroup summary::after {
@@ -144,7 +194,7 @@ html {
 
 .mosaic-app details summary::after {
     content: "";
-    border: solid black;
+    border: solid var(--color-text-strong);
     border-width: 0 1px 1px 0;
     padding: 3px;
     transform: rotate(-45deg);
@@ -161,15 +211,15 @@ html {
 
 /* Special cases for details triangles with different backgrounds */
 .mosaic-app .cellsel details[open]>summary::after {
-    border-color: white;
+    border-color: var(--color-accent-text);
 }
 
 /* Global modal and window styling */
 .mosaic-app .window {
-    background: white;
-    box-shadow: 0px 0px 10px #00000033;
+    background: var(--color-surface);
+    box-shadow: 0px 0px 10px var(--color-shadow);
     border-radius: 7px;
-    border: 1px solid lightgray;
+    border: 1px solid var(--color-border);
     padding: 20px 20px;
 }
 
@@ -215,7 +265,7 @@ html {
     font:
         500 20px/25px "Roboto",
         sans-serif;
-    color: #222222;
+    color: var(--color-text-strong);
 }
 
 .mosaic-app .model-selector-popup .model-search {
@@ -234,7 +284,7 @@ html {
 .mosaic-app .model-popup-content .model-categories {
     flex: 0 0 200px;
     overflow-y: auto;
-    border-right: 1px solid lightgray;
+    border-right: 1px solid var(--color-border);
     padding-right: 10px;
 }
 
@@ -249,7 +299,7 @@ html {
     gap: 10px;
     margin-top: 15px;
     padding-top: 15px;
-    border-top: 1px solid lightgray;
+    border-top: 1px solid var(--color-border);
 }
 
 /* Model field in device properties (text + browse button) */
@@ -275,7 +325,7 @@ html {
         500 25px/25px "Roboto",
         sans-serif;
     letter-spacing: 0.85px;
-    color: #222222;
+    color: var(--color-text-strong);
     text-transform: uppercase;
 }
 
@@ -284,7 +334,7 @@ html {
         500 25px/25px "Roboto",
         sans-serif;
     letter-spacing: 0.72px;
-    color: #222222;
+    color: var(--color-text-strong);
 }
 
 .mosaic-libman h3 {
@@ -292,7 +342,7 @@ html {
         500 20px/25px "Roboto",
         sans-serif;
     letter-spacing: 0.72px;
-    color: #222222;
+    color: var(--color-text-strong);
 }
 
 .mosaic-libman button:has(svg) {
@@ -347,7 +397,7 @@ html {
     justify-content: right;
     gap: 20px;
     padding: 20px 20px;
-    border-bottom: 1px solid #e7e7e7;
+    border-bottom: 1px solid var(--color-border-light);
 }
 
 .mosaic-libman .schsel {
@@ -373,7 +423,7 @@ html {
     grid-area: libraries;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid #e7e7e7;
+    border-right: 1px solid var(--color-border-light);
     overflow: hidden;
 }
 
@@ -402,8 +452,8 @@ html {
 
 .mosaic-libman .dbprops {
     padding: 1em;
-    background-color: #00000007;
-    border-bottom: 1px solid #e7e7e7;
+    background-color: var(--color-hover);
+    border-bottom: 1px solid var(--color-border-light);
 }
 
 .mosaic-libman .dbprops .properties {
@@ -428,7 +478,7 @@ html {
 
 .mosaic-libman .proppane {
     grid-area: properties;
-    border-left: 1px solid #e7e7e7;
+    border-left: 1px solid var(--color-border-light);
     padding: 20px;
     overflow: auto;
 }
@@ -436,8 +486,8 @@ html {
 .mosaic-libman .proppane .preview {
     aspect-ratio: 1 / 1;
     margin-bottom: 1em;
-    background-color: #f3f3f3;
-    border: 1px solid #ccc;
+    background-color: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
     position: relative;
     display: flex;
     align-items: center;
@@ -459,7 +509,7 @@ html {
 .mosaic-libman .proppane .preview .empty {
     padding: 1em;
     text-align: center;
-    color: #666;
+    color: var(--color-text-muted);
 }
 
 .mosaic-libman .properties {
@@ -582,8 +632,8 @@ html {
 
 .mosaic-libman .cellsel details[open]>summary,
 .model-selector-popup details[open]>summary {
-    background: #0e1a32 0% 0% no-repeat padding-box;
-    color: white;
+    background: var(--color-accent) 0% 0% no-repeat padding-box;
+    color: var(--color-accent-text);
 }
 
 .mosaic-libman {
@@ -632,9 +682,9 @@ html {
 
 .mosaic-container .menu {
     grid-row: 1;
-    background-color: white;
+    background-color: var(--color-surface);
     box-shadow: 0px 0px 8px #00000008;
-    border: 0.5px solid #7070701f;
+    border: 0.5px solid var(--color-border-light);
     z-index: 1;
     display: flex;
     justify-content: space-between;
@@ -674,9 +724,9 @@ html {
     position: absolute;
     top: 25px;
     left: 25px;
-    background: #ffffff 0% 0% no-repeat padding-box;
+    background: var(--color-surface) 0% 0% no-repeat padding-box;
     box-shadow: 0px 0px 8px #00000008;
-    border: 0.5px solid #7070701f;
+    border: 0.5px solid var(--color-border-light);
     border-radius: 15px;
     display: flex;
     flex-direction: column;
@@ -694,9 +744,9 @@ html {
     position: absolute;
     top: 25px;
     right: 25px;
-    background: #ffffff 0% 0% no-repeat padding-box;
+    background: var(--color-surface) 0% 0% no-repeat padding-box;
     box-shadow: 0px 0px 8px #00000008;
-    border: 0.5px solid #70707040;
+    border: 0.5px solid var(--color-border);
     border-radius: 10px;
     width: 300px;
     max-height: calc(100% - 50px);
@@ -706,8 +756,8 @@ html {
 }
 
 .mosaic-container .sidebar h1 {
-    background-color: #0e1a32;
-    color: white;
+    background-color: var(--color-accent);
+    color: var(--color-accent-text);
     margin: 0;
     border-radius: 10px 10px 0 0;
     padding: 15px 20px;
@@ -726,45 +776,46 @@ html {
 .mosaic-container .chrome label {
     padding: 0.5em;
     margin: 0.75em 0.5em;
-    background-color: white;
+    background-color: var(--color-surface);
     box-shadow: 0px 0px 8px #0000001a;
     border-radius: 5px;
     width: 1em;
     height: 1em;
-    color: #222222a5;
+    color: var(--color-text);
     border: none;
     box-sizing: content-box;
     cursor: pointer;
 }
 
-.mosaic-container .chrome svg {
-    fill: #222222a5;
+.mosaic-container .chrome svg,
+.mosaic-app .onboarding svg {
+    fill: var(--color-text);
 }
 
 .mosaic-container .chrome span.sep {
-    border-right: 1px solid lightgray;
+    border-right: 1px solid var(--color-border);
     padding: 0;
     margin: 0.75em 0.5em;
 }
 
 .mosaic-container .chrome a:hover,
 .mosaic-container .chrome button:hover {
-    background-color: lightgray;
+    background-color: var(--color-border);
 }
 
 .mosaic-container .chrome a:active,
 .mosaic-container .chrome a.active,
 .mosaic-container .chrome button.active,
 .mosaic-container .chrome input[type="radio"]:checked+label {
-    background-color: #0e1a32;
-    color: white;
+    background-color: var(--color-accent-strong);
+    color: var(--color-accent-text);
 }
 
 .mosaic-container .chrome a:active svg,
 .mosaic-container .chrome a.active svg,
 .mosaic-container .chrome button.active svg,
 .mosaic-container .chrome input[type="radio"]:checked+label svg {
-    fill: white;
+    fill: var(--color-accent-text);
 }
 
 .mosaic-container .chrome input[type="radio"] {
@@ -815,7 +866,7 @@ html {
 }
 
 .mosaic-container .devicetray details summary:has(button.active)::after {
-    border-color: white;
+    border-color: var(--color-accent-text);
     /* white triangle when button is active */
 }
 
@@ -825,9 +876,9 @@ html {
     left: 120%;
     display: flex;
     flex-direction: row;
-    background: #ffffff 0% 0% no-repeat padding-box;
+    background: var(--color-surface) 0% 0% no-repeat padding-box;
     /* box-shadow: 0px 0px 8px #00000008; */
-    border: 0.5px solid #7070701f;
+    border: 0.5px solid var(--color-border-light);
     border-radius: 5px;
     z-index: 0;
 }
@@ -841,9 +892,9 @@ html {
     transform: rotate(45deg);
     width: 20px;
     height: 20px;
-    background: white;
-    border-left: 0.5px solid #7070701f;
-    border-bottom: 0.5px solid #7070701f;
+    background: var(--color-surface);
+    border-left: 0.5px solid var(--color-border-light);
+    border-bottom: 0.5px solid var(--color-border-light);
 }
 
 .mosaic-editor .properties {
@@ -867,9 +918,7 @@ html {
     width: 100%;
 }
 
-#mosaic_canvas {
-    overflow: hidden;
-}
+/* overflow handled by .mosaic-canvas in canvas base rules */
 
 .mosaic-editor svg {
     overflow: visible;
@@ -917,10 +966,12 @@ g.wire.photonic polyline.wirebb {
     stroke: rgba(216, 243, 240, 0.2);
 }
 
+
 text {
     user-select: none;
     -webkit-user-select: none;
     white-space: pre;
+    fill: var(--canvas-stroke);
 }
 
 text.identifier {
@@ -935,213 +986,272 @@ rect.select {
     fill: #0000001a;
 }
 
-/* tetris theme */
+/* Canvas base rules (structural, theme-independent) */
 
-.tetris {
-    background-color: #f9f9f9;
+.mosaic-canvas {
+    background-color: var(--canvas-bg);
+    overflow: hidden;
 }
 
-.tetris.pan {
-    cursor:
-        url(icons/arrows-move.svg) 6 0,
-        grab;
+.mosaic-canvas.pan {
+    cursor: url(icons/arrows-move.svg) 6 0, grab;
 }
 
-.tetris.wire {
-    cursor:
-        url(icons/pencil.svg) 0 16,
-        crosshair;
+.mosaic-canvas.wire {
+    cursor: url(icons/pencil.svg) 0 16, crosshair;
 }
 
-.tetris.probe {
-    cursor:
-        url(icons/search.svg) 5 5,
-        crosshair;
+.mosaic-canvas.probe {
+    cursor: url(icons/search.svg) 5 5, crosshair;
 }
 
-.tetris.eraser .wire:hover,
-.tetris.eraser .device {
-    cursor:
-        url(icons/eraser.svg) 6 14,
-        crosshair;
+.mosaic-canvas.eraser .wire:hover,
+.mosaic-canvas.eraser .device {
+    cursor: url(icons/eraser.svg) 6 14, crosshair;
 }
 
-.tetris line.grid {
-    stroke: lightgray;
+/* Light cursors for dark mode — auto (OS) and forced */
+@media (prefers-color-scheme: dark) {
+    .mosaic-canvas.pan { cursor: url(icons/arrows-move-light.svg) 6 0, grab; }
+    .mosaic-canvas.wire { cursor: url(icons/pencil-light.svg) 0 16, crosshair; }
+    .mosaic-canvas.probe { cursor: url(icons/search-light.svg) 5 5, crosshair; }
+    .mosaic-canvas.eraser .wire:hover,
+    .mosaic-canvas.eraser .device { cursor: url(icons/eraser-light.svg) 6 14, crosshair; }
+}
+.dark-cursors .mosaic-canvas.pan { cursor: url(icons/arrows-move-light.svg) 6 0, grab; }
+.dark-cursors .mosaic-canvas.wire { cursor: url(icons/pencil-light.svg) 0 16, crosshair; }
+.dark-cursors .mosaic-canvas.probe { cursor: url(icons/search-light.svg) 5 5, crosshair; }
+.dark-cursors .mosaic-canvas.eraser .wire:hover,
+.dark-cursors .mosaic-canvas.eraser .device { cursor: url(icons/eraser-light.svg) 6 14, crosshair; }
+
+
+line.grid {
+    stroke: var(--canvas-grid);
     stroke-width: 0.5px;
     fill: none;
 }
 
-.tetris rect.tetris {
-    fill: rgb(238, 238, 238);
-    stroke: rgb(238, 238, 238);
+rect.tetris {
+    fill: var(--device-bg);
+    stroke: var(--device-bg);
     stroke-width: calc(10px * 0.8284271247461903);
     /* 2*rx*(sqrt(2)-1) */
     rx: 10px;
 }
 
-.tetris g.device.selected rect.tetris,
-.tetris rect.tetris.selected {
-    fill: rgb(229, 216, 243) !important;
-    stroke: rgb(229, 216, 243) !important;
+g.device.selected rect.tetris,
+rect.tetris.selected {
+    fill: var(--canvas-select) !important;
+    stroke: var(--canvas-select) !important;
 }
 
-.tetris .port.selected polyline {
-    fill: rgb(229, 216, 243) !important;
+.port.selected polyline {
+    fill: var(--canvas-select) !important;
 }
 
-.tetris g.device.nchan rect.tetris {
-    fill: rgb(216, 236, 243);
-    stroke: rgb(216, 236, 243);
+g.device.nchan rect.tetris {
+    fill: var(--device-bg-nchan);
+    stroke: var(--device-bg-nchan);
 }
 
-.tetris g.device.pchan rect.tetris {
-    fill: rgb(243, 231, 216);
-    stroke: rgb(243, 231, 216);
+g.device.pchan rect.tetris {
+    fill: var(--device-bg-pchan);
+    stroke: var(--device-bg-pchan);
 }
 
-.tetris g.device.passive rect.tetris {
-    fill: rgb(216, 243, 226);
-    stroke: rgb(216, 243, 226);
+g.device.passive rect.tetris {
+    fill: var(--device-bg-passive);
+    stroke: var(--device-bg-passive);
 }
 
-.tetris g.device.source rect.tetris {
-    fill: rgb(243, 243, 216);
-    stroke: rgb(243, 243, 216);
+g.device.source rect.tetris {
+    fill: var(--device-bg-source);
+    stroke: var(--device-bg-source);
 }
 
-.tetris g.device.photonic rect.tetris {
-    fill: rgb(216, 243, 240);
-    stroke: rgb(216, 243, 240);
+g.device.photonic rect.tetris {
+    fill: var(--device-bg-photonic);
+    stroke: var(--device-bg-photonic);
 }
 
-.tetris g.device.photonic-active rect.tetris {
-    fill: rgb(243, 224, 216);
-    stroke: rgb(243, 224, 216);
+g.device.photonic-active rect.tetris {
+    fill: var(--device-bg-photonic-active);
+    stroke: var(--device-bg-photonic-active);
 }
 
-.tetris g.device.port polyline {
-    fill: rgb(243, 243, 216);
+g.device.port polyline {
+    fill: var(--device-bg-source);
 }
 
-.tetris circle.port {
-    fill: rgb(145, 0, 0);
-    stroke: rgb(53, 0, 0);
+circle.port {
+    fill: var(--canvas-port-electric-fill);
+    stroke: var(--canvas-port-electric-stroke);
 }
 
-.tetris circle.port.photonic {
-    fill: rgb(0, 80, 160);
-    stroke: rgb(0, 20, 60);
+circle.port.photonic {
+    fill: var(--canvas-port-photonic-fill);
+    stroke: var(--canvas-port-photonic-stroke);
 }
 
-.tetris g.device circle.port {
+g.device circle.port {
     display: none;
 }
 
-.tetris g.device.selected circle.port {
+g.device.selected circle.port {
     display: inherit;
 }
 
-.tetris g.device polyline,
-.tetris g.device circle.outline,
-.tetris g.device rect.outline,
-.tetris g.device polygon.outline,
-.tetris g.device path {
-    stroke: black;
+g.device polyline,
+g.device circle.outline,
+g.device rect.outline,
+g.device polygon.outline,
+g.device path {
+    stroke: var(--canvas-stroke);
     stroke-width: 2px;
     fill: none;
 }
 
+g.device polygon.arrow {
+    fill: var(--canvas-stroke);
+    stroke: none;
+}
 
-.tetris path.wire {
-    stroke: black;
+path.wire {
+    stroke: var(--canvas-wire-stroke);
     stroke-width: 2px;
     fill: none;
     stroke-linejoin: round;
 }
 
-
-.tetris circle.wire {
-    fill: black;
+circle.wire {
+    fill: var(--canvas-wire-stroke);
 }
 
-.tetris g.wire.selected path.wire {
+g.wire.selected path.wire {
     stroke-dasharray: 10px 3px;
 }
 
-.tetris g.device.selected polyline,
-.tetris g.device.selected circle.outline,
-.tetris g.device.selected rect.outline,
-.tetris g.device.selected polygon.outline,
-.tetris g.device.selected path {
+g.device.selected polyline,
+g.device.selected circle.outline,
+g.device.selected rect.outline,
+g.device.selected polygon.outline,
+g.device.selected path {
     stroke-dasharray: 10px 3px;
 }
 
-.tetris circle.nc {
+circle.nc {
     fill: none;
-    stroke: red;
+    stroke: var(--canvas-nc);
     stroke-dasharray: 1 4;
 }
 
-.tetris circle.nc.photonic {
-    stroke: rgb(0, 80, 160);
+circle.nc.photonic {
+    stroke: var(--canvas-port-photonic-fill);
 }
 
-.tetris .wire-error {
-    color: red;
+.wire-error {
+    color: var(--canvas-error);
     pointer-events: all;
     cursor: help;
 }
 
-.tetris .wire-error.fork-error {
-    color: orange;
+.wire-error.fork-error {
+    color: var(--canvas-warning);
+}
+
+/* Subcircuit (ckt) and amplifier (amp) styling */
+g.device.ckt rect.tetris,
+g.device.amp rect.tetris {
+    fill: var(--device-bg-source);
+    stroke: var(--device-bg-source);
+}
+
+g.device.ckt .outline.placeholder,
+g.device.amp .outline.placeholder {
+    stroke-dasharray: 5, 5;
+    stroke: var(--canvas-placeholder);
+}
+
+g.device.ckt text.model-name,
+g.device.amp text.model-name {
+    font-size: 0.5em;
+    fill: var(--canvas-text);
+}
+
+g.device.ckt text.port-label,
+g.device.amp text.port-label {
+    font-size: 0.35em;
+    fill: var(--canvas-text-muted);
+}
+
+g.device.amp polygon.outline {
+    fill: var(--device-bg-amp);
 }
 
 /* eyesore theme */
 
+.eyesore {
+    --canvas-bg: black;
+    --canvas-grid: lightgray;
+    --canvas-stroke: #00cc66;
+    --canvas-wire-stroke: #39bfff;
+    --canvas-text: #00cc66;
+    --canvas-text-muted: #00cc66;
+    --canvas-select: transparent;
+    --canvas-nc: red;
+    --canvas-error: red;
+    --canvas-warning: orange;
+    --canvas-placeholder: #00cc66;
+    --canvas-port-electric-fill: red;
+    --canvas-port-electric-stroke: transparent;
+    --canvas-port-photonic-fill: red;
+    --canvas-port-photonic-stroke: transparent;
+    --device-bg: transparent;
+    --device-bg-nchan: transparent;
+    --device-bg-pchan: transparent;
+    --device-bg-passive: transparent;
+    --device-bg-source: transparent;
+    --device-bg-photonic: transparent;
+    --device-bg-photonic-active: transparent;
+    --device-bg-amp: transparent;
+}
+
+svg.eyesore {
+    shape-rendering: crispEdges;
+}
+
+.eyesore g.wire.photonic polyline.wirebb {
+    stroke: transparent;
+}
+
+.eyesore g.device circle.port {
+    display: inherit;
+}
+
 .eyesore line.grid {
-    stroke: lightgray;
-    stroke-width: 1px;
     stroke-dasharray: 1 99999;
     stroke-linecap: butt;
-    fill: none;
     vector-effect: non-scaling-stroke;
-}
-
-.eyesore #mosaic_canvas {
-    shape-rendering: crispEdges;
-    background-color: black;
-}
-
-.eyesore rect.tetris {
-    fill: transparent;
-}
-
-.eyesore circle.port {
-    fill: red;
-}
-
-.eyesore circle.nc {
-    fill: red;
-}
-
-.eyesore text {
-    fill: red;
+    stroke-width: 1px;
 }
 
 .eyesore g.device polyline,
 .eyesore g.device path,
 .eyesore g.device circle.outline,
 .eyesore g.device rect.outline,
-.eyesore g.device polygon {
-    stroke: #00cc66;
+.eyesore g.device polygon.outline {
     stroke-width: 1px;
-    fill: none;
+    vector-effect: non-scaling-stroke;
+}
+
+.eyesore g.device text {
+    stroke: var(--canvas-stroke);
+    fill: var(--canvas-stroke);
     vector-effect: non-scaling-stroke;
 }
 
 .eyesore g.device.port polyline {
-    fill: rgb(255, 0, 0);
+    fill: red;
     stroke: none;
 }
 
@@ -1151,78 +1261,47 @@ rect.select {
 
 .eyesore g.device.port.supply polyline,
 .eyesore g.device.port.ground polyline {
-    stroke: #00cc66;
+    stroke: var(--canvas-stroke);
     fill: transparent;
 }
 
-.eyesore g.device text {
-    stroke: #00cc66;
-    /* stroke-width: 1px; */
-    fill: #00cc66;
-    vector-effect: non-scaling-stroke;
+.eyesore g.device.port.selected polyline {
+    stroke: white;
+    fill: transparent;
 }
 
-/* Subcircuit (ckt) and amplifier (amp) styling - tetris theme */
-.tetris g.device.ckt rect.tetris,
-.tetris g.device.amp rect.tetris {
-    fill: rgb(243, 243, 216);
-    stroke: rgb(243, 243, 216);
-}
-
-.tetris g.device.ckt .outline.placeholder,
-.tetris g.device.amp .outline.placeholder {
-    stroke-dasharray: 5, 5;
-    stroke: #888;
-}
-
-.tetris g.device.ckt text.model-name,
-.tetris g.device.amp text.model-name {
-    font-size: 0.5em;
-    fill: #444;
-}
-
-.tetris g.device.ckt text.port-label,
-.tetris g.device.amp text.port-label {
-    font-size: 0.35em;
-    fill: #666;
-}
-
-.tetris g.device.amp polygon.outline {
-    fill: rgb(243, 238, 216);
-}
-
-/* Subcircuit (ckt) and amplifier (amp) styling - eyesore theme */
-.eyesore g.device.ckt .outline.placeholder,
-.eyesore g.device.amp .outline.placeholder {
-    stroke-dasharray: 5, 5;
-}
-
-.eyesore g.device.ckt text.model-name,
-.eyesore g.device.amp text.model-name {
-    font-size: 0.5em;
-    fill: #00cc66;
-}
-
-.eyesore g.device.ckt text.port-label,
-.eyesore g.device.amp text.port-label {
-    font-size: 0.35em;
-    fill: #00cc66;
-}
-
-.eyesore g.device.amp polygon.outline {
+.eyesore g.device.selected polyline,
+.eyesore g.device.selected path,
+.eyesore g.device.selected circle.outline,
+.eyesore g.device.selected rect.outline,
+.eyesore g.device.selected polygon.outline,
+.eyesore g.device.selected polygon.arrow {
+    stroke: white;
     fill: none;
+    stroke-dasharray: none;
+}
+
+.eyesore g.device.selected polygon.arrow {
+    fill: white;
+}
+
+.eyesore g.device.selected text {
+    stroke: white;
+    fill: white;
+}
+
+.eyesore g.wire.selected path.wire {
+    stroke: white;
+    stroke-dasharray: none;
 }
 
 .eyesore path.wire {
-    stroke: #39bfff;
     stroke-width: 1px;
-    fill: none;
     vector-effect: non-scaling-stroke;
-    stroke-linejoin: round;
 }
 
-.eyesore circle.wire {
-    fill: #39bfff;
+.eyesore text {
+    fill: red;
 }
 
 /* Notebook sidebar styles */
@@ -1230,8 +1309,8 @@ rect.select {
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: white;
-    border-left: 1px solid #ddd;
+    background: var(--color-surface);
+    border-left: 1px solid var(--color-border);
     z-index: 2;
     width: min(800px, 45%);
     min-width: 300px;
@@ -1268,7 +1347,7 @@ rect.select {
 
 /* Authentication page */
 .mosaic-auth {
-    background: #f9f9f9;
+    background: var(--color-bg);
     width: 100%;
     height: 100vh;
     margin: 0;
@@ -1286,9 +1365,9 @@ rect.select {
 
 .mosaic-auth .auth-card,
 .mosaic-auth .account-card {
-    background: white;
+    background: var(--color-surface);
     box-shadow: 0px 0px 8px #00000008;
-    border: 0.5px solid #7070701f;
+    border: 0.5px solid var(--color-border-light);
     border-radius: 7px;
     padding: 40px;
     width: 100%;
@@ -1304,7 +1383,7 @@ rect.select {
         500 25px/25px "Roboto",
         sans-serif;
     letter-spacing: 0.85px;
-    color: #222222;
+    color: var(--color-text-strong);
     text-align: center;
     margin-bottom: 30px;
 }
@@ -1316,7 +1395,7 @@ rect.select {
 .mosaic-auth .form-group label {
     display: block;
     margin-bottom: 8px;
-    color: #222222a5;
+    color: var(--color-text);
     font-weight: 500;
 }
 
@@ -1328,7 +1407,7 @@ rect.select {
 
 .mosaic-auth .form-group input:focus {
     outline: none;
-    border-color: #0e1a32;
+    border-color: var(--color-accent);
 }
 
 /* Auth-specific button overrides */
@@ -1340,25 +1419,25 @@ rect.select {
 }
 
 .mosaic-auth button.primary:disabled {
-    background: #ccc;
+    background: var(--color-border);
     cursor: not-allowed;
 }
 
 .mosaic-auth button.secondary {
     display: inline-block;
-    background: #f8f8f8;
-    color: #222222a5;
+    background: var(--color-surface-alt);
+    color: var(--color-text);
     text-decoration: none;
     text-align: center;
 }
 
 .mosaic-auth button.secondary:hover {
-    background-color: lightgray;
+    background-color: var(--color-border);
 }
 
 .mosaic-auth button.danger {
     background: #dc3545;
-    color: white;
+    color: var(--color-accent-text);
 }
 
 .mosaic-auth button.danger:hover {
@@ -1371,12 +1450,12 @@ rect.select {
 }
 
 .mosaic-auth .auth-toggle p {
-    color: #222222a5;
+    color: var(--color-text);
     margin: 10px 0;
 }
 
 .mosaic-auth .auth-toggle a {
-    color: #0e1a32;
+    color: var(--color-accent);
     text-decoration: none;
     font-weight: 500;
 }
@@ -1386,14 +1465,14 @@ rect.select {
 }
 
 .mosaic-auth .local-option {
-    border-top: 1px solid #e7e7e7;
+    border-top: 1px solid var(--color-border-light);
     margin-top: 30px;
     padding-top: 20px;
     text-align: center;
 }
 
 .mosaic-auth .local-option p {
-    color: #222222a5;
+    color: var(--color-text);
     margin-bottom: 15px;
 }
 
@@ -1412,15 +1491,15 @@ rect.select {
 
 .mosaic-auth .user-info p {
     margin: 10px 0;
-    color: #222222a5;
+    color: var(--color-text);
 }
 
 .mosaic-auth .user-info strong {
-    color: #222222;
+    color: var(--color-text-strong);
 }
 
 .mosaic-auth .user-info code {
-    background: #00000008;
+    background: var(--color-input-bg);
     padding: 4px 8px;
     border-radius: 5px;
     font-family: "Consolas", "Monaco", monospace;
@@ -1454,13 +1533,13 @@ rect.select {
     border: none;
     font-size: 24px;
     cursor: pointer;
-    color: #666;
+    color: var(--color-text-muted);
     padding: 5px 10px;
     box-shadow: none;
 }
 
 .mosaic-app .modal .onboarding .close-btn:hover {
-    color: #000;
+    color: var(--color-text-strong);
 }
 
 .mosaic-app .modal .onboarding h2 {
@@ -1468,14 +1547,14 @@ rect.select {
         500 25px/25px "Roboto",
         sans-serif;
     letter-spacing: 0.85px;
-    color: #222222;
+    color: var(--color-text-strong);
     margin-bottom: 15px;
     text-align: center;
 }
 
 .mosaic-app .modal .onboarding .intro {
     text-align: center;
-    color: #222222a5;
+    color: var(--color-text);
     margin-bottom: 25px;
 }
 
@@ -1483,7 +1562,7 @@ rect.select {
     font:
         500 14px/18px "Roboto",
         sans-serif;
-    color: #0e1a32;
+    color: var(--color-accent);
     margin-bottom: 10px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -1493,7 +1572,7 @@ rect.select {
 .mosaic-app .modal .onboarding .components-section {
     margin-bottom: 20px;
     padding-bottom: 20px;
-    border-bottom: 1px solid #e7e7e7;
+    border-bottom: 1px solid var(--color-border-light);
 }
 
 .mosaic-app .modal .onboarding .components-row {
@@ -1525,19 +1604,19 @@ rect.select {
 .mosaic-app .modal .onboarding .component-item>svg {
     width: 28px;
     height: 28px;
-    color: #555;
+    color: var(--color-text-muted);
 }
 
 .mosaic-app .modal .onboarding .component-item .label {
     font-size: 10px;
-    color: #888;
+    color: var(--color-text-muted);
     text-align: center;
 }
 
 .mosaic-app .modal .onboarding .hint {
     text-align: center;
     font-size: 12px;
-    color: #888;
+    color: var(--color-text-muted);
     margin-top: 10px;
     margin-bottom: 0;
 }
@@ -1556,7 +1635,7 @@ rect.select {
 }
 
 .mosaic-app .modal .onboarding tr {
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--color-border-light);
 }
 
 .mosaic-app .modal .onboarding tr:last-child {
@@ -1571,7 +1650,7 @@ rect.select {
 .mosaic-app .modal .onboarding .icon-cell {
     width: 24px;
     text-align: center;
-    color: #555;
+    color: var(--color-text-muted);
 }
 
 .mosaic-app .modal .onboarding .icon-cell svg {
@@ -1580,8 +1659,8 @@ rect.select {
 }
 
 .mosaic-app .modal .onboarding kbd {
-    background: #f8f8f8;
-    border: 1px solid #ddd;
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
     border-radius: 4px;
     padding: 3px 8px;
     font-family: "Consolas", "Monaco", monospace;
@@ -1592,7 +1671,7 @@ rect.select {
 
 .mosaic-app .modal .onboarding .desc {
     font-size: 13px;
-    color: #222222a5;
+    color: var(--color-text);
     padding-left: 8px;
 }
 
@@ -1601,7 +1680,7 @@ rect.select {
     justify-content: space-between;
     align-items: center;
     gap: 10px;
-    border-top: 1px solid #e7e7e7;
+    border-top: 1px solid var(--color-border-light);
     padding: 20px 5px 5px 5px;
     margin-top: 10px;
 }
@@ -1631,7 +1710,7 @@ rect.select {
     font:
         500 20px/25px "Roboto",
         sans-serif;
-    color: #222222;
+    color: var(--color-text-strong);
 }
 
 .mosaic-app .history-panel .modal-header .close {
@@ -1639,18 +1718,18 @@ rect.select {
     border: none;
     font-size: 24px;
     cursor: pointer;
-    color: #666;
+    color: var(--color-text-muted);
     padding: 5px 10px;
     box-shadow: none;
 }
 
 .mosaic-app .history-panel .modal-header .close:hover {
-    color: #000;
+    color: var(--color-text-strong);
 }
 
 .mosaic-app .history-panel .upload-section {
     padding: 1em 0;
-    border-bottom: 1px solid #e7e7e7;
+    border-bottom: 1px solid var(--color-border-light);
     display: flex;
     gap: 0.5em;
 }
@@ -1667,7 +1746,7 @@ rect.select {
 
 .mosaic-app .history-panel .snapshot-item {
     margin: 0.5em 0;
-    border: 1px solid #e7e7e7;
+    border: 1px solid var(--color-border-light);
     border-radius: 5px;
 }
 
@@ -1687,7 +1766,7 @@ rect.select {
 .mosaic-app .history-panel .snapshot-item summary .timestamp {
     font-family: "Consolas", "Monaco", monospace;
     font-size: 13px;
-    color: #222222a5;
+    color: var(--color-text);
 }
 
 .mosaic-app .history-panel .snapshot-item summary .actions {
@@ -1702,19 +1781,19 @@ rect.select {
 
 .mosaic-app .history-panel .snapshot-item .preview {
     padding: 0.75em;
-    border-top: 1px solid #e7e7e7;
-    background: #f9f9f9;
+    border-top: 1px solid var(--color-border-light);
+    background: var(--color-bg);
 }
 
 .mosaic-app .history-panel .snapshot-item .preview object {
     width: 100%;
     height: 200px;
-    border: 1px solid #e7e7e7;
-    background: white;
+    border: 1px solid var(--color-border-light);
+    background: var(--color-surface);
 }
 
 .mosaic-app .history-panel .empty {
-    color: #666;
+    color: var(--color-text-muted);
     font-style: italic;
     padding: 1em 0;
 }
@@ -1722,7 +1801,7 @@ rect.select {
 /* Recursive editor: fieldset items for nested data */
 .mosaic-app .properties .fieldset-item {
     grid-column: 1 / -1;
-    border: 1px solid #2222220d;
+    border: 1px solid var(--color-input-border);
     border-radius: 5px;
     padding: 0.5em;
     display: grid;
@@ -1738,7 +1817,7 @@ rect.select {
     gap: 0.3em;
     margin: -1.1em 0 0;
     padding: 0 0.25em;
-    background: white;
+    background: var(--color-surface);
     width: fit-content;
 }
 
@@ -1783,8 +1862,8 @@ rect.select {
 /* Tag badges in model list */
 .mosaic-app .tag-badge {
     display: inline-block;
-    background: #e7e7e7;
-    color: #555;
+    background: var(--color-border-light);
+    color: var(--color-text-muted);
     font-size: 0.75em;
     padding: 1px 6px;
     border-radius: 3px;
@@ -1797,13 +1876,13 @@ rect.select {
 }
 
 .mosaic-app .tag-badge.clickable:hover {
-    background: #d0d0d0;
+    background: var(--color-border);
 }
 
 .mosaic-app .tag-badge.active {
     cursor: pointer;
     background: #4a9eff;
-    color: white;
+    color: var(--color-accent-text);
 }
 
 .mosaic-app .tag-badge.active:hover {
@@ -1817,5 +1896,5 @@ rect.select {
 
 .mosaic-app .tag-badge.prop-tag.active {
     background: #1a5fa0;
-    color: white;
+    color: var(--color-accent-text);
 }
