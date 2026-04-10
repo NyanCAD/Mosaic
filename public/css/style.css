@@ -685,7 +685,7 @@ html {
     background-color: var(--color-surface);
     box-shadow: 0px 0px 8px #00000008;
     border: 0.5px solid var(--color-border-light);
-    z-index: 1;
+    z-index: 2;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -698,7 +698,24 @@ html {
 .mosaic-container .menu .primary {
     display: flex;
     justify-content: flex-start;
-    flex-wrap: wrap;
+}
+
+.mosaic-container .menu .toolbar-group {
+    display: contents;
+}
+
+/* Separator between groups (replaces span.sep) */
+.mosaic-container .menu .toolbar-group + .toolbar-group > :first-child {
+    margin-left: 1em;
+    position: relative;
+}
+.mosaic-container .menu .toolbar-group + .toolbar-group > :first-child::before {
+    content: '';
+    position: absolute;
+    left: -0.75em;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid var(--color-border);
 }
 
 .mosaic-container .menu .secondary {
@@ -792,11 +809,6 @@ html {
     fill: var(--color-text);
 }
 
-.mosaic-container .chrome span.sep {
-    border-right: 1px solid var(--color-border);
-    padding: 0;
-    margin: 0.75em 0.5em;
-}
 
 .mosaic-container .chrome a:hover,
 .mosaic-container .chrome button:hover {
@@ -946,6 +958,63 @@ g.toolstaging g.device {
 @media (hover: none) {
     .device g.toolstaging {
         display: none;
+    }
+}
+
+/* Narrow + mouse: toolbar groups collapse to one-button dropdowns */
+@media (max-width: 1400px) and (hover: hover) {
+    .mosaic-container .menu .primary {
+        height: calc(1em + 1em + 1.5em);
+        overflow: visible;
+        align-items: flex-start;
+    }
+
+    .mosaic-container .menu .toolbar-group {
+        display: flex;
+        flex-direction: column;
+        max-height: calc(1em + 1em + 1.5em);
+        overflow: hidden;
+    }
+
+    .mosaic-container .menu .toolbar-group > * {
+        flex-shrink: 0;
+    }
+
+    .mosaic-container .menu .toolbar-group:hover {
+        max-height: 500px;
+        z-index: 10;
+        background: var(--color-surface);
+        border: 0.5px solid var(--color-border-light);
+        border-radius: 5px;
+        box-shadow: 0px 0px 8px #0000001a;
+    }
+
+    /* Active tool floats to top of collapsed group */
+    .mosaic-container .tools-group input[type=radio]:checked + label {
+        order: -1;
+    }
+
+    /* Remove group separators in collapsed mode */
+    .mosaic-container .menu .toolbar-group + .toolbar-group > :first-child {
+        margin-left: 0.5em;
+    }
+    .mosaic-container .menu .toolbar-group + .toolbar-group > :first-child::before {
+        display: none;
+    }
+}
+
+/* Narrow + touch: toolbar scrolls horizontally */
+@media (max-width: 1400px) and (hover: none) {
+    .mosaic-container .menu .primary {
+        overflow-x: auto;
+        flex-shrink: 1;
+        min-width: 0;
+    }
+
+    .mosaic-container .menu .status,
+    .mosaic-container .menu .secondary {
+        flex-shrink: 0;
+        white-space: nowrap;
     }
 }
 
