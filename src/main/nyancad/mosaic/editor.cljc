@@ -43,7 +43,7 @@
                      ::selected #{}
                      ::mouse [0 0]
                      ::mouse-start [0 0]
-                     ::notebook-popped-out false
+                     ::notebook-state ::embedded
                      ::pointer-cache {}}))
 
 (s/def ::zoom (s/coll-of number? :count 4))
@@ -52,11 +52,11 @@
 (s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view ::box}))
 (s/def ::staging (s/nilable :nyancad.mosaic.common/device))
-(s/def ::notebook-popped-out boolean?)
+(s/def ::notebook-state #{::embedded ::collapsed ::popped-out})
 (s/def ::x number?)
 (s/def ::y number?)
 (s/def ::pointer-cache (s/map-of int? (s/keys :req-un [::x ::y])))
-(s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-popped-out ::pointer-cache]
+(s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-state ::pointer-cache]
                     :opt [::dragging ::staging]))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
@@ -67,7 +67,7 @@
 (defonce selected (r/cursor ui [::selected]))
 (defonce delta (r/cursor ui [::delta]))
 (defonce staging (r/cursor ui [::staging]))
-(defonce notebook-popped-out (r/cursor ui [::notebook-popped-out]))
+(defonce notebook-state (r/cursor ui [::notebook-state]))
 (defonce pointer-cache (r/cursor ui [::pointer-cache]))
 
 ; Model selector popup state
@@ -2103,7 +2103,7 @@
       [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
 
    [:div.secondary
-    [secondary-menu-items notebook-popped-out]
+    [secondary-menu-items notebook-state]
     [:a {:title "Toggle light/dark theme"
          :on-click #(toggle-theme!)}
      (if (dark-mode?) [cm/sun-icon] [cm/moon-icon])]
@@ -2483,7 +2483,7 @@
       [schematic-elements @schematic]
       [schematic-dots]
       [tool-elements]]]
-    [notebook-panel notebook-popped-out]]
+    [notebook-panel notebook-state]]
    [cm/contextmenu]
    [cm/modal]])
 

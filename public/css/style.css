@@ -1423,6 +1423,51 @@ svg.eyesore {
     pointer-events: none;
 }
 
+.notebook-chevron {
+    position: absolute;
+    top: 50%;
+    left: -18px;
+    transform: translateY(-50%);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    cursor: pointer;
+    padding: 16px 4px;
+    color: var(--color-text);
+    font-size: 10px;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 11;
+}
+
+#mosaic_notebook_wrapper:hover .notebook-chevron {
+    opacity: 0.6;
+}
+
+.notebook-chevron:hover {
+    opacity: 1 !important;
+    background: var(--color-border);
+}
+
+#mosaic_notebook_collapsed {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 100%;
+    background: var(--color-surface);
+    border-left: 1px solid var(--color-border);
+    cursor: pointer;
+    color: var(--color-text);
+    font-size: 8px;
+}
+
+#mosaic_notebook_collapsed:hover {
+    background: var(--color-border);
+}
+
 /* Authentication page */
 .mosaic-auth {
     background: var(--color-bg);
