@@ -61,12 +61,12 @@
 
 (defn notebook-panel
   "No notebook panel in VSCode."
-  [_notebook-popped-out]
+  [_notebook-state]
   nil)
 
 (defn secondary-menu-items
   "VSCode secondary menu: open library manager."
-  [_notebook-popped-out]
+  [_notebook-state]
   [:a {:title "Open library manager"
        :on-click #(.postMessage vscode
                     #js{:type "open-file"

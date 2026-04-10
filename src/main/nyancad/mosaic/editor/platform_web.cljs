@@ -71,37 +71,56 @@
     (str "notebook/?" (.toString url-params))))
 
 (defn notebook-panel
-  "Notebook iframe panel. Pass notebook-popped-out cursor."
-  [notebook-popped-out]
-  (when-not @notebook-popped-out
-    [:div#mosaic_notebook_wrapper
-     [:div.resize-handle
-      {:on-pointer-down
-       (fn [e]
-         (.preventDefault e)
-         (.setPointerCapture (.-target e) (.-pointerId e))
-         (let [wrapper (js/document.getElementById "mosaic_notebook_wrapper")
-               start-x (.-clientX e)
-               start-width (.-offsetWidth wrapper)
-               on-move (fn on-move [e]
-                         (let [delta (- start-x (.-clientX e))
-                               new-width (+ start-width delta)]
-                           (set! (.. wrapper -style -width) (str new-width "px"))))
-               on-up (fn on-up [e]
-                       (.remove (.-classList wrapper) "resizing")
-                       (.releasePointerCapture (.-target e) (.-pointerId e))
-                       (.removeEventListener js/document "pointermove" on-move)
-                       (.removeEventListener js/document "pointerup" on-up))]
-           (.add (.-classList wrapper) "resizing")
-           (.addEventListener js/document "pointermove" on-move)
-           (.addEventListener js/document "pointerup" on-up)))}]
-     [:iframe#mosaic_notebook {:src (notebook-url)}]]))
+  "Notebook iframe panel with embedded/collapsed/popped-out states."
+  [notebook-state]
+  (when-not (= @notebook-state :nyancad.mosaic.editor/popped-out)
+    (if (= @notebook-state :nyancad.mosaic.editor/collapsed)
+      [:div#mosaic_notebook_collapsed
+       {:title "Show notebook"
+        :on-click #(reset! notebook-state :nyancad.mosaic.editor/embedded)}
+       "◀"]
+      [:div#mosaic_notebook_wrapper
+       [:div.resize-handle
+        {:on-pointer-down
+         (fn [e]
+           (.preventDefault e)
+           (.setPointerCapture (.-target e) (.-pointerId e))
+           (let [wrapper (js/document.getElementById "mosaic_notebook_wrapper")
+                 start-x (.-clientX e)
+                 start-width (.-offsetWidth wrapper)
+                 collapsed (atom false)
+                 on-move (fn on-move [e]
+                           (let [delta (- start-x (.-clientX e))
+                                 new-width (+ start-width delta)]
+                             (if (< new-width 200)
+                               (reset! collapsed true)
+                               (do (reset! collapsed false)
+                                   (set! (.. wrapper -style -width) (str new-width "px"))))))
+                 on-up (fn on-up [e]
+                         (.remove (.-classList wrapper) "resizing")
+                         (.releasePointerCapture (.-target e) (.-pointerId e))
+                         (.removeEventListener js/document "pointermove" on-move)
+                         (.removeEventListener js/document "pointerup" on-up)
+                         (when @collapsed
+                           (set! (.. wrapper -style -width) "")
+                           (reset! notebook-state :nyancad.mosaic.editor/collapsed)))]
+             (.add (.-classList wrapper) "resizing")
+             (.addEventListener js/document "pointermove" on-move)
+             (.addEventListener js/document "pointerup" on-up)))}]
+       [:div.notebook-chevron
+        {:title "Hide notebook"
+         :on-click (fn []
+                     (when-let [wrapper (js/document.getElementById "mosaic_notebook_wrapper")]
+                       (set! (.. wrapper -style -width) ""))
+                     (reset! notebook-state :nyancad.mosaic.editor/collapsed))}
+        "▶"]
+       [:iframe#mosaic_notebook {:src (notebook-url)}]])))
 
 ;; --- Secondary menu items ---
 
 (defn secondary-menu-items
   "Web-specific secondary menu items: library, pop-out notebook, login."
-  [notebook-popped-out]
+  [notebook-state]
   [:<>
    [:a {:href (if cm/current-workspace
                 (str "library?ws=" cm/current-workspace)
@@ -113,10 +132,16 @@
         :on-click (fn []
                     (let [nb-url (str js/window.location.origin "/" (notebook-url))
                           popup (.open js/window nb-url "mosaic_notebook" "width=1200,height=800")]
+                      (reset! notebook-state :nyancad.mosaic.editor/popped-out)
                       (when popup
-                        (reset! notebook-popped-out true)
-                        (set! (.-onbeforeunload popup)
-                              #(reset! notebook-popped-out false)))))}
+                        (let [check (atom nil)]
+                          (reset! check
+                            (js/setInterval
+                              (fn []
+                                (when (.-closed popup)
+                                  (js/clearInterval @check)
+                                  (reset! notebook-state :nyancad.mosaic.editor/embedded)))
+                              500))))))}
     [cm/external-link]]
    [:a {:href "/auth/"
         :title "Login / Account"}
