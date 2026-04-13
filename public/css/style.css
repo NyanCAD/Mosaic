@@ -303,19 +303,26 @@ html {
 }
 
 /* Model field in device properties (text + browse button) */
-.mosaic-app .model-field {
+.mosaic-app .field-with-extra {
     display: flex;
     gap: 5px;
 }
 
-.mosaic-app .model-field input {
+.mosaic-app .field-with-extra > :first-child {
     flex: 1;
+    min-width: 0;
 }
 
-.mosaic-app .model-field button {
+.mosaic-app .field-with-extra button {
+    flex-shrink: 0;
     padding: 5px 10px;
     display: flex;
     align-items: center;
+}
+
+.mosaic-app button:disabled {
+    opacity: 0.3;
+    cursor: default;
 }
 
 /* library manager */
@@ -523,6 +530,9 @@ html {
 .mosaic-libman .properties label {
     grid-column: labels;
     grid-row: auto;
+    max-width: 10ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .mosaic-libman .properties input,
@@ -919,6 +929,9 @@ html {
 .mosaic-editor .properties label {
     grid-column: labels;
     grid-row: auto;
+    max-width: 10ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .mosaic-editor .properties input,
@@ -928,6 +941,18 @@ html {
     grid-row: auto;
     box-sizing: border-box;
     width: 100%;
+}
+
+.mosaic-editor .properties .template-header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+
+.mosaic-editor .properties .field-with-extra {
+    grid-column: controls;
 }
 
 /* overflow handled by .mosaic-canvas in canvas base rules */
@@ -1973,13 +1998,20 @@ svg.eyesore {
 }
 
 .mosaic-app .properties .remove-btn:hover .bi-x-circle,
-.mosaic-app .properties .add-btn:hover .bi-plus-circle {
+.mosaic-app .properties .add-btn:hover .bi-plus-circle,
+.mosaic-app .properties .add-btn.active .bi-plus-circle {
     display: none;
 }
 
 .mosaic-app .properties .remove-btn:hover .bi-x-circle-fill,
-.mosaic-app .properties .add-btn:hover .bi-plus-circle-fill {
+.mosaic-app .properties .add-btn:hover .bi-plus-circle-fill,
+.mosaic-app .properties .add-btn.active .bi-plus-circle-fill {
     display: inline;
+}
+
+.mosaic-app .properties .add-btn.active {
+    background: var(--color-accent);
+    color: var(--color-accent-text);
 }
 
 /* Tag badges in model list */

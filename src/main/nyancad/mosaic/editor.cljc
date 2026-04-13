@@ -617,7 +617,12 @@
         [dx dy] (apply max-key (fn [[x y]] (- x y)) rotated)
         desig-offset-x (+ dx 0.1)
         desig-offset-y (+ dy 0.25)]
-    (when-let [text (get v :template (get-in models [(:type v) ::template] "{self.name}"))]
+    (when-let [text (or (:template v)
+                        (when (seq (:model v))
+                          (cm/generate-important-template
+                            (:props (get @modeldb (cm/model-key (:model v))))))
+                        (get-in models [(:type v) ::template])
+                        "{self.name}")]
       [:text.identifier
        {:transform (-> (:transform v) transform
                        (.translate (* grid-size (/ size -2)) (* grid-size (/ size -2)))
@@ -1960,9 +1965,13 @@
   (let [props (r/cursor schematic [key :props])
         device-type (r/cursor schematic [key :type])
         model (r/cursor schematic [key :model])
-        name (r/cursor schematic [key :name])]
+        name (r/cursor schematic [key :name])
+        show-prop-insert (r/atom false)]
     (fn [key]
-      (let [model-def (get @modeldb (cm/model-key @model))]
+      (let [model-def (get @modeldb (cm/model-key @model))
+            effective-default (or (when model-def (cm/generate-important-template (:props model-def)))
+                                 (::template (get models @device-type))
+                                 "{self.name}")]
         [:<>
          [:h1 (or @name key)]
          [:div.properties
@@ -1974,13 +1983,14 @@
                    :default-value @name
                    :on-change (debounce #(do (reset! name (.. % -target -value)) (post-action!)))}]
           [:label {:for "model" :title "Device model"} "model"]
-          [:div.model-field
+          [:div.field-with-extra
            [:input {:id "model"
                     :type "text"
                     :read-only true
                     :value (or (:name model-def) (when (seq @model) @model) "Ideal")
                     :title (or @model "No model selected")}]
-           [:button {:on-click #(do
+           [:button {:title "Select model"
+                     :on-click #(do
                                   (reset! model-popup-filter "")
                                   (reset! model-popup-category [])
                                   (reset! cm/modal-content
@@ -1991,12 +2001,41 @@
             [cm/search]]]
           ; Get properties from built-in device and model
           (let [device-props (::props (get models @device-type) [])
-                model-props (:props model-def [])]
-            [cm/recursive-editor (concat device-props model-props) props post-action!])
-          [:label {:for "template" :title "Template to display"} "Text"]
-          [:textarea {:id "template"
-                      :default-value (get-in @schematic [key :template] (::template (get models @device-type)))
-                      :on-change (debounce #(do (swap! schematic assoc-in [key :template] (.. % -target -value)) (post-action!)))}]]]))))
+                model-props (:props model-def [])
+                all-props (concat device-props model-props)
+                prop-in-template? (fn [path]
+                                    (let [path-str (clojure.string/join "." (map clojure.core/name path))
+                                          needle (str "self.props." path-str)
+                                          tmpl (or (:template (get @schematic key)) effective-default)]
+                                      (clojure.string/includes? tmpl needle)))
+                insert-prop (fn [path]
+                              (when-not (prop-in-template? path)
+                                (let [path-str (clojure.string/join "." (map clojure.core/name path))
+                                      label (clojure.core/name (last path))]
+                                  (swap! schematic update-in [key :template]
+                                    (fn [current]
+                                      (let [base (or current effective-default)]
+                                        (str base "\n" label ": {self.props." path-str "}"))))
+                                  (post-action!))))]
+            [cm/recursive-editor all-props props post-action!
+             (when @show-prop-insert
+               (fn [path]
+                 (let [already? (prop-in-template? path)]
+                   [:button.prop-eye
+                    {:on-click #(insert-prop path)
+                     :title (if already? "Already in template" "Add to template")
+                     :disabled already?}
+                    [cm/eye]])))])
+          [:div.template-header
+           [:label {:for "template" :title "Template to display"} "Text"]
+           [:button.add-btn
+            {:on-click #(swap! show-prop-insert not)
+             :class (when @show-prop-insert "active")}
+            [cm/plus-circle] [cm/plus-circle-fill] " Add"]]
+          [cm/dbfield :textarea {:id "template" :rows 4}
+           (r/cursor schematic [key])
+           #(or (:template %) effective-default)
+           (fn [st v] (swap! st assoc :template v) (post-action!))]]]))))
 
 (defn copy []
   (let [sel @selected
