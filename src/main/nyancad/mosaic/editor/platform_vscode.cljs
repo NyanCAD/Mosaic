@@ -65,13 +65,18 @@
   nil)
 
 (defn secondary-menu-items
-  "VSCode secondary menu: open library manager."
+  "VSCode secondary menu: simulate and open library manager."
   [_notebook-state]
-  [:a {:title "Open library manager"
-       :on-click #(.postMessage vscode
-                    #js{:type "open-file"
-                        :filename "models.nyanlib"})}
-   [cm/library]])
+  [:<>
+   [:a {:title "Simulate"
+        :on-click #(.postMessage vscode
+                     #js{:type "start-simulation"})}
+    [cm/simulate]]
+   [:a {:title "Open library manager"
+        :on-click #(.postMessage vscode
+                     #js{:type "open-file"
+                         :filename "models.nyanlib"})}
+    [cm/library]]])
 
 (defn- extract-gds-name
   "Extract bare model ID from a dropped text/plain or URI path.
