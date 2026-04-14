@@ -311,6 +311,62 @@ def netlist(docs, models):
     return inl
 
 
+def _select_corner(sections, corners):
+    """Select a corner/section for a library include.
+
+    Args:
+        sections: list of available sections from model entry
+        corners: list of preferred corners from user (or None)
+
+    Returns:
+        Selected section string, or None if no sections available
+    """
+    if not sections:
+        return None
+    if corners:
+        match = set(corners) & set(sections)
+        if match:
+            return match.pop()
+    return sections[0]
+
+
+def _eval_params(entry_params, device_props):
+    """Evaluate model entry params expressions against device properties.
+
+    When a model entry has a params mapping, it defines the complete set of
+    SPICE parameters. Each value is an expression evaluated with device props
+    as variables (e.g., "width * 1e-6").
+
+    Args:
+        entry_params: dict mapping model param names to expressions
+        device_props: dict of device property values
+
+    Returns:
+        dict of evaluated model parameters, or device_props if no mapping
+    """
+    if not entry_params:
+        return device_props
+    # Convert string prop values to numbers where possible for arithmetic
+    locals_dict = {}
+    for k, v in device_props.items():
+        if isinstance(v, str):
+            try:
+                locals_dict[k] = float(v)
+            except ValueError:
+                locals_dict[k] = v
+        else:
+            locals_dict[k] = v
+    result = {}
+    for param_name, expr in entry_params.items():
+        try:
+            result[param_name] = eval(expr, {"__builtins__": {}}, locals_dict)
+        except NameError:
+            pass  # Variable not set — let the SPICE model use its own default
+        except Exception:
+            result[param_name] = expr
+    return result
+
+
 class NyanCADMixin:
     """Mixin providing NyanCAD integration for InSpice netlist objects."""
     
@@ -335,16 +391,16 @@ class NyanCADMixin:
 
         return spice_entries[0]  # Use first as default
     
-    def populate_from_nyancad(self, docs, models, corner='tt', sim='NgSpice'):
+    def populate_from_nyancad(self, docs, models, corners=None, sim='NgSpice'):
         """Populate this netlist with elements from NyanCAD docs."""
         self.used_models = set()
         nl = netlist(docs, models)
-        
+
         for dev_id, ports in nl.items():
             dev = docs[dev_id]
-            self._add_nyancad_element(dev_id, dev, ports, models, corner, sim)
+            self._add_nyancad_element(dev_id, dev, ports, models, corners, sim)
     
-    def _add_nyancad_element(self, dev_id, dev, ports, models, corner, sim):
+    def _add_nyancad_element(self, dev_id, dev, ports, models, corners, sim):
         """Add a single NyanCAD element to this netlist."""
         device_type = dev['type']
         name = dev.get('name') or dev_id.replace(':', '_')  # InSpice names can't have colons
@@ -375,6 +431,14 @@ class NyanCADMixin:
                 # If the entry specifies a port order, use it
                 if selected_entry.get('port-order'):
                     port_order = selected_entry['port-order']
+                # Apply params mapping (replaces device props with evaluated model params)
+                if selected_entry.get('params'):
+                    # Merge model default props under device instance props
+                    defaults = {p['name']: p['default']
+                                for p in model_def.get('props', [])
+                                if p.get('name') and p.get('default') is not None}
+                    merged = {**defaults, **dev.get('props', {})}
+                    props = _eval_params(selected_entry['params'], merged)
 
         # Helper to get port by name
         def p(port_name):
@@ -474,14 +538,17 @@ class NyanCADMixin:
 class NyanCircuit(NyanCADMixin, Circuit):
     """InSpice Circuit populated from NyanCAD schematic data."""
 
-    def __init__(self, name, schem, corner='tt', sim='NgSpice', **kwargs):
+    def __init__(self, name, schem, corners=None, sim='NgSpice', **kwargs):
         """
         Create InSpice Circuit from full NyanCAD schematic data.
 
         Parameters:
         - name: Top-level schematic name (key in schem)
         - schem: Full schematic dictionary with models and subcircuits
-        - corner, sim: Simulation parameters
+        - corners: List of preferred corner/section names (e.g., ['mos_ff', 'cap_bcs']).
+                   Each model entry uses the first match from its sections list,
+                   falling back to sections[0] (typical).
+        - sim: Simulator name for model entry selection
         """
         super().__init__(title="schematic", **kwargs)
         self._pending_downloads = []  # List of (url, dest_path) tuples
@@ -489,7 +556,7 @@ class NyanCircuit(NyanCADMixin, Circuit):
         models = schem["models"]
 
         # First populate main circuit elements to collect used models
-        self.populate_from_nyancad(schem[name], models, corner, sim)
+        self.populate_from_nyancad(schem[name], models, corners, sim)
 
         # Then process only the used models: create subcircuits for schematic models, add SPICE for others
         for model_key_str in self.used_models:
@@ -508,7 +575,7 @@ class NyanCircuit(NyanCADMixin, Circuit):
                     model_params = {p['name']: p.get('default', '0')
                                     for p in model_def.get('props', [])
                                     if p.get('name')}
-                    subcircuit = NyanSubCircuit(model_def['name'], nodes, docs, models, corner, sim, **model_params)
+                    subcircuit = NyanSubCircuit(model_def['name'], nodes, docs, models, corners, sim, **model_params)
                     self.subcircuit(subcircuit)
                 else:
                     # Add SPICE code / library includes for model entries
@@ -516,8 +583,9 @@ class NyanCircuit(NyanCADMixin, Circuit):
                     if entry:
                         # Handle library includes
                         if entry.get('library'):
-                            if entry.get('sections') and corner:
-                                self.lib(entry['library'], corner)
+                            section = _select_corner(entry.get('sections'), corners)
+                            if section:
+                                self.lib(entry['library'], section)
                             else:
                                 self.include(entry['library'])
                         # Handle inline SPICE code
@@ -627,29 +695,34 @@ class NyanCircuit(NyanCADMixin, Circuit):
 class NyanSubCircuit(NyanCADMixin, SubCircuit):
     """InSpice SubCircuit populated from NyanCAD docs."""
     
-    def __init__(self, name, nodes, docs, models, corner='tt', sim='NgSpice', **kwargs):
+    def __init__(self, name, nodes, docs, models, corners=None, sim='NgSpice', **kwargs):
         """
         Create InSpice SubCircuit from NyanCAD docs.
-        
+
         Parameters:
         - name: Subcircuit name
         - nodes: List of external node names
         - docs: NyanCAD document dictionary for this subcircuit
         - models: Model definitions
-        - corner, sim: Simulation parameters
+        - corners: List of preferred corner/section names (or None for defaults)
+        - sim: Simulator name
         """
         super().__init__(name, *nodes, **kwargs)
-        self.populate_from_nyancad(docs, models, corner, sim)
+        self.populate_from_nyancad(docs, models, corners, sim)
 
 
-async def inspice_netlist(name, schem, corner='tt', sim='NgSpice', **kwargs):
+async def inspice_netlist(name, schem, corners=None, sim='NgSpice', *, corner=None, **kwargs):
     """
     Convenience function to create InSpice Circuit from NyanCAD schematic.
 
     Parameters:
     - name: Top-level schematic name
     - schem: Full schematic dictionary
-    - corner, sim: Simulation parameters
+    - corners: List of preferred corner/section names (e.g., ['mos_ff', 'cap_bcs']).
+               Each model entry uses the first match from its sections list,
+               falling back to sections[0] (typical). None uses all defaults.
+    - sim: Simulator name
+    - corner: Deprecated single corner string (use corners instead)
     - **kwargs: Additional Circuit constructor arguments
 
     Returns:
@@ -658,26 +731,26 @@ async def inspice_netlist(name, schem, corner='tt', sim='NgSpice', **kwargs):
     Usage:
     ```
     circuit = await inspice_netlist("top$top", schem_data)
-    simulator = circuit.simulator(temperature=25, nominal_temperature=25)
+    circuit = await inspice_netlist("top$top", schem_data, corners=["mos_ff", "cap_bcs"])
     ```
     """
-    circuit = NyanCircuit(name, schem, corner, sim, **kwargs)
+    if corner is not None and corners is None:
+        corners = [corner]
+    circuit = NyanCircuit(name, schem, corners, sim, **kwargs)
     await circuit.download_includes()
     return circuit
 
 
-async def inspice_netlist_from_api(api, name, corner='tt', sim='NgSpice', **kwargs):
+async def inspice_netlist_from_api(api, name, corners=None, sim='NgSpice', *, corner=None, **kwargs):
     """
     Create InSpice Circuit from any SchematicAPI source (Bridge or Server).
-
-    This convenience function works with both BridgeAPI and ServerAPI,
-    automatically fetching the complete schematic hierarchy and creating
-    the InSpice circuit.
 
     Parameters:
     - api: SchematicAPI instance (BridgeAPI or ServerAPI)
     - name: Top-level schematic name
-    - corner, sim: Simulation parameters
+    - corners: List of preferred corner/section names (or None for defaults)
+    - sim: Simulator name
+    - corner: Deprecated single corner string (use corners instead)
     - **kwargs: Additional Circuit constructor arguments
 
     Returns:
@@ -702,7 +775,9 @@ async def inspice_netlist_from_api(api, name, corner='tt', sim='NgSpice', **kwar
         circuit = await inspice_netlist_from_api(api, "my_circuit")
     ```
     """
+    if corner is not None and corners is None:
+        corners = [corner]
     seq, schem = await api.get_all_schem_docs(name)
-    circuit = NyanCircuit(name, schem, corner, sim, **kwargs)
+    circuit = NyanCircuit(name, schem, corners, sim, **kwargs)
     await circuit.download_includes()
     return circuit
