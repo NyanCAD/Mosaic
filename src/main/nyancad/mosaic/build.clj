@@ -19,7 +19,7 @@
   (sh! "bash" "src/bash/marimo-export.sh")
   (sh! "bash" "src/bash/jekyll-build.sh")
   (shadow/release :couchdb)
-  (sh! "bash" "src/bash/couchdb-export.sh"))
+  (sh! "bash" "src/bash/couchdb-build-design-doc.sh"))
 
 (defn release-vscode
   "Build VSCode extension (webview frontend + extension host).

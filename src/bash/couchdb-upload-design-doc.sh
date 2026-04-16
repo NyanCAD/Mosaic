@@ -15,9 +15,6 @@ COUCHDB_ADMIN_PASS="${COUCHDB_ADMIN_PASS:-}"
 # Remove trailing slash from URL
 COUCHDB_URL="${COUCHDB_URL%/}"
 
-# Build design document
-jq '.views.lib.cljs = $js' --rawfile js "$DIR/../../public/js/view.js" "$DIR/view.json" > "$DESIGN_DOC"
-
 # Try to fetch existing design document to get _rev
 EXISTING_DOC=$(curl -s -u "$COUCHDB_ADMIN_USER:$COUCHDB_ADMIN_PASS" \
   "$COUCHDB_URL/models/_design/models" || echo '{}')
