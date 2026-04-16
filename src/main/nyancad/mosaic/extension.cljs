@@ -7,8 +7,8 @@
    Bridges the VSCode text document model with the webview's JsAtom."
   (:require ["vscode" :as vscode]
             ["path" :as path]
-            ["fs" :as fs]
             ["child_process" :as cp]
+            [clojure.string :as str]
             [cljs.core.async :refer [go go-loop <! >! chan put! promise-chan]]
             [cljs.core.async.interop :refer-macros [<p!]]))
 
@@ -21,6 +21,48 @@
         buf (js/Uint8Array. 32)]
     (js/crypto.getRandomValues buf)
     (apply str (map #(aget chars (mod % (.-length chars))) buf))))
+
+(defn- uri-basename
+  "Extract filename from a URI, optionally stripping a suffix."
+  [^js uri & [suffix]]
+  (cond-> (last (str/split (.-path uri) #"/"))
+    suffix (str/replace suffix "")))
+
+(defn- uri-join
+  "Join path segments onto a base URI, preserving its scheme."
+  [^js base & segments]
+  (.apply (.-joinPath vscode/Uri) nil (to-array (cons base segments))))
+
+(defn- uri-parent
+  "Get the parent directory URI."
+  [^js uri]
+  (uri-join uri ".."))
+
+;; ---------------------------------------------------------------------------
+;; Workspace filesystem helpers — thin wrappers over vscode.workspace.fs
+;; ---------------------------------------------------------------------------
+
+(defn- ws-read
+  "Read a file as UTF-8 string. Returns a promise."
+  [^js uri]
+  (-> (.. vscode/workspace -fs (readFile uri))
+      (.then #(.decode (js/TextDecoder. "utf-8") %))))
+
+(defn- ws-write
+  "Write a UTF-8 string to a file. Returns a promise."
+  [^js uri content]
+  (.. vscode/workspace -fs (writeFile uri (.encode (js/TextEncoder.) content))))
+
+(defn- ws-exists?
+  "Check if a URI exists. Returns a channel yielding true/false."
+  [^js uri]
+  (go (try (<p! (.. vscode/workspace -fs (stat uri))) true
+           (catch :default _ false))))
+
+(defn- get-text
+  "Extract text from a TextDocument. Separate fn so ^js hint survives go macro."
+  [^js document]
+  (.getText document))
 
 (defn- apply-updates
   "Validate oldcontent and apply JSON edit operations to a VSCode WorkspaceEdit.
@@ -119,20 +161,20 @@
 
 (declare start-marimo!)
 
-(defn- safe-resolve
-  "Resolve filename within doc-dir. Allows subdirectories but rejects traversal."
-  [doc-dir filename]
+(defn- safe-resolve-uri
+  "Resolve filename within doc-uri. Rejects path traversal."
+  [^js doc-uri filename]
   (when-not (re-find #"\.\." filename)
-    (let [resolved (path/resolve doc-dir filename)]
-      (when (.startsWith resolved (str (path/resolve doc-dir) path/sep))
+    (let [resolved (uri-join doc-uri filename)]
+      (when (str/starts-with? (.-path resolved) (str (.-path doc-uri) "/"))
         resolved))))
 
 (defn- setup-message-router!
   "Install a single message handler that dispatches by type.
    atom-channels: atom of map group -> {:edit-queue chan}
-   doc-dir: directory path for resolving relative filenames
-   doc-path: optional fsPath of the .nyancir file for simulation support"
-  [^js webview atom-channels doc-dir & [doc-path]]
+   doc-uri: directory URI for resolving relative filenames
+   doc-uri may be any scheme (file://, vsls://, etc.)."
+  [^js webview atom-channels ^js doc-uri & [^js doc-file-uri]]
   (.onDidReceiveMessage webview
     (fn [^js message]
       (case (.-type message)
@@ -144,9 +186,9 @@
         ;; Read a file relative to document directory
         "read-file"
         (let [request-id (.-requestId message)]
-          (if-let [file-path (safe-resolve doc-dir (.-filename message))]
+          (if-let [file-uri (safe-resolve-uri doc-uri (.-filename message))]
             (go
-              (let [content (try (<p! (.. fs/promises (readFile file-path "utf8")))
+              (let [content (try (<p! (ws-read file-uri))
                                  (catch :default _e nil))]
                 (.postMessage webview
                   #js{:requestId request-id
@@ -157,15 +199,14 @@
 
         ;; Open a file in VS Code (create if missing, use custom editor)
         "open-file"
-        (when-let [file-path (safe-resolve doc-dir (.-filename message))]
-          (let [filename (.-filename message)
-                file-uri (vscode/Uri.file file-path)]
+        (when-let [file-uri (safe-resolve-uri doc-uri (.-filename message))]
+          (let [filename (.-filename message)]
             (go
-              (when-not (fs/existsSync file-path)
-                (<p! (.. fs/promises (writeFile file-path "{}" "utf8"))))
+              (when-not (<! (ws-exists? file-uri))
+                (<p! (ws-write file-uri "{}")))
               (let [editor-id (cond
-                                (.endsWith filename ".nyancir") "Mosaic.schematic"
-                                (.endsWith filename ".nyanlib") "Mosaic.library"
+                                (str/ends-with? filename ".nyancir") "Mosaic.schematic"
+                                (str/ends-with? filename ".nyanlib") "Mosaic.library"
                                 :else "default")]
                 (<p! (.. vscode/commands (executeCommand "vscode.openWith" file-uri editor-id)))))))
 
@@ -173,10 +214,10 @@
         "state-response"
         (deliver-response! message)
 
-        ;; Start simulation — spawn marimo sidecar
+        ;; Start simulation — spawn marimo sidecar (local file:// only)
         "start-simulation"
-        (when doc-path
-          (start-marimo! doc-path))
+        (when (and doc-file-uri (= "file" (.-scheme doc-file-uri)))
+          (start-marimo! (.-fsPath doc-file-uri)))
 
         ;; Unknown — ignore
         nil))))
@@ -192,7 +233,7 @@
   (let [ext-uri (.-extensionUri context)
         out-uri (fn [file]
                   (.asWebviewUri webview
-                    (.joinPath vscode/Uri ext-uri "out" file)))
+                    (uri-join ext-uri "out" file)))
         nonce (get-nonce)
         csp (str "default-src 'none';"
                  " style-src " (.-cspSource webview) " 'unsafe-inline';"
@@ -209,7 +250,7 @@
 </head>
 <body>
   <input type=\"hidden\" id=\"document\" value=\"" (js/encodeURIComponent (.getText document)) "\">
-  <input type=\"hidden\" id=\"group\" value=\"" (path/basename (.. document -uri -fsPath) ".nyancir") "\">
+  <input type=\"hidden\" id=\"group\" value=\"" (uri-basename (.-uri document) ".nyancir") "\">
   <input type=\"hidden\" id=\"models\" value=\"" (js/encodeURIComponent models-content) "\">
   <div class=\"mosaic-app mosaic-editor\"></div>
   <script nonce=\"" nonce "\" src=\"" (out-uri "shared.js") "\"></script>
@@ -223,7 +264,7 @@
   (let [ext-uri (.-extensionUri context)
         out-uri (fn [file]
                   (.asWebviewUri webview
-                    (.joinPath vscode/Uri ext-uri "out" file)))
+                    (uri-join ext-uri "out" file)))
         nonce (get-nonce)
         csp (str "default-src 'none';"
                  " style-src " (.-cspSource webview) " 'unsafe-inline';"
@@ -252,13 +293,13 @@
 
 (defn- save-svg-sidecar!
   "Request preview SVG from webview and write it as a sidecar file."
-  [^js webview doc-dir basename]
+  [^js webview ^js doc-uri basename]
   (go
     (try
       (let [svg (<! (send-request! webview "preview"))
-            svg-path (path/join doc-dir (str basename ".svg"))]
+            svg-uri (uri-join doc-uri (str basename ".svg"))]
         (when (and svg (seq svg))
-          (<p! (.. fs/promises (writeFile svg-path svg "utf8")))))
+          (<p! (ws-write svg-uri svg))))
       (catch :default e
         (js/console.error "Failed to save SVG sidecar:" (.-message e))))))
 
@@ -357,56 +398,59 @@
   (resolveCustomTextEditor [^js this ^js document ^js webviewpanel _token]
     (let [^js ctx (.-context this)
           ^js webview (.-webview webviewpanel)
-          doc-dir (path/dirname (.. document -uri -fsPath))
-          basename (path/basename (.. document -uri -fsPath) ".nyancir")
-          disposables #js[]]
-      ;; Ensure models.nyanlib exists and read it synchronously for initial injection
-      (let [nyanlib-path (path/join doc-dir "models.nyanlib")]
-        (when-not (fs/existsSync nyanlib-path)
-          (fs/writeFileSync nyanlib-path "{}" "utf8"))
-        (let [models-content (fs/readFileSync nyanlib-path "utf8")]
+          doc-uri (uri-parent (.-uri document))
+          basename (uri-basename (.-uri document) ".nyancir")
+          disposables #js[]
+          nyanlib-uri (uri-join doc-uri "models.nyanlib")]
+      (js/Promise.
+        (fn [resolve reject]
+          (go
+            (try
+              ;; Ensure models.nyanlib exists
+              (when-not (<! (ws-exists? nyanlib-uri))
+                (<p! (ws-write nyanlib-uri "{}")))
 
-          ;; Configure webview
-          (set! (.-options webview)
-                #js{:enableScripts true
-                    :localResourceRoots #js[(.joinPath vscode/Uri (.-extensionUri ctx) "out")]})
-          (set! (.-html webview) (get-html ctx document webview models-content))
+              ;; Open nyanlib as TextDocument — use .getText() for initial content
+              (let [nyanlib-doc (<p! (.. vscode/workspace (openTextDocument nyanlib-uri)))
+                    models-content (get-text nyanlib-doc)]
 
-          ;; Create atom channel for the primary schematic document
-          (let [schem-ch (create-atom-channel webview document "schematic")
-                atom-channels (atom {"schematic" schem-ch})]
-            (.push disposables (:disposable schem-ch))
+                ;; Configure webview
+                (set! (.-options webview)
+                      #js{:enableScripts true
+                          :localResourceRoots #js[(uri-join (.-extensionUri ctx) "out")]})
+                (set! (.-html webview) (get-html ctx document webview models-content))
 
-            ;; Set up atom channel for models.nyanlib (already exists from above)
-            (go
-              (try
-                (let [nyanlib-uri (vscode/Uri.file nyanlib-path)
-                      nyanlib-doc (<p! (.. vscode/workspace (openTextDocument nyanlib-uri)))
-                      models-ch (create-atom-channel webview nyanlib-doc "models")]
-                  (swap! atom-channels assoc "models" models-ch)
-                  (.push disposables (:disposable models-ch)))
-                (catch :default e
-                  (js/console.error "Failed to set up models.nyanlib:" (.-message e)))))
+                ;; Create atom channels for schematic and models documents
+                (let [schem-ch (create-atom-channel webview document "schematic")
+                      models-ch (create-atom-channel webview nyanlib-doc "models")
+                      atom-channels (atom {"schematic" schem-ch "models" models-ch})]
+                  (.push disposables (:disposable schem-ch))
+                  (.push disposables (:disposable models-ch))
 
-            ;; Message router (pass atom — models channel added async)
-            (setup-message-router! webview atom-channels doc-dir (.. document -uri -fsPath))
+                  ;; Message router — pass document URI for marimo (local file:// only)
+                  (setup-message-router! webview atom-channels doc-uri (.-uri document))
 
-            ;; Save SVG sidecar on document save
-            (let [save-disposable
-                  (.. vscode/workspace
-                      (onDidSaveTextDocument
-                        (fn [^js saved-doc]
-                          (when (= (.. saved-doc -uri (toString))
-                                   (.. document -uri (toString)))
-                            (save-svg-sidecar! webview doc-dir basename)))))]
-              (.push disposables save-disposable))
+                  ;; Save SVG sidecar on document save
+                  (let [save-disposable
+                        (.. vscode/workspace
+                            (onDidSaveTextDocument
+                              (fn [^js saved-doc]
+                                (when (= (.. saved-doc -uri (toString))
+                                         (.. document -uri (toString)))
+                                  (save-svg-sidecar! webview doc-uri basename)))))]
+                    (.push disposables save-disposable))
 
-            ;; Clean up on panel dispose
-            (.onDidDispose webviewpanel
-              (fn []
-                (kill-marimo! (.. document -uri -fsPath))
-                (doseq [d disposables]
-                  (.dispose d))))))))))
+                  ;; Clean up on panel dispose
+                  (.onDidDispose webviewpanel
+                    (fn []
+                      (when (= "file" (.. document -uri -scheme))
+                        (kill-marimo! (.. document -uri -fsPath)))
+                      (doseq [d disposables]
+                        (.dispose d))))))
+              (resolve js/undefined)
+              (catch :default e
+                (js/console.error "resolveCustomTextEditor failed:" e)
+                (reject e)))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; LibraryEditorProvider
@@ -417,12 +461,12 @@
   (resolveCustomTextEditor [^js this ^js document ^js webviewpanel _token]
     (let [^js ctx (.-context this)
           ^js webview (.-webview webviewpanel)
-          doc-dir (path/dirname (.. document -uri -fsPath))
+          doc-uri (uri-parent (.-uri document))
           disposables #js[]]
       ;; Configure webview
       (set! (.-options webview)
             #js{:enableScripts true
-                :localResourceRoots #js[(.joinPath vscode/Uri (.-extensionUri ctx) "out")]})
+                :localResourceRoots #js[(uri-join (.-extensionUri ctx) "out")]})
       (set! (.-html webview) (get-libman-html ctx document webview))
 
       ;; Create atom channel for the models document (primary)
@@ -431,7 +475,7 @@
         (.push disposables (:disposable models-ch))
 
         ;; Message router
-        (setup-message-router! webview atom-channels doc-dir)
+        (setup-message-router! webview atom-channels doc-uri)
 
         ;; Clean up on panel dispose
         (.onDidDispose webviewpanel
