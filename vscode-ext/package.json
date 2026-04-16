@@ -41,6 +41,16 @@
         "priority": "default"
       }
     ],
+    "configuration": {
+      "title": "Mosaic",
+      "properties": {
+        "mosaic.pythonCommand": {
+          "type": "string",
+          "default": "uv run --with nyancad-server",
+          "description": "Command prefix for running Python tools (e.g., 'uv run --with nyancad-server', or path to venv python)"
+        }
+      }
+    },
     "commands": [
       {
         "command": "Mosaic.schematic.new",

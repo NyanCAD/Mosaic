@@ -8,6 +8,7 @@
   (:require ["vscode" :as vscode]
             ["path" :as path]
             ["fs" :as fs]
+            ["child_process" :as cp]
             [cljs.core.async :refer [go go-loop <! >! chan put! promise-chan]]
             [cljs.core.async.interop :refer-macros [<p!]]))
 
@@ -116,6 +117,8 @@
 ;; Message router — single onDidReceiveMessage handler per webview
 ;; ---------------------------------------------------------------------------
 
+(declare start-marimo!)
+
 (defn- safe-resolve
   "Resolve filename within doc-dir. Allows subdirectories but rejects traversal."
   [doc-dir filename]
@@ -127,8 +130,9 @@
 (defn- setup-message-router!
   "Install a single message handler that dispatches by type.
    atom-channels: atom of map group -> {:edit-queue chan}
-   doc-dir: directory path for resolving relative filenames"
-  [^js webview atom-channels doc-dir]
+   doc-dir: directory path for resolving relative filenames
+   doc-path: optional fsPath of the .nyancir file for simulation support"
+  [^js webview atom-channels doc-dir & [doc-path]]
   (.onDidReceiveMessage webview
     (fn [^js message]
       (case (.-type message)
@@ -168,6 +172,11 @@
         ;; State response from webview (for get-state requests)
         "state-response"
         (deliver-response! message)
+
+        ;; Start simulation — spawn marimo sidecar
+        "start-simulation"
+        (when doc-path
+          (start-marimo! doc-path))
 
         ;; Unknown — ignore
         nil))))
@@ -254,6 +263,92 @@
         (js/console.error "Failed to save SVG sidecar:" (.-message e))))))
 
 ;; ---------------------------------------------------------------------------
+;; Marimo sidecar process management
+;; ---------------------------------------------------------------------------
+
+(defonce ^:private marimo-processes
+  ;; {doc-fsPath -> {:process ChildProcess, :url string}}
+  (atom {}))
+
+(defn- start-marimo!
+  "Spawn marimo run as a sidecar process for the given .nyancir file.
+   If already running, re-opens the Simple Browser."
+  [doc-path]
+  (let [doc-dir (path/dirname doc-path)
+        basename (path/basename doc-path ".nyancir")]
+    (if-let [{:keys [url]} (get @marimo-processes doc-path)]
+      ;; Already running — just re-show the browser
+      (.. vscode/commands (executeCommand "simpleBrowser.show" url))
+      ;; Spawn a new marimo process
+      (let [python-cmd (.. vscode/workspace
+                           (getConfiguration "mosaic")
+                           (get "pythonCommand" "uv run --with nyancad-server"))
+            output-ch (.. vscode/window (createOutputChannel (str "Mosaic: " basename)))]
+        (.show output-ch true)
+        (.appendLine output-ch (str "Discovering notebook path..."))
+        ;; Step 1: discover the notebook path via shell command
+        (let [discover-cmd (str python-cmd " python -c \"from nyancad_server import get_notebook_path; print(get_notebook_path())\"")]
+          (let [discover-proc (.spawn cp discover-cmd
+                                #js{:cwd doc-dir
+                                    :shell true})]
+            (let [stdout-buf (atom "")]
+              (.. discover-proc -stdout (on "data" #(swap! stdout-buf str %)))
+              (.. discover-proc -stderr (on "data" #(.appendLine output-ch (str "discover: " %))))
+              (.on discover-proc "exit"
+                (fn [code]
+                  (if (not= code 0)
+                    (do
+                      (.appendLine output-ch (str "Failed to discover notebook path (exit code " code ")"))
+                      (.. vscode/window (showErrorMessage "Failed to find Mosaic notebook. Is nyancad-server installed?")))
+                    ;; Step 2: spawn marimo run
+                    (let [notebook-path (.trim @stdout-buf)
+                          cmd-str (str python-cmd " marimo run " (js/JSON.stringify notebook-path)
+                                       " --host 127.0.0.1 --headless"
+                                       " -- --schem " basename
+                                       " --project " (js/JSON.stringify doc-dir))
+                          _ (.appendLine output-ch (str "Running: " cmd-str))
+                          proc (.spawn cp cmd-str
+                                 #js{:cwd doc-dir
+                                     :shell true})]
+                      ;; Watch stdout for the URL marimo prints on startup
+                      (let [url-found (atom false)]
+                        (.. proc -stdout
+                            (on "data"
+                              (fn [data]
+                                (let [line (str data)]
+                                  (.appendLine output-ch line)
+                                  (when-not @url-found
+                                    (when-let [match (.match line #"https?://[\w\.\-]+:\d+")]
+                                      (let [url (aget match 0)]
+                                        (reset! url-found true)
+                                        (swap! marimo-processes assoc doc-path {:process proc :url url})
+                                        (.appendLine output-ch (str "Opening " url))
+                                        (.. vscode/commands (executeCommand "simpleBrowser.show" url)))))))))
+                        (.. proc -stderr
+                            (on "data"
+                              (fn [data]
+                                (let [line (str data)]
+                                  (.appendLine output-ch line)
+                                  (when-not @url-found
+                                    (when-let [match (.match line #"https?://[\w\.\-]+:\d+")]
+                                      (let [url (aget match 0)]
+                                        (reset! url-found true)
+                                        (swap! marimo-processes assoc doc-path {:process proc :url url})
+                                        (.appendLine output-ch (str "Opening " url))
+                                        (.. vscode/commands (executeCommand "simpleBrowser.show" url))))))))))
+                      (.on proc "exit"
+                        (fn [code]
+                          (.appendLine output-ch (str "marimo exited with code " code))
+                          (swap! marimo-processes dissoc doc-path))))))))))))))
+
+(defn- kill-marimo!
+  "Kill a running marimo process for the given document path."
+  [doc-path]
+  (when-let [{:keys [^js process]} (get @marimo-processes doc-path)]
+    (.kill process)
+    (swap! marimo-processes dissoc doc-path)))
+
+;; ---------------------------------------------------------------------------
 ;; SchematicEditorProvider
 ;; ---------------------------------------------------------------------------
 
@@ -294,7 +389,7 @@
                   (js/console.error "Failed to set up models.nyanlib:" (.-message e)))))
 
             ;; Message router (pass atom — models channel added async)
-            (setup-message-router! webview atom-channels doc-dir)
+            (setup-message-router! webview atom-channels doc-dir (.. document -uri -fsPath))
 
             ;; Save SVG sidecar on document save
             (let [save-disposable
@@ -309,6 +404,7 @@
             ;; Clean up on panel dispose
             (.onDidDispose webviewpanel
               (fn []
+                (kill-marimo! (.. document -uri -fsPath))
                 (doseq [d disposables]
                   (.dispose d))))))))))
 
@@ -371,6 +467,8 @@
   (.. context -subscriptions (push (register-library-provider context))))
 
 (defn deactivate []
-  (js/console.log "Mosaic extension deactivating"))
+  (js/console.log "Mosaic extension deactivating")
+  (doseq [[doc-path _] @marimo-processes]
+    (kill-marimo! doc-path)))
 
 (def exports #js{:activate activate :deactivate deactivate})

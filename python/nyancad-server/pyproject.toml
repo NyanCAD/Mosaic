@@ -45,7 +45,7 @@ where = ["."]
 include = ["nyancad_server*"]
 
 [tool.setuptools.package-data]
-nyancad_server = ["public/**/*", "notebook.py"]
+nyancad_server = ["public/**/*", "notebook.py", "notebook_file.py"]
 
 [tool.bumpversion]
 current_version = "0.15.0"
