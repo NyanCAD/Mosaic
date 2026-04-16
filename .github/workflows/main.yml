@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download nyancad distributions
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nyancad-distributions
           path: dist/
@@ -120,7 +120,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download nyancad-server distributions
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nyancad-server-distributions
           path: dist/
@@ -136,13 +136,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download nyancad distributions
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nyancad-distributions
           path: dist/
 
       - name: Download nyancad-server distributions
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nyancad-server-distributions
           path: dist/
@@ -175,19 +175,19 @@ jobs:
       contents: write
     steps:
       - name: Download VSCode extension
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: vscode-extension
           path: artifacts/
 
       - name: Download nyancad distributions
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nyancad-distributions
           path: artifacts/
 
       - name: Download nyancad-server distributions
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nyancad-server-distributions
           path: artifacts/
