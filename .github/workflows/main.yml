@@ -63,7 +63,7 @@ jobs:
           npx shadow-cljs clj-run nyancad.mosaic.build/package-vscode
 
       - name: Store VSCode extension package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vscode-extension
           path: vscode-ext/*.vsix
@@ -83,13 +83,13 @@ jobs:
           cd ../..
 
       - name: Store nyancad distribution packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nyancad-distributions
           path: public/wheels/nyancad-*
 
       - name: Store nyancad-server distribution packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nyancad-server-distributions
           path: public/wheels/nyancad_server-*
