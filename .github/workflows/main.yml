@@ -46,13 +46,17 @@ jobs:
           gem install jekyll jekyll-theme-slate
 
       - name: Build JS (required for Python packages)
+        run: |
+          npm install
+          npx shadow-cljs clj-run nyancad.mosaic.build/release
+
+      - name: Upload CouchDB design document
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         env:
           COUCHDB_URL: https://api.nyancad.com
           COUCHDB_ADMIN_USER: ${{ secrets.COUCHDB_ADMIN_USER }}
           COUCHDB_ADMIN_PASS: ${{ secrets.COUCHDB_ADMIN_PASS }}
-        run: |
-          npm install
-          npx shadow-cljs clj-run nyancad.mosaic.build/release
+        run: bash src/bash/couchdb-upload-design-doc.sh
 
       - name: Build VSCode extension
         run: |

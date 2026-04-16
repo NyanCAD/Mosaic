@@ -8,6 +8,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
   - package-ecosystem: "pip"
     directory: "/python/nyancad"
     schedule:
