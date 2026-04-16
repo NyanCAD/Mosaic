@@ -4,7 +4,7 @@
 
 (ns nyancad.mosaic.editor
   (:require [reagent.core :as r]
-            [reagent.dom :as rd]
+            [reagent.dom.client :as rdc]
             [shadow.resource :as rc]
             #?@(:vscode [[nyancad.mosaic.editor.platform-vscode
                            :refer [group schematic modeldb snapshots simulations local
@@ -2562,11 +2562,12 @@
 (def immediate-shortcuts
   {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))})
 
+(defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-editor")))
+
 (defn ^:dev/after-load ^:export  render []
   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (set! js/document.onkeydown (partial cm/keyboard-shortcuts immediate-shortcuts))
-  (rd/render [schematic-ui]
-             (.querySelector js/document ".mosaic-app.mosaic-editor")))
+  (rdc/render root [schematic-ui]))
 
 (defn ^:export init []
   (init-extra!)

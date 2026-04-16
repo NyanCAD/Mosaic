@@ -4,7 +4,7 @@
 
 (ns nyancad.mosaic.auth
   (:require [reagent.core :as r]
-            [reagent.dom :as rd]
+            [reagent.dom.client :as rdc]
             [cljs.core.async :refer [go]]
             [cljs.core.async.interop :refer-macros [<p!]]
             [nyancad.mosaic.common :as cm]))
@@ -244,9 +244,10 @@
           nil)))))
 
 ;; Initialization
+(defonce root (rdc/create-root (.getElementById js/document "mosaic_auth")))
+
 (defn ^:dev/after-load render []
-  (rd/render [auth-page]
-             (.getElementById js/document "mosaic_auth")))
+  (rdc/render root [auth-page]))
 
 (defn ^:export init []
   (set! js/window.name "auth")

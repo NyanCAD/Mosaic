@@ -5,7 +5,7 @@
 (ns nyancad.mosaic.libman
   (:require clojure.string
             [reagent.core :as r]
-            [reagent.dom :as rd]
+            [reagent.dom.client :as rdc]
             #?@(:vscode [[nyancad.mosaic.libman.platform-vscode
                            :refer [modeldb syncactive
                                    preview-url get-preview search-remote-models
@@ -239,9 +239,10 @@
 
 (def shortcuts {})
 
+(defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-libman")))
+
 (defn ^:dev/after-load render []
-  (rd/render [library-manager]
-             (.querySelector js/document ".mosaic-app.mosaic-libman")))
+  (rdc/render root [library-manager]))
 
 (defn ^:export init []
   (set! js/window.name "libman")
