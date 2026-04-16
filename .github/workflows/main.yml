@@ -166,6 +166,31 @@ jobs:
             rm /tmp/nyancad-*.whl /tmp/nyancad_server-*.whl
           "
 
+  publish-vscode-extension:
+    name: Publish VS Code Extension 📦
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download VSCode extension
+        uses: actions/download-artifact@v8
+        with:
+          name: vscode-extension
+          path: artifacts/
+
+      - name: Publish to Open VSX Registry
+        uses: HaaLeo/publish-vscode-extension@v2
+        with:
+          pat: ${{ secrets.OPEN_VSX_TOKEN }}
+          extensionFile: artifacts/*.vsix
+
+      - name: Publish to VS Code Marketplace
+        uses: HaaLeo/publish-vscode-extension@v2
+        with:
+          pat: ${{ secrets.VSCE_PAT }}
+          registryUrl: https://marketplace.visualstudio.com
+          extensionFile: artifacts/*.vsix
+
   create-github-release:
     name: Create GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
