@@ -178,18 +178,22 @@ jobs:
           name: vscode-extension
           path: artifacts/
 
+      - name: Find VSIX file
+        id: vsix
+        run: echo "path=$(ls artifacts/*.vsix)" >> "$GITHUB_OUTPUT"
+
       - name: Publish to Open VSX Registry
         uses: HaaLeo/publish-vscode-extension@v2
         with:
           pat: ${{ secrets.OPEN_VSX_TOKEN }}
-          extensionFile: artifacts/*.vsix
+          extensionFile: ${{ steps.vsix.outputs.path }}
 
       - name: Publish to VS Code Marketplace
         uses: HaaLeo/publish-vscode-extension@v2
         with:
           pat: ${{ secrets.VSCE_PAT }}
           registryUrl: https://marketplace.visualstudio.com
-          extensionFile: artifacts/*.vsix
+          extensionFile: ${{ steps.vsix.outputs.path }}
 
   create-github-release:
     name: Create GitHub Release
