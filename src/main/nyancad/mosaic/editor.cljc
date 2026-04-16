@@ -2071,10 +2071,11 @@
 (defn- dark-mode?
   ([] (dark-mode? @theme))
   ([t]
-   (case t
-     "dark" true
-     "light" false
-     (.-matches (js/window.matchMedia "(prefers-color-scheme: dark)")))))
+   (cond
+     (= t "dark") true
+     (= t "light") false
+     (.. js/document -body -classList (contains "vscode-dark")) true
+     :else (.-matches (js/window.matchMedia "(prefers-color-scheme: dark)")))))
 
 (defn toggle-theme! []
   (let [now (.now js/Date)
@@ -2468,18 +2469,19 @@
                        (map #(vector % (get schem %)) sel))]])))
 
 (defn- set-color-scheme!
-  "Set color-scheme on :root so light-dark() CSS function responds correctly."
+  "Set color-scheme on body so light-dark() CSS function responds correctly.
+   Targets body so inline style overrides VS Code's .vscode-dark class."
   [scheme]
-  (.. js/document -documentElement -style (setProperty "color-scheme" scheme)))
+  (.. js/document -body -style (setProperty "color-scheme" scheme)))
 
 (defn- theme-attrs
   "CSS attributes for the current theme. Returns {:class ...}"
   []
   (case @theme
     "eyesore" (do (set-color-scheme! "light") {:class "eyesore dark-cursors"})
-    "light"   (do (set-color-scheme! "light") {})
+    "light"   (do (set-color-scheme! "light") {:class "light-cursors"})
     "dark"    (do (set-color-scheme! "dark") {:class "dark-cursors"})
-    (do (set-color-scheme! "light dark") {})))
+    {}))
 
 (defn schematic-ui []
   [:div.mosaic-container (theme-attrs)
