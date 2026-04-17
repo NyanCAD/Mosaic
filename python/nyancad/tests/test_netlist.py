@@ -615,98 +615,84 @@ class TestSelectCorner:
 # ---------------------------------------------------------------------------
 
 class TestEvalParams:
-    """_eval_params evaluates model parameter expressions against device properties."""
+    """_eval_params translates SPICE param expressions using device props.
+
+    Two paths: bare-identifier expressions ("renames") pass the raw prop value
+    through; arithmetic expressions are substituted and wrapped in braces so
+    SPICE evaluates them. The rename passthrough preserves non-numeric values
+    (model names) which would break if SPICE tried to evaluate them, and keeps
+    the original prop type."""
 
     def test_empty_returns_device_props(self):
         props = {"resistance": "1k"}
         assert _eval_params(None, props) == props
         assert _eval_params({}, props) == props
 
-    def test_arithmetic_expression(self):
+    # --- Rename path: bare identifier, passthrough ---
+
+    def test_rename_preserves_string_value(self):
+        """Rename of SPICE-notation string: raw value through, no wrapping."""
+        assert _eval_params({"w": "width"}, {"width": "10u"}) == {"w": "10u"}
+
+    def test_rename_preserves_model_name(self):
+        """Non-numeric values (like model names) must NOT be wrapped in braces,
+        since SPICE would try to evaluate them as parameter expressions."""
+        assert _eval_params({"model": "name"}, {"name": "nmos_3p3"}) == {"model": "nmos_3p3"}
+
+    def test_rename_preserves_numeric_type(self):
+        """Numeric prop value passes through with its original type."""
+        assert _eval_params({"w": "width"}, {"width": 10}) == {"w": 10}
+        assert _eval_params({"w": "width"}, {"width": 3.5}) == {"w": 3.5}
+
+    def test_rename_missing_prop_skipped(self):
+        """Missing rename target → skip so SPICE model's own default is used."""
         result = _eval_params(
-            {"w": "width * 1e-6"},
-            {"width": "10"}
+            {"w": "width", "vth": "threshold"},
+            {"width": "10"}  # no 'threshold'
         )
-        assert result["w"] == pytest.approx(10e-6)
+        assert result == {"w": "10"}
+        assert "vth" not in result
+
+    # --- Arithmetic path: substitute + wrap ---
+
+    def test_arithmetic_substitutes_and_wraps(self):
+        """Arithmetic is substituted and wrapped for SPICE to evaluate."""
+        assert _eval_params({"w": "width * 1e-6"}, {"width": "10"}) == {"w": "{10 * 1e-6}"}
+
+    def test_arithmetic_with_spice_suffix_notation(self):
+        """SPICE suffix notation reaches SPICE intact — the main reason to let
+        SPICE evaluate instead of Python. 'width * 1e-6' with width='10u'
+        becomes '{10u * 1e-6}' which ngspice evaluates to 1e-11."""
+        result = _eval_params({"w": "width * 1e-6"}, {"width": "10u"})
+        assert result["w"] == "{10u * 1e-6}"
 
     def test_multiple_params(self):
         result = _eval_params(
             {"w": "width * 1e-6", "l": "length * 1e-6"},
-            {"width": "5", "length": "0.5"}
+            {"width": "5u", "length": "0.5u"}
         )
-        assert result["w"] == pytest.approx(5e-6)
-        assert result["l"] == pytest.approx(0.5e-6)
+        assert result == {"w": "{5u * 1e-6}", "l": "{0.5u * 1e-6}"}
 
-    def test_undefined_variable_skipped(self):
-        """If an expression references a variable not in device props, skip that param.
-        This lets the SPICE model use its own default."""
-        result = _eval_params(
-            {"w": "width * 1e-6", "vth": "threshold"},
-            {"width": "10"}  # no 'threshold'
-        )
-        assert "w" in result
-        assert "vth" not in result  # skipped, not errored
+    def test_unknown_identifier_preserved(self):
+        """Identifiers not in device_props stay as-is so SPICE can resolve them
+        (e.g. SPICE math functions, model-level parameters)."""
+        assert _eval_params({"x": "sqrt(width)"}, {"width": "10u"}) == {"x": "{sqrt(10u)}"}
 
-    def test_invalid_expression_returns_string(self):
-        """Syntax errors or other exceptions return the expression string as-is."""
-        result = _eval_params(
-            {"x": "1 +* 2"},
-            {}
-        )
-        assert result["x"] == "1 +* 2"
+    def test_identifier_regex_skips_numeric_literals(self):
+        """Identifier match uses word boundary, so 'e' in '2e-3' is not
+        mistaken for a variable — even if 'e' exists in device_props."""
+        assert _eval_params({"x": "2e-3"}, {"e": "wrong"}) == {"x": "{2e-3}"}
 
-    def test_numeric_props_used_directly(self):
-        """Props that are already numbers don't need string→float conversion."""
-        result = _eval_params(
-            {"area": "w * h"},
-            {"w": 3.0, "h": 4.0}
-        )
-        assert result["area"] == pytest.approx(12.0)
+    def test_constant_expression_wrapped(self):
+        """Expressions with no variables still go through the arithmetic path."""
+        assert _eval_params({"x": "1 + 2"}, {}) == {"x": "{1 + 2}"}
 
-    def test_builtins_restricted(self):
-        """eval runs with restricted builtins — no imports or dangerous operations."""
-        result = _eval_params(
-            {"x": "__import__('os')"},
-            {}
-        )
-        # Should either skip (NameError) or return string (other exception)
-        assert "x" not in result or result["x"] == "__import__('os')"
+    # --- Mixed ---
 
-    def test_stdlib_functions_unavailable(self):
-        """Standard math functions like abs, min, max are not available in expressions.
-        This is a known limitation of the restricted eval sandbox."""
+    def test_mixed_rename_and_arithmetic(self):
+        """A params mapping can mix rename and arithmetic entries."""
         result = _eval_params(
-            {"x": "abs(-5)"},
-            {}
+            {"model": "name", "w": "width * 1e-6"},
+            {"name": "nmos_3p3", "width": "10u"}
         )
-        # abs is a builtin that's been blocked — should fail
-        assert "x" not in result or result["x"] == "abs(-5)"
-
-    def test_spice_notation_not_parsed(self):
-        """SPICE notation values like '10k' can't be parsed to float.
-        When used in arithmetic expressions, the expression string is returned
-        as a fallback (TypeError from str * float caught by generic except)."""
-        result = _eval_params(
-            {"w": "width * 1e-6"},
-            {"width": "10k"}  # SPICE notation
-        )
-        # "10k" stays as string, "10k" * 1e-6 → TypeError → returns expr
-        assert result["w"] == "width * 1e-6"
-
-    def test_string_passthrough_via_identity_expression(self):
-        """Non-numeric props can be passed through via simple variable reference.
-        This is used for model name passthrough in params mappings."""
-        result = _eval_params(
-            {"model": "name"},
-            {"name": "nmos_3p3"}
-        )
-        assert result["model"] == "nmos_3p3"
-
-    def test_mixed_numeric_and_string_params(self):
-        """Some params evaluate arithmetic, others pass strings through."""
-        result = _eval_params(
-            {"w": "width * 1e-6", "model": "name"},
-            {"width": "10", "name": "nmos_3p3"}
-        )
-        assert result["w"] == pytest.approx(10e-6)
-        assert result["model"] == "nmos_3p3"
+        assert result == {"model": "nmos_3p3", "w": "{10u * 1e-6}"}
