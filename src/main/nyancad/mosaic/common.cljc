@@ -760,8 +760,14 @@
 (defn clear-current-user []
   (.removeItem js/localStorage "username"))
 
-(defn str-to-hex [s]
-  (apply str (map #(str (.toString (.charCodeAt % 0) 16)) s)))
+(defn str-to-hex
+  "Encode string as UTF-8 bytes in hex, matching CouchDB's userdb- naming.
+   Each byte is zero-padded to 2 hex digits, consistent with Python's
+   str_to_hex in nyancad-server."
+  [s]
+  (->> (js/Array.from (.encode (js/TextEncoder.) s))
+       (map #(-> % (.toString 16) (.padStart 2 "0")))
+       (apply str)))
 
 ;; Workspace support - read from URL param
 (def url-params (js/URLSearchParams. js/window.location.search))

@@ -5,16 +5,12 @@ from nyancad_server.mcp_server import str_to_hex, normalize_to_bare_id, normaliz
 
 
 class TestStrToHex:
-    """str_to_hex encodes each character as its hex Unicode code point.
+    """str_to_hex encodes a string as UTF-8 bytes in hex.
 
     Used to build CouchDB userdb names: userdb-{str_to_hex(username)}.
-    The ClojureScript version (common.cljc str-to-hex) uses the same
-    encoding, so both languages produce matching database names.
-
-    NOTE: This encodes Unicode CODE POINTS, not UTF-8 bytes. CouchDB's
-    couch_peruser uses UTF-8 byte hex encoding. For ASCII usernames
-    (the common case) the results are identical. For non-ASCII usernames
-    they would differ — see test_non_ascii_differs_from_utf8_bytes."""
+    CouchDB's couch_peruser uses hex(utf8(username)) with zero-padded
+    per-byte encoding. The ClojureScript str-to-hex in common.cljc uses
+    the same encoding — both must stay consistent."""
 
     def test_lowercase_ascii(self):
         assert str_to_hex("alice") == "616c696365"
@@ -32,35 +28,36 @@ class TestStrToHex:
         assert str_to_hex("09") == "3039"
 
     def test_couchdb_userdb_name(self):
-        # The real use case: userdb-{hex(username)}
+        """The real use case: userdb-{hex(username)}."""
         assert str_to_hex("admin") == "61646d696e"
         assert f"userdb-{str_to_hex('admin')}" == "userdb-61646d696e"
 
-    def test_matches_cljs_str_to_hex(self):
-        """Both Python and CLJS use charCode/ord encoding, so they must agree.
-        The CLJS version is: (.toString (.charCodeAt % 0) 16)"""
-        # These are the values the CLJS would produce for the same inputs
-        assert str_to_hex("alice") == "616c696365"
-        assert str_to_hex("test@example.com") == "74657374406578616d706c652e636f6d"
+    def test_matches_python_encode_utf8_hex(self):
+        """str_to_hex equals s.encode('utf-8').hex() — the canonical
+        Python expression for UTF-8 byte hex encoding."""
+        for s in ["alice", "test@example.com", "", " ", "é", "日本語"]:
+            assert str_to_hex(s) == s.encode("utf-8").hex(), f"Failed for {s!r}"
 
-    def test_non_ascii_differs_from_utf8_bytes(self):
-        """For non-ASCII chars, code point encoding differs from UTF-8 bytes.
-        Both Python and CLJS produce the code-point version. CouchDB's
-        couch_peruser would produce the UTF-8 version. They only match for
-        ASCII usernames."""
-        # 'é' = U+00E9 (code point 0xe9)
-        # UTF-8 encoding: 0xc3 0xa9 (two bytes)
-        codepoint_hex = str_to_hex("é")
-        utf8_hex = "é".encode("utf-8").hex()
-        assert codepoint_hex == "e9"      # what our function produces
-        assert utf8_hex == "c3a9"          # what CouchDB would produce
-        assert codepoint_hex != utf8_hex   # they disagree for non-ASCII
+    def test_non_ascii_utf8_bytes(self):
+        """Non-ASCII chars encode as UTF-8 bytes (not Unicode code points).
+        'é' = U+00E9 → UTF-8 bytes 0xc3 0xa9 → 'c3a9'."""
+        assert str_to_hex("é") == "c3a9"
 
-    def test_no_zero_padding(self):
-        """Code points < 16 produce single hex digits (no zero padding).
-        Not a practical issue since usernames don't contain control chars,
-        but documents the behavior."""
-        assert str_to_hex("\t") == "9"  # tab = 0x09, but no padding
+    def test_multi_byte_unicode(self):
+        """Each UTF-8 byte becomes 2 hex digits, preserving decodability."""
+        # '日' = U+65E5 → UTF-8: 0xe6 0x97 0xa5
+        assert str_to_hex("日") == "e697a5"
+
+    def test_zero_padded_low_bytes(self):
+        """Bytes < 16 produce 2 hex digits with leading zero so concatenation
+        is unambiguously decodable."""
+        assert str_to_hex("\t") == "09"  # tab = 0x09
+        assert str_to_hex("\n") == "0a"  # newline = 0x0a
+
+    def test_roundtrip_via_bytes(self):
+        """Encoding roundtrips through UTF-8 decode."""
+        for s in ["alice", "é", "日本語", "admin-123"]:
+            assert bytes.fromhex(str_to_hex(s)).decode("utf-8") == s
 
 
 class TestNormalizeToBareId:
