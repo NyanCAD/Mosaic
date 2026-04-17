@@ -106,10 +106,11 @@ twoport_shape = list(shape_ports([
 ]))
 
 
-def rotate(shape, transform, devx, devy):
+def rotate(shape, transform, devx, devy, size=None):
     a, b, c, d, e, f = transform
-    width = max(max(p['x'], p['y']) for p in shape)+1
-    mid = width/2-0.5
+    if size is None:
+        size = max(max(p['x'], p['y']) for p in shape)+1
+    mid = size/2-0.5
     res = {}
     for port in shape:
         x = port['x']-mid
@@ -217,7 +218,9 @@ def getports(doc, models):
         if model_id and model_id in models:
             model = models[model_id]
             shape = 'amp' if device_type == 'amp' else None
-            return rotate(port_locations(model['ports'], shape), tr, x, y)
+            w, h = port_perimeter(model['ports'], shape)
+            size = 2 + max(w, h)
+            return rotate(port_locations(model['ports'], shape), tr, x, y, size=size)
         return {}
 
 
