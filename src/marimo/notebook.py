@@ -1,3 +1,8 @@
+# /// script
+# [tool.marimo.display]
+# theme = "system"
+# ///
+
 import marimo
 
 __generated_with = "0.19.6"
