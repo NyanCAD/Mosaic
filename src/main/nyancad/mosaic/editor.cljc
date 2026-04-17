@@ -76,19 +76,26 @@
 
 (defonce undotree (cm/newundotree))
 
-(declare build-wire-split-index build-location-index split-wire location-index wire-type-index)
+(declare build-wire-split-index build-point-index split-wire point-index wire-type-index
+         build-wire-networks build-netlist annotate-nets)
 
 (defn post-action!
-  "Record undo checkpoint and split wires after a user action completes.
+  "Record undo checkpoint, split wires, and annotate :nets after a user action.
    Returns a channel that completes when done."
   []
   (go
     (<! (done? schematic))
     (cm/newdo undotree @schematic)
-    (let [loc-idx (build-location-index @schematic)]
-      (doseq [[w coords] (build-wire-split-index loc-idx)]
-        (split-wire w coords loc-idx)
-        (<! (done? schematic))))))
+    (let [pt-idx (build-point-index @schematic)]
+      (doseq [[w coords] (build-wire-split-index @schematic pt-idx)]
+        (split-wire w coords pt-idx)
+        (<! (done? schematic))))
+    (<! (done? schematic))
+    (let [sch      @schematic
+          pt-idx   (build-point-index sch)
+          networks (build-wire-networks sch pt-idx)
+          nets     (build-netlist networks)]
+      (swap! schematic annotate-nets nets))))
 
 (defn restore [state]
   (let [;; Ensure keys are strings (schematic uses string device IDs)
@@ -1111,18 +1118,6 @@
       (contains? models cell) (builtin-locations dev)
       :else (circuit-locations dev))))
 
-(defn build-location-index [sch]
-  (loop [connidx {} bodyidx {} [[id dev] & other] (seq sch)]
-    (let [[connloc bodyloc] (device-locations dev)
-          nconnidx (reduce #(update %1 %2 sconj id) connidx connloc)
-          nbodyidx (reduce #(update %1 %2 sconj id) bodyidx bodyloc)]
-      (if other
-        (recur nconnidx nbodyidx other)
-        [nconnidx nbodyidx]))))
-
-; [conn body]
-(def location-index (r/track #(build-location-index @schematic)))
-
 (defn device-port-types
   "Return typed port maps [{:x :y :type ...}] for a device after rotation."
   [dev]
@@ -1147,82 +1142,207 @@
             conn (if ports (cm/port-locations ports shape) [])]
         (rotate-shape conn transform x y)))))
 
-(defn build-point-type-index
-  "Build {[x y] => {:types #{\"photonic\" \"electric\"} :photonic-count N :electric-count N}}
-   from all non-wire devices in the schematic."
-  [sch]
-  (reduce
-   (fn [idx [_id dev]]
-     (if-let [ports (device-port-types dev)]
-       (reduce
-        (fn [idx port]
-          (let [pt [(:x port) (:y port)]
-                t (:type port)]
-            (if t
-              (-> idx
-                  (update-in [pt :types] (fnil conj #{}) t)
-                  (update-in [pt (keyword (str (name t) "-count"))] (fnil inc 0)))
-              idx)))
-        idx ports)
-       idx))
-   {} sch))
+;; --- point-index: unified per-point fold ---------------------------------
+;; Replaces location-index (:ids/:body-ids), point-type-index (:types/:*-count),
+;; and supplies :ports for wire-network attribution in one pass.
 
-(def point-type-index (r/track #(build-point-type-index @schematic)))
+(defn- attributable?
+  "Does this device carry named ports we can annotate with nets?
+   Wires, text, and port docs are excluded."
+  [dev]
+  (not (cm/schematic-only-types (:type dev))))
+
+(defn- record-ids [idx k id pts]
+  (reduce (fn [i pt] (update-in i [pt k] (fnil conj #{}) id)) idx pts))
+
+(defn- record-port [idx dev-id {:keys [x y name type]}]
+  (let [pt [x y]
+        counter (when type (keyword (str (clojure.core/name type) "-count")))]
+    (cond-> idx
+      true    (update-in [pt :ports] (fnil conj []) [dev-id name])
+      type    (update-in [pt :types] (fnil conj #{}) type)
+      counter (update-in [pt counter] (fnil inc 0)))))
+
+(defn- record-device [idx [id dev]]
+  (let [[connloc bodyloc] (device-locations dev)]
+    (as-> idx $
+      (record-ids $ :ids id connloc)
+      (record-ids $ :body-ids id bodyloc)
+      (if (attributable? dev)
+        (reduce #(record-port %1 id %2) $ (device-port-types dev))
+        $))))
+
+(defn build-point-index
+  "{[x y] → {:ids #{dev-ids with a connection endpoint here}
+             :body-ids #{dev-ids with body/path here}
+             :ports [[dev-id port-name] ...]   ; attributable devices only
+             :types #{\"photonic\" \"electric\"}
+             :photonic-count N :electric-count N}}"
+  [sch]
+  (reduce record-device {} sch))
+
+(def point-index (r/track #(build-point-index @schematic)))
+
+;; --- wire-networks: shared BFS over the wire graph -----------------------
+
+(def ^:private wire-like #{"wire" "port"})
+
+(defn- doc-endpoints
+  "Cells this doc contributes as connection endpoints.
+   Wires: both ends. Port docs: their own cell."
+  [{:keys [x y rx ry type]}]
+  (case type
+    "wire" [[x y] [(+ x rx) (+ y ry)]]
+    "port" [[x y]]))
+
+(defn- wire-neighbors
+  "Unvisited wire/port-doc ids reachable from any of `endpoints`."
+  [sch point-idx visited endpoints]
+  (for [pt endpoints
+        id (:ids (get point-idx pt))
+        :when (and (wire-like (:type (get sch id)))
+                   (not (visited id)))]
+    id))
+
+(defn- absorb
+  "Merge one doc's contribution into the component-in-progress."
+  [comp id dev point-idx]
+  (let [ends (doc-endpoints dev)
+        nm   (:name dev)]
+    (cond-> comp
+      true                                  (update :points into ends)
+      true                                  (update :attributions
+                                                    into (mapcat #(:ports (get point-idx %))) ends)
+      (= "wire" (:type dev))                (update :wires conj id)
+      (and (= "wire" (:type dev)) nm)       (update :wire-names conj nm)
+      (and (= "port" (:type dev)) nm)       (update :port-names conj nm))))
+
+(def ^:private empty-component
+  {:wires #{} :attributions [] :port-names [] :wire-names [] :points #{}})
+
+(defn- expand-network
+  "BFS from `seed-id`, returning [component new-visited]."
+  [sch point-idx visited seed-id]
+  (loop [queue   [seed-id]
+         visited (conj visited seed-id)
+         comp    empty-component]
+    (if-let [id (peek queue)]
+      (let [dev   (get sch id)
+            comp' (absorb comp id dev point-idx)
+            nbrs  (wire-neighbors sch point-idx visited (doc-endpoints dev))]
+        (recur (into (pop queue) nbrs) (into visited nbrs) comp'))
+      [comp visited])))
+
+(defn- seed-order
+  "Wires and port-docs sorted by [x y] — deterministic netN numbering."
+  [sch]
+  (->> sch
+       (filter (fn [[_ d]] (wire-like (:type d))))
+       (sort-by (fn [[_ {:keys [x y]}]] [x y]))))
+
+(defn- wire->component-index [components]
+  (into {} (for [[i c] (map-indexed vector components)
+                 w (:wires c)]
+             [w i])))
+
+(defn build-wire-networks
+  "Partition connected wires + port-docs into networks.
+   Returns {:components [{:wires :attributions :port-names :wire-names :points} ...]
+            :wire->component {wire-id -> component-idx}}."
+  [sch point-idx]
+  (loop [[[id _] & rst] (seed-order sch)
+         visited        #{}
+         components     []]
+    (cond
+      (nil? id)    {:components components
+                    :wire->component (wire->component-index components)}
+      (visited id) (recur rst visited components)
+      :else (let [[comp visited'] (expand-network sch point-idx visited id)]
+              (recur rst visited' (conj components comp))))))
+
+(def wire-networks
+  (r/track #(build-wire-networks @schematic @point-index)))
+
+;; --- wire-type-index: now a fold over wire-networks -----------------------
+
+(defn- network-type
+  "First port type encountered at any point in the network, or nil."
+  [point-idx points]
+  (some #(first (get-in point-idx [% :types])) points))
 
 (defn build-wire-type-index
-  "Propagate port types to wires via BFS through connected wire networks.
-   Returns {wire-id => \"photonic\"|\"electric\"|nil}."
-  [sch [connidx _] point-types]
-  (let [wires (into {} (filter #(= "wire" (:type (val %)))) sch)
-        ;; Build adjacency: for each wire, find other wires sharing endpoints
-        wire-endpoints (into {}
-                             (map (fn [[id {:keys [x y rx ry]}]]
-                                    [id [[x y] [(+ x rx) (+ y ry)]]]))
-                             wires)
-        ;; BFS from typed points to find wire types
-        wire-types (atom {})
-        visited (atom #{})]
-    (doseq [[wire-id endpoints] wire-endpoints
-            :when (not (contains? @visited wire-id))]
-      ;; BFS from this wire through connected wires
-      (loop [queue (conj #queue [] wire-id)
-             network-type nil
-             network #{}]
-        (if-let [wid (peek queue)]
-          (if (contains? network wid)
-            (recur (pop queue) network-type network)
-            (let [eps (get wire-endpoints wid)
-                  ;; Check if any endpoint has a typed port
-                  ep-type (some (fn [pt]
-                                  (let [types (get-in point-types [pt :types])]
-                                    (first types)))
-                                eps)
-                  new-type (or network-type ep-type)
-                  ;; Find connected wires at endpoints
-                  neighbors (for [pt eps
-                                  neighbor-id (get connidx pt)
-                                  :when (and (contains? wires neighbor-id)
-                                             (not (contains? network neighbor-id)))]
-                              neighbor-id)]
-              (recur (into (pop queue) neighbors) new-type (conj network wid))))
-          ;; Done with this network
-          (do
-            (swap! visited into network)
-            (doseq [wid network]
-              (swap! wire-types assoc wid network-type))))))
-    @wire-types))
+  "{wire-id => \"photonic\"|\"electric\"|nil}.
+   Derived from wire-networks + point-index."
+  [{:keys [components]} point-idx]
+  (reduce
+   (fn [acc {:keys [wires points]}]
+     (let [t (network-type point-idx points)]
+       (reduce #(assoc %1 %2 t) acc wires)))
+   {} components))
 
 (def wire-type-index
-  (r/track #(build-wire-type-index @schematic @location-index @point-type-index)))
+  (r/track #(build-wire-type-index @wire-networks @point-index)))
 
-(defn build-wire-split-index [[connidx bodyidx]]
-  (reduce (fn [result [key val]]
-            (if (contains? connidx key)
-              (->> val
-                   (filter #(= "wire" (get-in @schematic [% :type])))
-                   (reduce #(update %1 %2 cm/ssconj key) result))
-              result))
-          {} bodyidx))
+;; --- netlist: fold wire-networks into per-device {port net} --------------
+
+(defn- net-name [idx {:keys [port-names wire-names]}]
+  (or (first port-names) (first wire-names) (str "net" idx)))
+
+(defn- assign-net [nets net attributions]
+  (reduce (fn [n [dev port]] (assoc-in n [dev port] net)) nets attributions))
+
+(defn- component-net-names
+  "Per-component net name. Priority: port-doc name > wire name > 'netN'."
+  [components]
+  (into [] (map-indexed net-name) components))
+
+(defn build-netlist
+  "Returns {:devices {dev-id {port-name net-name}}
+            :wires   {wire-id net-name}} from a wire-networks partition.
+   Net name priority: first port-doc name > first wire name > generated 'netN'."
+  [{:keys [components wire->component]}]
+  (let [names   (component-net-names components)
+        devices (reduce (fn [acc [i comp]]
+                          (assign-net acc (nth names i) (:attributions comp)))
+                        {} (map-indexed vector components))
+        wires   (into {} (for [[wid ci] wire->component] [wid (nth names ci)]))]
+    {:devices devices :wires wires}))
+
+(defn annotate-nets
+  "Stamp :nets on attributable devices and :net on wires. Leaves docs whose
+   annotation already matches untouched — pouch-swap! diffs by equality, no
+   _rev churn on no-op."
+  [docs {:keys [devices wires]}]
+  (letfn [(stamp-wire [acc id dev]
+            (let [desired (get wires id)]
+              (if (= (:net dev) desired)
+                acc
+                (assoc-in acc [id :net] desired))))
+          (stamp-device [acc id dev]
+            (let [desired (get devices id {})
+                  current (or (:nets dev) {})]
+              (if (= current desired)
+                acc
+                (assoc-in acc [id :nets] desired))))
+          (stamp [acc id dev]
+            (cond
+              (= "wire" (:type dev)) (stamp-wire acc id dev)
+              (attributable? dev)    (stamp-device acc id dev)
+              :else                  acc))]
+    (reduce-kv stamp docs docs)))
+
+;; --- wire-split-index: walk point-index ----------------------------------
+
+(defn build-wire-split-index
+  "{wire-id → #{points-to-split-at}}. A wire whose path passes through a
+   connection endpoint needs to be split at that point."
+  [sch point-idx]
+  (letfn [(wire? [id] (= "wire" (:type (get sch id))))
+          (accumulate [acc pt {:keys [ids body-ids]}]
+            (if (and (seq ids) (seq body-ids))
+              (reduce #(update %1 %2 cm/ssconj pt) acc (filter wire? body-ids))
+              acc))]
+    (reduce-kv accumulate {} point-idx)))
 
 (defn wire-corner
   "Compute the corner position of an elbow wire, or nil for straight/diagonal."
@@ -1232,7 +1352,7 @@
     "vh" [x (+ y ry)]
     nil))
 
-(defn split-wire [wirename coords loc-idx]
+(defn split-wire [wirename coords point-idx]
   (let [{:keys [x y rx ry variant] :as wire} (get @schematic wirename)
         x2 (+ x rx)
         y2 (+ y ry)
@@ -1242,8 +1362,9 @@
         ordered (concat [[x y]] (filter split-set body) [[x2 y2]])
         ;; Check if two points share a non-wire device, or a wire with same corner
         shared-device? (fn [p1 p2 seg-corner]
-                         (let [connidx (first loc-idx)
-                               shared (clojure.set/intersection (get connidx p1) (get connidx p2))]
+                         (let [shared (clojure.set/intersection
+                                        (:ids (get point-idx p1))
+                                        (:ids (get point-idx p2)))]
                            (some #(let [dev (get @schematic %)]
                                     (or (not= "wire" (:type dev))
                                         (= seg-corner (wire-corner dev))))
@@ -1500,9 +1621,8 @@
           {rx :rx ry :ry} dev
           x (math/round (+ (:x dev) rx)) ; use end pos of previous wire instead
           y (math/round (+ (:y dev) ry))
-          [conn body] @location-index
-          on-port (or (contains? conn [x y])
-                      (contains? body [x y]))]
+          pt (get @point-index [x y])
+          on-port (or (seq (:ids pt)) (seq (:body-ids pt)))]
       (cond
         (same-tile? dev) (swap! ui assoc ; the dragged wire stayed at the same tile, exit
                                 ::staging nil
@@ -1530,9 +1650,9 @@
       (loop [ports (wire-ports #{} wire)
              sel #{wire-key}]
         (if (seq ports)
-          (let [[connidx _] @location-index
+          (let [pt-idx @point-index
                 newsel (clojure.set/difference
-                        (set (filter wire? (mapcat connidx ports)))
+                        (set (filter wire? (mapcat #(:ids (get pt-idx %)) ports)))
                         sel)
                 newports (reduce wire-ports #{} (map schem newsel))]
             (recur
@@ -1764,15 +1884,14 @@
         y1 (math/floor (min y (+ y dy)))
         x2 (math/floor (max x (+ x dx)))
         y2 (math/floor (max y (+ y dy)))
-        [connidx bodyidx] @location-index
-        sel (apply clojure.set/union
-                   (for [x (range x1 (inc x2))
-                         y (range y1 (inc y2))]
-                     (get connidx [x y])))
-        sel (apply clojure.set/union sel
-                   (for [x (range x1 (inc x2))
-                         y (range y1 (inc y2))]
-                     (get bodyidx [x y])))]
+        pt-idx @point-index
+        sel (into #{}
+                  (mapcat (fn [pt]
+                            (let [p (get pt-idx pt)]
+                              (concat (:ids p) (:body-ids p))))
+                          (for [x (range x1 (inc x2))
+                                y (range y1 (inc y2))]
+                            [x y])))]
     (println x1 y1 x2 y2 sel)
     (swap! ui assoc
            ::dragging nil
@@ -2378,32 +2497,30 @@
 (defn build-wire-errors
   "Detect type mismatches and photonic forks.
    Checks both device port types and wire types at each connection point."
-  [sch connidx point-types wire-types]
+  [sch point-idx wire-types]
   (reduce-kv
-   (fn [errors pt ids]
-     (let [;; Collect types at this point: from device ports and from wires
-           port-types (get-in point-types [pt :types])
-           wire-type-set (into #{}
+   (fn [errors pt {:keys [ids types]}]
+     (let [wire-type-set (into #{}
                                (keep (fn [id]
                                        (when (= "wire" (:type (get sch id)))
                                          (get wire-types id))))
                                ids)
-           all-types (into (or port-types #{}) wire-type-set)
+           all-types (into (or types #{}) wire-type-set)
            n (count (remove #(= (get-in sch [% :variant]) "text") ids))
            mismatch? (> (count all-types) 1)
            fork? (and (contains? all-types "photonic") (> n 2))]
        (cond-> errors
          mismatch? (conj {:type :mismatch :pos pt})
          fork? (conj {:type :fork :pos pt}))))
-   [] connidx))
+   [] point-idx))
 
 (def wire-errors
-  (r/track #(build-wire-errors @schematic (first @location-index) @point-type-index @wire-type-index)))
+  (r/track #(build-wire-errors @schematic @point-index @wire-type-index)))
 
 (defn point-connection-type
   "Get the connection type at a point from device ports and wire types."
   [x y ids]
-  (let [port-types (get-in @point-type-index [[x y] :types])
+  (let [port-types (get-in @point-index [[x y] :types])
         wire-type-set (into #{}
                             (keep #(get @wire-type-index %))
                             ids)
@@ -2416,7 +2533,8 @@
         error-points (into #{} (map :pos) @wire-errors)]
     [:<>
      (doall
-      (for [[[x y] ids] (first @location-index)
+      (for [[[x y] {:keys [ids]}] @point-index
+            :when (seq ids)
             :let [n (count (remove #(= (get-in @schematic [% :variant]) "text") ids))
                   nc? (< n 2)
                   pt (when nc? (point-connection-type x y ids))]

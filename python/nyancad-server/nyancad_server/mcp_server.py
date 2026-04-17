@@ -13,7 +13,7 @@ from mcp.server.auth.settings import AuthSettings
 from pydantic import AnyHttpUrl, BaseModel, Field, TypeAdapter
 
 from nyancad.api import ServerAPI
-from nyancad.netlist import getports, NyanCircuit
+from nyancad.netlist import NyanCircuit
 from nyancad.schemas import Device, Wire, Component, ModelMetadata
 
 from .config import SERVER_URL, COUCHDB_URL, JWT_SECRET
@@ -216,19 +216,10 @@ async def get_schematic(
         devices = full_schem.get(schematic_id, {})
         models = full_schem.get("models", {})
 
-        # Process each device to add ports field
+        # Parse devices. Net assignments live on each device's :nets field
+        # (written by the editor); nothing to compute here.
         processed_devices = {}
         for doc_id, device_dict in devices.items():
-            # Compute port locations
-            ports = getports(device_dict, models)
-
-            # Add ports field
-            device_dict["ports"] = {
-                f"({x},{y})": port_name
-                for (x, y), port_name in ports.items()
-            }
-
-            # Parse device dict using discriminated union (automatically routes to Wire or Component)
             device = DeviceAdapter.validate_python(device_dict)
             processed_devices[doc_id] = device
 
@@ -325,8 +316,9 @@ async def bulk_update_schematic(
             if "model" in doc and doc["model"]:
                 doc["model"] = normalize_to_bare_id(doc["model"])
 
-            # Strip computed ports field
-            doc.pop("ports", None)
+            # Strip :nets — the editor re-annotates on the next action,
+            # so bulk updates from MCP intentionally drop stale net info.
+            doc.pop("nets", None)
 
             docs_to_write.append(doc)
 

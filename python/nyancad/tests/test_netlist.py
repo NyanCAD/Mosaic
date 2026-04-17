@@ -6,23 +6,16 @@ hand-computed from first principles or derived from the ClojureScript
 implementation (which is the source of truth for editor display).
 """
 
-import math
 import pytest
 from nyancad.netlist import (
     model_key,
     bare_id,
     SchemId,
-    shape_ports,
-    spread_ports,
-    port_perimeter,
-    port_locations,
-    rotate,
-    mosfet_shape,
-    bjt_shape,
-    twoport_shape,
+    default_port_order,
     _select_corner,
     _eval_params,
     NyanCADMixin,
+    NyanCircuit,
 )
 
 
@@ -96,401 +89,32 @@ class TestSchemId:
 
 
 # ---------------------------------------------------------------------------
-# shape_ports — ASCII art → port definitions
+# default_port_order — canonical SPICE arg order for subcircuit calls
 # ---------------------------------------------------------------------------
 
-class TestShapePorts:
-    """shape_ports parses 2D character grids into port position dicts."""
+class TestDefaultPortOrder:
+    """default_port_order sorts model port names alphabetically.
 
-    def test_mosfet_layout(self):
-        """The standard MOSFET shape: D on top, G/B in middle, S on bottom."""
-        ports = list(shape_ports([" D ", "GB ", " S "]))
-        by_name = {p['name']: (p['x'], p['y']) for p in ports}
-        assert by_name == {'D': (1, 0), 'G': (0, 1), 'B': (1, 1), 'S': (1, 2)}
+    This is the fallback when a model entry doesn't declare ``port-order``.
+    The SUBCKT definition and every X call use the same function, so the
+    specific ordering is arbitrary as long as it's deterministic."""
 
-    def test_spaces_are_skipped(self):
-        ports = list(shape_ports(["   ", " A ", "   "]))
-        assert len(ports) == 1
-        assert ports[0]['name'] == 'A'
-
-    def test_all_ports_have_correct_type(self):
-        ports = list(shape_ports(["AB"], port_type="photonic"))
-        assert all(p['type'] == "photonic" for p in ports)
-
-    def test_default_type_is_electric(self):
-        ports = list(shape_ports(["X"]))
-        assert ports[0]['type'] == "electric"
-
-    def test_empty_input(self):
-        assert list(shape_ports([])) == []
-
-    def test_single_row(self):
-        ports = list(shape_ports(["ABC"]))
-        assert [(p['name'], p['x'], p['y']) for p in ports] == [
-            ('A', 0, 0), ('B', 1, 0), ('C', 2, 0)
+    def test_sorts_by_name(self):
+        ports = [
+            {"name": "out", "side": "right"},
+            {"name": "in+", "side": "left"},
+            {"name": "in-", "side": "left"},
         ]
+        assert default_port_order(ports) == ["in+", "in-", "out"]
 
-
-# ---------------------------------------------------------------------------
-# spread_ports — distribute ports along a side with center gap
-# ---------------------------------------------------------------------------
-
-class TestSpreadPorts:
-    """spread_ports distributes n ports in size slots with ports hugging the
-    edges and a gap in the center. This matches the ClojureScript spread-ports
-    in common.cljc and is critical for cross-language port alignment."""
-
-    def test_n_equals_size(self):
-        """All slots filled — no gap needed."""
-        assert spread_ports(3, 3) == [1, 2, 3]
+    def test_input_order_irrelevant(self):
+        """Same ports in different input order → same result."""
+        ports_a = [{"name": "B"}, {"name": "A"}, {"name": "C"}]
+        ports_b = [{"name": "A"}, {"name": "B"}, {"name": "C"}]
+        assert default_port_order(ports_a) == default_port_order(ports_b)
 
     def test_empty(self):
-        assert spread_ports(0, 5) == []
-
-    def test_overflow(self):
-        """More ports than slots — just count up (overflow)."""
-        assert spread_ports(5, 3) == [1, 2, 3, 4, 5]
-
-    def test_single_port_single_slot(self):
-        assert spread_ports(1, 1) == [1]
-
-    # --- Hand-computed cases from first principles ---
-    # Ports hug edges with gap in center. For odd n, center slot is used.
-
-    def test_1_in_3_center(self):
-        """1 port in 3 slots: center position (2)."""
-        assert spread_ports(1, 3) == [2]
-
-    def test_1_in_5_center(self):
-        """1 port in 5 slots: center position (3)."""
-        assert spread_ports(1, 5) == [3]
-
-    def test_1_in_4_center(self):
-        """1 port in 4 slots: center = (4+1)//2 = 2. Slight bias toward top."""
-        assert spread_ports(1, 4) == [2]
-
-    def test_2_in_4_edges(self):
-        """2 ports in 4 slots: one at each edge, gap of 2 in middle."""
-        assert spread_ports(2, 4) == [1, 4]
-
-    def test_2_in_5_edges(self):
-        """2 ports in 5 slots: one at each edge, gap of 3 in middle."""
-        assert spread_ports(2, 5) == [1, 5]
-
-    def test_3_in_5_symmetric(self):
-        """3 ports in 5 slots: edges + center."""
-        assert spread_ports(3, 5) == [1, 3, 5]
-
-    def test_4_in_6_two_per_end(self):
-        """4 ports in 6 slots: 2 at top, 2 at bottom, gap in middle."""
-        assert spread_ports(4, 6) == [1, 2, 5, 6]
-
-    def test_3_in_7_even_spread(self):
-        """3 ports in 7 slots: 1 top, 1 center (4), 1 bottom."""
-        assert spread_ports(3, 7) == [1, 4, 7]
-
-    def test_5_in_7(self):
-        """5 ports in 7: 2 top, center, 2 bottom."""
-        assert spread_ports(5, 7) == [1, 2, 4, 6, 7]
-
-    # --- Invariants that should hold for ALL valid inputs ---
-
-    def test_output_length_always_equals_n(self):
-        for n in range(8):
-            for size in range(1, 8):
-                result = spread_ports(n, size)
-                assert len(result) == n, f"spread_ports({n}, {size}) has {len(result)} elements"
-
-    def test_output_is_sorted(self):
-        for n in range(1, 6):
-            for size in range(n, n + 4):
-                result = spread_ports(n, size)
-                assert result == sorted(result), f"spread_ports({n}, {size}) not sorted: {result}"
-
-    def test_positions_within_bounds_when_n_leq_size(self):
-        """When n <= size, all positions should be in [1, size]."""
-        for n in range(1, 6):
-            for size in range(n, n + 4):
-                result = spread_ports(n, size)
-                assert all(1 <= p <= size for p in result), \
-                    f"spread_ports({n}, {size}) out of bounds: {result}"
-
-    def test_symmetric_for_even_n_even_size(self):
-        """When both n and size are even, layout should be symmetric around center."""
-        for n in [2, 4]:
-            for size in [n, n + 2, n + 4]:
-                result = spread_ports(n, size)
-                center = (size + 1) / 2
-                # Each port should have a mirror partner
-                for p in result:
-                    mirror = size + 1 - p
-                    assert mirror in result, \
-                        f"spread_ports({n}, {size})={result}: {p} has no mirror {mirror}"
-
-
-# ---------------------------------------------------------------------------
-# port_perimeter — device bounding box from port counts
-# ---------------------------------------------------------------------------
-
-class TestPortPerimeter:
-    """port_perimeter calculates (width, height) from port side assignments.
-
-    The parity adjustment ensures that opposite sides with different port
-    counts can have their ports centered symmetrically. Without it, a side
-    with 1 port and a side with 2 ports would have the single port
-    misaligned."""
-
-    def test_empty_ports(self):
-        """No ports → minimum 1x1 box."""
-        assert port_perimeter([]) == (1, 1)
-
-    def test_single_port_left(self):
-        assert port_perimeter([{"side": "left"}]) == (1, 1)
-
-    def test_height_matches_max_vertical_count(self):
-        """Height = max(left_count, right_count), possibly adjusted for parity."""
-        # 3 left, 3 right — same parity, no adjustment
-        ports = [{"side": "left"}] * 3 + [{"side": "right"}] * 3
-        w, h = port_perimeter(ports)
-        assert h == 3
-
-    def test_width_matches_max_horizontal_count(self):
-        """Width = max(top_count, bottom_count)."""
-        ports = [{"side": "top"}] * 4 + [{"side": "bottom"}] * 4
-        w, h = port_perimeter(ports)
-        assert w == 4
-
-    def test_parity_adjustment_odd_vs_even(self):
-        """1 left (odd) + 2 right (even): raw_height=2 (even) → bumped to 3.
-        This ensures the single left port can sit centered between the two right ports."""
-        ports = [{"side": "left"}] * 1 + [{"side": "right"}] * 2
-        w, h = port_perimeter(ports)
-        assert h == 3
-
-    def test_no_adjustment_same_parity(self):
-        """2 left + 2 right (both even) → height stays 2."""
-        ports = [{"side": "left"}] * 2 + [{"side": "right"}] * 2
-        w, h = port_perimeter(ports)
-        assert h == 2
-
-    def test_no_adjustment_when_raw_already_odd(self):
-        """1 left + 2 right: raw_height = max(1,2) = 2 (even) → adjusted to 3.
-        But 2 left + 3 right: raw_height = max(2,3) = 3 (already odd) → stays 3."""
-        ports = [{"side": "left"}] * 2 + [{"side": "right"}] * 3
-        w, h = port_perimeter(ports)
-        assert h == 3  # already odd, different parity but no adjustment needed
-
-    def test_amp_shape_minimum_width(self):
-        """Amp (triangle) shape: width >= ceil(height/2).
-        6 left ports → height=6, so width must be >= 3."""
-        ports = [{"side": "left"}] * 6
-        w, h = port_perimeter(ports, shape='amp')
-        assert h == 6
-        assert w == 3  # ceil(6/2) = 3
-
-    def test_amp_doesnt_shrink_existing_width(self):
-        """Amp constraint only increases width, never shrinks it."""
-        ports = [{"side": "top"}] * 5 + [{"side": "left"}] * 2
-        w, h = port_perimeter(ports, shape='amp')
-        assert w >= 5  # original width from 5 top ports preserved
-
-    def test_realistic_opamp(self):
-        """Op-amp: 2 left inputs, 1 right output. Parity differs → height bumped."""
-        ports = [
-            {"side": "left"}, {"side": "left"},  # in+, in-
-            {"side": "right"},  # out
-        ]
-        w, h = port_perimeter(ports)
-        # left=2(even), right=1(odd), raw_height=2(even) → 3
-        assert (w, h) == (1, 3)
-
-
-# ---------------------------------------------------------------------------
-# port_locations — full coordinate calculation
-# ---------------------------------------------------------------------------
-
-class TestPortLocations:
-    """port_locations assigns (x, y) coordinates to each port.
-
-    Coordinate system: top-left is (0,0), device body occupies
-    [1..width] x [1..height], ports sit on the border at x=0, x=width+1,
-    y=0, y=height+1."""
-
-    def test_two_port_passive_exact(self):
-        """A simple passive (1 left, 1 right) should produce exact coordinates.
-        Height=1, width=1. Left at (0,1), right at (2,1)."""
-        ports = [
-            {"name": "P", "side": "left", "type": "electric"},
-            {"name": "N", "side": "right", "type": "electric"},
-        ]
-        locs = {p['name']: (p['x'], p['y']) for p in port_locations(ports)}
-        assert locs == {"P": (0, 1), "N": (2, 1)}
-
-    def test_opamp_exact(self):
-        """Op-amp: 2 left, 1 right. Perimeter (1,3).
-        Left spread_ports(2,3)=[1,3] → (0,1) and (0,3).
-        Right spread_ports(1,3)=[2] → (2,2)."""
-        ports = [
-            {"name": "in+", "side": "left", "type": "electric"},
-            {"name": "in-", "side": "left", "type": "electric"},
-            {"name": "out", "side": "right", "type": "electric"},
-        ]
-        locs = {p['name']: (p['x'], p['y']) for p in port_locations(ports)}
-        assert locs == {"in+": (0, 1), "in-": (0, 3), "out": (2, 2)}
-
-    def test_four_side_exact(self, four_side_ports):
-        """1 port per side, perimeter (1,1).
-        Top→(1,0), Bottom→(1,2), Left→(0,1), Right→(2,1)."""
-        locs = {p['name']: (p['x'], p['y']) for p in port_locations(four_side_ports)}
-        assert locs == {"T": (1, 0), "B": (1, 2), "L": (0, 1), "R": (2, 1)}
-
-    def test_amp_top_left_aligned(self):
-        """Amp shape: top/bottom ports use sequential x (1, 2, ...) not spread."""
-        ports = [
-            {"name": "A", "side": "top", "type": "electric"},
-            {"name": "B", "side": "top", "type": "electric"},
-            {"name": "L", "side": "left", "type": "electric"},
-        ]
-        locs = port_locations(ports, shape='amp')
-        top = sorted([p for p in locs if p['side'] == 'top'], key=lambda p: p['x'])
-        assert top[0]['x'] == 1
-        assert top[1]['x'] == 2
-
-    def test_preserves_all_port_data(self):
-        """Output retains name, side, type from input and adds x, y."""
-        ports = [{"name": "in+", "side": "left", "type": "photonic"}]
-        locs = port_locations(ports)
-        assert len(locs) == 1
-        p = locs[0]
-        assert p['name'] == "in+"
-        assert p['type'] == "photonic"
-        assert 'x' in p and 'y' in p
-
-
-# ---------------------------------------------------------------------------
-# rotate — affine transform on port shapes
-# ---------------------------------------------------------------------------
-
-class TestRotate:
-    """rotate applies a 2D affine transform to port shapes.
-
-    The rotation center is at mid = size/2 - 0.5 where size is the square
-    bounding box side length.
-
-    For built-in shapes (mosfet, bjt, twoport), auto-computed size from port
-    coords matches the CLJS editor (both give 3, since bg=[1,1] → 2+max(1,1)=3
-    and max port coord is 2 → 2+1=3).
-
-    For subcircuits, the auto-computed size can be WRONG when port_locations
-    doesn't fill all sides — the missing side's edge coordinate is absent,
-    making the auto size too small. Subcircuits must pass size explicitly as
-    2 + max(width, height) from port_perimeter."""
-
-    def test_builtin_auto_size_matches_cljs(self):
-        """Built-in shapes: auto size = 3, CLJS bg=[1,1] → 2+max(1,1) = 3. Match."""
-        for shape in [mosfet_shape, bjt_shape, twoport_shape]:
-            auto = max(max(p['x'], p['y']) for p in shape) + 1
-            assert auto == 3  # matches CLJS 2 + max(1,1) = 3
-
-    def test_identity_twoport_exact(self):
-        """Identity transform: ports stay at original grid positions.
-        twoport: P(1,0), N(1,2). size=3, mid=1.0."""
-        result = rotate(twoport_shape, [1, 0, 0, 1, 0, 0], 0, 0)
-        assert result == {(1, 0): 'P', (1, 2): 'N'}
-
-    def test_identity_with_offset(self):
-        """Identity + device offset: all coords shift by (devx, devy)."""
-        result = rotate(twoport_shape, [1, 0, 0, 1, 0, 0], 10, 20)
-        assert result == {(11, 20): 'P', (11, 22): 'N'}
-
-    def test_90_degree_twoport_exact(self):
-        """90° CW rotation of vertical twoport at origin → horizontal.
-        size=3, mid=1.0.
-        P(1,0): centered(0,-1)→rot90(1,0)→grid(2,1).
-        N(1,2): centered(0,1)→rot90(-1,0)→grid(0,1)."""
-        result = rotate(twoport_shape, [0, 1, -1, 0, 0, 0], 0, 0)
-        assert result == {(2, 1): 'P', (0, 1): 'N'}
-
-    def test_180_degree_swaps_vertical(self):
-        """180° rotation: P and N swap vertical positions.
-        P(1,0): centered(0,-1)→rot180(0,1)→grid(1,2).
-        N(1,2): centered(0,1)→rot180(0,-1)→grid(1,0)."""
-        result = rotate(twoport_shape, [-1, 0, 0, -1, 0, 0], 0, 0)
-        assert result == {(1, 2): 'P', (1, 0): 'N'}
-
-    def test_mosfet_identity_exact(self):
-        """Mosfet identity at origin. size=3, mid=1.0."""
-        result = rotate(mosfet_shape, [1, 0, 0, 1, 0, 0], 0, 0)
-        assert result == {(1, 0): 'D', (0, 1): 'G', (1, 1): 'B', (1, 2): 'S'}
-
-    def test_mosfet_90_degree_exact(self):
-        """90° CW mosfet at (5,5). size=3, mid=1.0.
-        D(1,0): centered(0,-1)→rot(1,0)→grid(7,6).
-        G(0,1): centered(-1,0)→rot(0,-1)→grid(6,5).
-        B(1,1): centered(0,0)→rot(0,0)→grid(6,6).
-        S(1,2): centered(0,1)→rot(-1,0)→grid(5,6)."""
-        result = rotate(mosfet_shape, [0, 1, -1, 0, 0, 0], 5, 5)
-        assert result == {(7, 6): 'D', (6, 5): 'G', (6, 6): 'B', (5, 6): 'S'}
-
-    def test_all_ports_preserved_under_rotation(self):
-        """Transform never loses or duplicates ports."""
-        for transform in [[1,0,0,1,0,0], [0,1,-1,0,0,0], [-1,0,0,-1,0,0], [0,-1,1,0,0,0]]:
-            result = rotate(mosfet_shape, transform, 0, 0)
-            assert set(result.values()) == {'D', 'G', 'S', 'B'}
-            assert len(result) == 4  # no coordinate collisions
-
-    def test_subcircuit_needs_explicit_size(self):
-        """Subcircuit shapes from port_locations can have empty sides, causing
-        the auto-computed size to be too small. The correct size is
-        2 + max(width, height) from port_perimeter.
-
-        Example: op-amp with 2 left, 1 right, no top/bottom.
-        port_perimeter = (1, 3), correct size = 2 + 3 = 5.
-        Auto size = max(coord 3) + 1 = 4 (no port at y=4 since no bottom ports)."""
-        ports = [
-            {"name": "in+", "side": "left", "type": "electric"},
-            {"name": "in-", "side": "left", "type": "electric"},
-            {"name": "out", "side": "right", "type": "electric"},
-        ]
-        locs = port_locations(ports)
-        w, h = port_perimeter(ports)
-
-        auto_size = max(max(p['x'], p['y']) for p in locs) + 1
-        correct_size = 2 + max(w, h)
-        assert auto_size == 4
-        assert correct_size == 5
-        assert auto_size != correct_size
-
-    def test_subcircuit_90deg_with_correct_size(self):
-        """90° rotation of op-amp subcircuit with correct explicit size.
-        size=5, mid=2.0.
-        in+(0,1): centered(-2,-1)→rot(1,-2)→grid(8,5).
-        in-(0,3): centered(-2,1)→rot(-1,-2)→grid(6,5).
-        out(2,2): centered(0,0)→rot(0,0)→grid(7,7)."""
-        ports = [
-            {"name": "in+", "side": "left", "type": "electric"},
-            {"name": "in-", "side": "left", "type": "electric"},
-            {"name": "out", "side": "right", "type": "electric"},
-        ]
-        locs = port_locations(ports)
-        w, h = port_perimeter(ports)
-        result = rotate(locs, [0, 1, -1, 0, 0, 0], 5, 5, size=2 + max(w, h))
-        assert result == {(8, 5): 'in+', (6, 5): 'in-', (7, 7): 'out'}
-
-    def test_subcircuit_auto_size_gives_wrong_rotation(self):
-        """Without explicit size, rotated subcircuit ports are at wrong positions."""
-        ports = [
-            {"name": "in+", "side": "left", "type": "electric"},
-            {"name": "in-", "side": "left", "type": "electric"},
-            {"name": "out", "side": "right", "type": "electric"},
-        ]
-        locs = port_locations(ports)
-        w, h = port_perimeter(ports)
-        rot90 = [0, 1, -1, 0, 0, 0]
-
-        r_auto = rotate(locs, rot90, 5, 5)
-        r_correct = rotate(locs, rot90, 5, 5, size=2 + max(w, h))
-        assert r_auto != r_correct  # auto gives wrong positions
+        assert default_port_order([]) == []
 
 
 # ---------------------------------------------------------------------------
@@ -696,3 +320,98 @@ class TestEvalParams:
             {"name": "nmos_3p3", "width": "10u"}
         )
         assert result == {"model": "nmos_3p3", "w": "{10u * 1e-6}"}
+
+
+# ---------------------------------------------------------------------------
+# populate_from_nyancad — reads :nets off each device
+# ---------------------------------------------------------------------------
+
+class TestPopulateFromNyancad:
+    """populate_from_nyancad reads pre-annotated `:nets` from each device doc
+    and emits SPICE with those net names — no flood-fill, no geometry."""
+
+    def _schem(self, devices):
+        """Minimal full schem dict with a single top-level schematic."""
+        return {"top": devices, "models": {}}
+
+    def test_emits_nets_directly(self):
+        """Resistor with :nets {'P': 'vdd', 'N': 'gnd'} produces
+        a SPICE line referencing 'vdd' and 'gnd'."""
+        schem = self._schem({
+            "top:R1": {
+                "_id": "top:R1",
+                "type": "resistor",
+                "x": 1, "y": 1,
+                "transform": [1, 0, 0, 1, 0, 0],
+                "name": "R1",
+                "nets": {"P": "vdd", "N": "gnd"},
+                "props": {"resistance": "1k"},
+            }
+        })
+        spice = str(NyanCircuit("top", schem))
+        assert "vdd" in spice
+        assert "gnd" in spice
+        assert "R1" in spice.replace(":", "_")
+
+    def test_skips_devices_without_nets(self):
+        """A device without :nets is treated as disconnected — no SPICE element
+        is emitted for it. Legacy data degrades gracefully."""
+        schem = self._schem({
+            "top:R_disconnected": {
+                "_id": "top:R_disconnected",
+                "type": "resistor",
+                "x": 1, "y": 1,
+                "transform": [1, 0, 0, 1, 0, 0],
+                "name": "Rd",
+                "props": {"resistance": "1k"},
+                # no "nets" key
+            }
+        })
+        spice = str(NyanCircuit("top", schem))
+        assert "Rd" not in spice
+
+    def test_skips_structural_types(self):
+        """Wires, text, and port docs never produce SPICE elements even if
+        they accidentally carry a :nets field."""
+        schem = self._schem({
+            "top:W1": {
+                "_id": "top:W1", "type": "wire",
+                "x": 0, "y": 0, "rx": 1, "ry": 0, "name": "W1",
+            },
+            "top:T1": {
+                "_id": "top:T1", "type": "text",
+                "x": 0, "y": 0, "transform": [1, 0, 0, 1, 0, 0], "name": "T1",
+            },
+            "top:P1": {
+                "_id": "top:P1", "type": "port",
+                "x": 0, "y": 0, "transform": [1, 0, 0, 1, 0, 0], "name": "inp",
+            },
+        })
+        # Should complete without error and emit no element lines.
+        spice = str(NyanCircuit("top", schem))
+        assert "W1" not in spice
+        assert "T1" not in spice
+
+    def test_distinct_nets_for_distinct_devices(self):
+        """Two resistors with different :nets produce two independent
+        SPICE elements referencing the declared nets."""
+        schem = self._schem({
+            "top:R1": {
+                "_id": "top:R1", "type": "resistor",
+                "x": 1, "y": 1, "transform": [1, 0, 0, 1, 0, 0], "name": "R1",
+                "nets": {"P": "a", "N": "b"},
+                "props": {"resistance": "1k"},
+            },
+            "top:R2": {
+                "_id": "top:R2", "type": "resistor",
+                "x": 5, "y": 5, "transform": [1, 0, 0, 1, 0, 0], "name": "R2",
+                "nets": {"P": "b", "N": "c"},
+                "props": {"resistance": "2k"},
+            },
+        })
+        spice = str(NyanCircuit("top", schem))
+        # Both devices present, all three nets referenced.
+        assert "R1" in spice.replace(":", "_")
+        assert "R2" in spice.replace(":", "_")
+        for net in ("a", "b", "c"):
+            assert net in spice

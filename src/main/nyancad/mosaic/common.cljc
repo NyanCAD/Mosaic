@@ -259,14 +259,16 @@
 (s/def ::type (clojure.set/union device-types schematic-only-types))
 
 (s/def ::variant #{"hv" "vh" "d"})
+(s/def ::nets (s/map-of string? string?))
+(s/def ::net string?)
 
 (defmulti device-spec :type)
 (defmethod device-spec "wire" [_]
   (s/keys :req-un [::rx ::ry ::type ::x ::y]
-          :opt-un [::variant]))
+          :opt-un [::variant ::net]))
 (defmethod device-spec :default [_]
   (s/keys :req-un [::type ::transform ::x ::y]
-          :opt-un [::model]))
+          :opt-un [::model ::nets]))
 (s/def ::device (s/multi-spec device-spec ::type))
 (s/def ::schematic (s/map-of string? ::device))
 
