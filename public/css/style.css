@@ -1104,7 +1104,11 @@ rect.select {
     cursor: url(icons/eraser.svg) 6 14, crosshair;
 }
 
-/* Light cursors for dark mode — auto (OS) and forced */
+/* VS Code theme: propagate to color-scheme so light-dark() responds */
+.vscode-dark { color-scheme: dark; }
+.vscode-light { color-scheme: light; }
+
+/* Light cursors for dark mode — auto (OS), manual toggle, and VS Code */
 @media (prefers-color-scheme: dark) {
     .mosaic-canvas.pan { cursor: url(icons/arrows-move-light.svg) 6 0, grab; }
     .mosaic-canvas.wire { cursor: url(icons/pencil-light.svg) 0 16, crosshair; }
@@ -1112,11 +1116,16 @@ rect.select {
     .mosaic-canvas.eraser .wire:hover,
     .mosaic-canvas.eraser .device { cursor: url(icons/eraser-light.svg) 6 14, crosshair; }
 }
-.dark-cursors .mosaic-canvas.pan { cursor: url(icons/arrows-move-light.svg) 6 0, grab; }
-.dark-cursors .mosaic-canvas.wire { cursor: url(icons/pencil-light.svg) 0 16, crosshair; }
-.dark-cursors .mosaic-canvas.probe { cursor: url(icons/search-light.svg) 5 5, crosshair; }
+.dark-cursors .mosaic-canvas.pan,
+.vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.pan { cursor: url(icons/arrows-move-light.svg) 6 0, grab; }
+.dark-cursors .mosaic-canvas.wire,
+.vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.wire { cursor: url(icons/pencil-light.svg) 0 16, crosshair; }
+.dark-cursors .mosaic-canvas.probe,
+.vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.probe { cursor: url(icons/search-light.svg) 5 5, crosshair; }
 .dark-cursors .mosaic-canvas.eraser .wire:hover,
-.dark-cursors .mosaic-canvas.eraser .device { cursor: url(icons/eraser-light.svg) 6 14, crosshair; }
+.dark-cursors .mosaic-canvas.eraser .device,
+.vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.eraser .wire:hover,
+.vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.eraser .device { cursor: url(icons/eraser-light.svg) 6 14, crosshair; }
 
 
 line.grid {
