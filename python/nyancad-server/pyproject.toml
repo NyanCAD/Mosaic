@@ -33,6 +33,9 @@ dependencies = [
     "pyjwt[crypto]>=2.10.1",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
 [project.urls]
 Homepage = "https://github.com/NyanCAD/Mosaic"
 Repository = "https://github.com/NyanCAD/Mosaic"
@@ -46,6 +49,9 @@ include = ["nyancad_server*"]
 
 [tool.setuptools.package-data]
 nyancad_server = ["public/**/*", "notebook.py", "notebook_file.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.bumpversion]
 current_version = "0.16.1"

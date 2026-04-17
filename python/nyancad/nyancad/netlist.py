@@ -7,6 +7,7 @@ This module communicates with CouchDB to fetch schematics, and generate SPICE ne
 """
 
 import math
+import re
 from collections import deque, namedtuple
 from InSpice.Spice.Netlist import Circuit, SubCircuit
 from InSpice.Spice.Parser.HighLevelParser import SpiceSource
@@ -106,10 +107,11 @@ twoport_shape = list(shape_ports([
 ]))
 
 
-def rotate(shape, transform, devx, devy):
+def rotate(shape, transform, devx, devy, size=None):
     a, b, c, d, e, f = transform
-    width = max(max(p['x'], p['y']) for p in shape)+1
-    mid = width/2-0.5
+    if size is None:
+        size = max(max(p['x'], p['y']) for p in shape)+1
+    mid = size/2-0.5
     res = {}
     for port in shape:
         x = port['x']-mid
@@ -217,7 +219,9 @@ def getports(doc, models):
         if model_id and model_id in models:
             model = models[model_id]
             shape = 'amp' if device_type == 'amp' else None
-            return rotate(port_locations(model['ports'], shape), tr, x, y)
+            w, h = port_perimeter(model['ports'], shape)
+            size = 2 + max(w, h)
+            return rotate(port_locations(model['ports'], shape), tr, x, y, size=size)
         return {}
 
 
@@ -330,40 +334,40 @@ def _select_corner(sections, corners):
     return sections[0]
 
 
+_IDENTIFIER_RE = re.compile(r'\b[a-zA-Z_]\w*')
+
+
 def _eval_params(entry_params, device_props):
-    """Evaluate model entry params expressions against device properties.
+    """Substitute device props into SPICE param expressions.
 
-    When a model entry has a params mapping, it defines the complete set of
-    SPICE parameters. Each value is an expression evaluated with device props
-    as variables (e.g., "width * 1e-6").
+    - Bare identifier ("rename"): pass the raw prop value through unchanged.
+      Preserves type (string model names stay strings, numbers stay numbers)
+      and avoids wrapping non-numeric values in braces (which SPICE would try
+      to evaluate as an expression).
+    - Missing rename target: skip the param so SPICE uses its model default.
+    - Arithmetic expression: substitute identifiers, wrap in braces, and let
+      SPICE evaluate — this preserves SPICE suffix notation (10u, 1k) in
+      prop values so "width * 1e-6" with width="10u" becomes "{10u * 1e-6}".
 
-    Args:
-        entry_params: dict mapping model param names to expressions
-        device_props: dict of device property values
-
-    Returns:
-        dict of evaluated model parameters, or device_props if no mapping
+    Identifiers not in device_props pass through untouched (e.g. SPICE math
+    functions like sqrt, or model-level parameters).
     """
     if not entry_params:
         return device_props
-    # Convert string prop values to numbers where possible for arithmetic
-    locals_dict = {}
-    for k, v in device_props.items():
-        if isinstance(v, str):
-            try:
-                locals_dict[k] = float(v)
-            except ValueError:
-                locals_dict[k] = v
-        else:
-            locals_dict[k] = v
     result = {}
     for param_name, expr in entry_params.items():
-        try:
-            result[param_name] = eval(expr, {"__builtins__": {}}, locals_dict)
-        except NameError:
-            pass  # Variable not set — let the SPICE model use its own default
-        except Exception:
-            result[param_name] = expr
+        stripped = expr.strip()
+        if stripped.isidentifier():
+            # Rename: passthrough if the prop exists, otherwise skip
+            if stripped in device_props:
+                result[param_name] = device_props[stripped]
+            continue
+        # Arithmetic expression: substitute and wrap for SPICE evaluation
+        substituted = _IDENTIFIER_RE.sub(
+            lambda m: str(device_props[m.group(0)]) if m.group(0) in device_props else m.group(0),
+            expr
+        )
+        result[param_name] = "{" + substituted + "}"
     return result
 
 

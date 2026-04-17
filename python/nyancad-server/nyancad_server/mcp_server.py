@@ -37,8 +37,14 @@ class SchematicResponse(BaseModel):
 
 
 def str_to_hex(s: str) -> str:
-    """Convert string to hex encoding (character codes)."""
-    return ''.join(format(ord(c), 'x') for c in s)
+    """Encode string as UTF-8 bytes in hex, matching CouchDB's userdb- naming.
+
+    CouchDB's couch_peruser uses hex-encoded UTF-8 bytes (zero-padded per byte)
+    for user database names: userdb-{hex(utf8(username))}. For ASCII usernames
+    this is identical to per-character code-point hex, but differs for
+    non-ASCII characters.
+    """
+    return s.encode('utf-8').hex()
 
 
 def normalize_to_bare_id(id_str: str) -> str:

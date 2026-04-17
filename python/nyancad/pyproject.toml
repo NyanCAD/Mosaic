@@ -30,6 +30,9 @@ dependencies = [
     "holoviews",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
 [project.urls]
 Homepage = "https://github.com/NyanCAD/Mosaic"
 Repository = "https://github.com/NyanCAD/Mosaic"
@@ -37,6 +40,9 @@ Repository = "https://github.com/NyanCAD/Mosaic"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["nyancad*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.bumpversion]
 current_version = "0.12.1"
