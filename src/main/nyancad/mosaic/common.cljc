@@ -190,43 +190,31 @@
 (defn point [x y] (.fromPoint js/DOMPointReadOnly (clj->js {:x x :y y})))
 
 ;; Top-level values and extensions that touch browser APIs at load time.
-;; :web and :vscode both run in a DOM context and share identical bodies;
-;; :test runs under Node and gets inert stubs. `do`-wrapping is required
-;; because `#?@` splicing doesn't work at file top level.
-#?(:web
-   (do
-     (def I (js/DOMMatrixReadOnly.))
-     (def IV (transform-vec I))
-     (def url-params (js/URLSearchParams. js/window.location.search))
-     (def current-workspace (.get url-params "ws"))
-     (extend-type js/DOMMatrixReadOnly
-       IPrintWithWriter
-       (-pr-writer [obj writer _opts]
-         (write-all writer
-                    "#transform ["
-                    (.-a obj) " " (.-b obj) " " (.-c obj) " "
-                    (.-d obj) " " (.-e obj) " " (.-f obj)
-                    "]"))))
-   :vscode
-   (do
-     (def I (js/DOMMatrixReadOnly.))
-     (def IV (transform-vec I))
-     (def url-params (js/URLSearchParams. js/window.location.search))
-     (def current-workspace (.get url-params "ws"))
-     (extend-type js/DOMMatrixReadOnly
-       IPrintWithWriter
-       (-pr-writer [obj writer _opts]
-         (write-all writer
-                    "#transform ["
-                    (.-a obj) " " (.-b obj) " " (.-c obj) " "
-                    (.-d obj) " " (.-e obj) " " (.-f obj)
-                    "]"))))
-   :test
+;; Both :web and :vscode run in a DOM context, so we fall through to the
+;; implicit :cljs branch for them. :test runs under Node and gets inert
+;; stubs. `do`-wrapping is required because `#?@` splicing doesn't work at
+;; file top level. :test must come before :cljs because both features are
+;; active in the test build and first match wins.
+#?(:test
    (do
      (def I nil)
      (def IV [1 0 0 1 0 0])
      (def url-params nil)
-     (def current-workspace nil)))
+     (def current-workspace nil))
+   :cljs
+   (do
+     (def I (js/DOMMatrixReadOnly.))
+     (def IV (transform-vec I))
+     (def url-params (js/URLSearchParams. js/window.location.search))
+     (def current-workspace (.get url-params "ws"))
+     (extend-type js/DOMMatrixReadOnly
+       IPrintWithWriter
+       (-pr-writer [obj writer _opts]
+         (write-all writer
+                    "#transform ["
+                    (.-a obj) " " (.-b obj) " " (.-c obj) " "
+                    (.-d obj) " " (.-e obj) " " (.-f obj)
+                    "]")))))
 
 (defn viewbox-coord [e]
   (let [^js el (js/document.querySelector ".mosaic-canvas")
