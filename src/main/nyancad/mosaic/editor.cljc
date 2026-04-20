@@ -77,11 +77,11 @@
 (defonce undotree (cm/newundotree))
 
 (declare build-wire-split-index build-point-index split-wire point-index wire-type-index
-         build-wire-networks build-netlist annotate-nets)
+         build-wire-networks build-netlist build-net-annotations)
 
 (defn post-action!
-  "Record undo checkpoint, split wires, and annotate :nets after a user action.
-   Returns a channel that completes when done."
+  "Record undo checkpoint, split wires, and annotate :nets/:net after a user
+   action. Returns a channel that completes when done."
   []
   (go
     (<! (done? schematic))
@@ -94,8 +94,10 @@
     (let [sch      @schematic
           pt-idx   (build-point-index sch)
           networks (build-wire-networks sch pt-idx)
-          nets     (build-netlist networks)]
-      (swap! schematic annotate-nets nets))))
+          nets     (build-netlist networks)
+          updates  (build-net-annotations sch nets)]
+      (when (seq updates)
+        (swap! schematic (partial merge-with merge) updates)))))
 
 (defn restore [state]
   (let [;; Ensure keys are strings (schematic uses string device IDs)
@@ -1308,28 +1310,30 @@
         wires   (into {} (for [[wid ci] wire->component] [wid (nth names ci)]))]
     {:devices devices :wires wires}))
 
-(defn annotate-nets
-  "Stamp :nets on attributable devices and :net on wires. Leaves docs whose
-   annotation already matches untouched — pouch-swap! diffs by equality, no
-   _rev churn on no-op."
-  [docs {:keys [devices wires]}]
-  (letfn [(stamp-wire [acc id dev]
+(defn build-net-annotations
+  "Return {doc-id {:nets …}|{:net …}} with only the docs whose annotation
+   needs to change. Keys of this map drive which docs the pouch/JsAtom swap
+   will touch, so unchanged docs are deliberately omitted."
+  [sch {:keys [devices wires]}]
+  (letfn [(wire-update [id dev]
             (let [desired (get wires id)]
-              (if (= (:net dev) desired)
-                acc
-                (assoc-in acc [id :net] desired))))
-          (stamp-device [acc id dev]
+              (when (not= (:net dev) desired)
+                {:net desired})))
+          (device-update [id dev]
             (let [desired (get devices id {})
                   current (or (:nets dev) {})]
-              (if (= current desired)
-                acc
-                (assoc-in acc [id :nets] desired))))
-          (stamp [acc id dev]
+              (when (not= current desired)
+                {:nets desired})))
+          (entry [id dev]
             (cond
-              (= "wire" (:type dev)) (stamp-wire acc id dev)
-              (attributable? dev)    (stamp-device acc id dev)
-              :else                  acc))]
-    (reduce-kv stamp docs docs)))
+              (= "wire" (:type dev)) (wire-update id dev)
+              (attributable? dev)    (device-update id dev)))]
+    (reduce-kv
+     (fn [acc id dev]
+       (if-let [u (entry id dev)]
+         (assoc acc id u)
+         acc))
+     {} sch)))
 
 ;; --- wire-split-index: walk point-index ----------------------------------
 
