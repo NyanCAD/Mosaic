@@ -6,6 +6,7 @@
   (:require [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request!]]
             [nyancad.mosaic.common :as cm]
             [reagent.core :as r]
+            [reagent.dom.client :as rdc]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [cljs.core.async :refer [go <!]]))
@@ -30,6 +31,9 @@
 (defonce local (r/atom {}))
 
 (defonce syncactive (r/atom false))
+
+;; React root for the editor canvas.
+(defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-editor")))
 
 ;; --- Symbol URL resolution ---
 
@@ -78,16 +82,6 @@
                          :filename "models.nyanlib"})}
     [cm/library]]])
 
-(defn- extract-gds-name
-  "Extract bare model ID from a dropped text/plain or URI path.
-   Matches (.*).gds on plain text first, else takes basename of a path."
-  [plain uri-path]
-  (or (when-let [[_ name] (re-matches #"(.*)\.gds$" (str plain))]
-        name)
-      (when-let [filename (last (str/split (str uri-path) #"[/\\]"))]
-        (when-let [[_ name] (re-matches #"(.*)\.gds$" filename)]
-          name))))
-
 (defn- make-name [device-type]
   (let [prefix (cm/initial device-type)]
     (first (remove #(contains? @schematic (str group ":" %))
@@ -97,25 +91,18 @@
   (.preventDefault e)
   (.stopPropagation e)
   (let [dt (.-dataTransfer e)
-        uri-list (.getData dt "text/uri-list")
-        plain (.getData dt "text/plain")
-        uri-path (when (seq uri-list)
-                   (let [uri (str/trim (first (str/split-lines uri-list)))]
-                     (try
-                       (js/decodeURIComponent (.-pathname (js/URL. uri)))
-                       (catch :default _ nil))))
-        model-id (extract-gds-name plain uri-path)]
-    (when model-id
-      (let [model-key (cm/model-key model-id)
+        fqn (.getData dt "application/gfp")]
+    (when (seq fqn)
+      (let [model-key (cm/model-key fqn)
             model-def (get @modeldb model-key)]
         (if-not model-def
-          (js/console.warn "Dropped unknown model (no schematic?):" model-id)
+          (js/console.warn "Dropped unknown model (no schematic?):" fqn)
           (let [[x y] (cm/viewbox-coord e)
                 raw-type (or (:type model-def) "ckt")
                 device-type (if (contains? cm/device-types raw-type) raw-type "ckt")
                 name (make-name device-type)
                 dev {:type device-type
-                     :model model-id
+                     :model fqn
                      :name name
                      :transform cm/IV
                      :x (Math/round x)

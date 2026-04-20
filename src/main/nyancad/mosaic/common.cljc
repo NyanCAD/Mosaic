@@ -8,8 +8,9 @@
             [clojure.spec.alpha :as s]
             reagent.ratom
             [nyancad.hipflask.util :refer [json->clj]]
-            #?@(:vscode [nyancad.mosaic.jsatom]
-                :cljs [nyancad.hipflask])
+            #?@(:web [nyancad.hipflask]
+                :vscode [nyancad.mosaic.jsatom]
+                :test [])
             clojure.edn
             clojure.set
             clojure.string
@@ -18,9 +19,12 @@
             goog.functions
             [shadow.resource :as rc]))
 
-; allow taking a cursor of a pouch/json atom
-#?(:vscode (extend-type ^js nyancad.mosaic.jsatom/JsAtom reagent.ratom/IReactiveAtom)
-   :cljs (extend-type ^js nyancad.hipflask/PAtom reagent.ratom/IReactiveAtom))
+;; Reactive-atom protocol extension. The underlying atom type depends on the
+;; platform: PAtom (PouchDB-backed) for the web app, JsAtom (jsonc-backed)
+;; for the VSCode webview. The :test build runs under Node without either.
+#?(:web (extend-type ^js nyancad.hipflask/PAtom reagent.ratom/IReactiveAtom)
+   :vscode (extend-type ^js nyancad.mosaic.jsatom/JsAtom reagent.ratom/IReactiveAtom)
+   :test nil)
 
 (def grid-size 50)
 (def debounce #(goog.functions/debounce % 1000))
@@ -184,8 +188,33 @@
 (defn transform-vec [obj]
   [(.-a obj) (.-b obj) (.-c obj) (.-d obj) (.-e obj) (.-f obj)])
 (defn point [x y] (.fromPoint js/DOMPointReadOnly (clj->js {:x x :y y})))
-(def I (js/DOMMatrixReadOnly.))
-(def IV (transform-vec I))
+
+;; Top-level values and extensions that touch browser APIs at load time.
+;; Both :web and :vscode run in a DOM context, so we fall through to the
+;; implicit :cljs branch for them. :test runs under Node and gets inert
+;; stubs. `do`-wrapping is required because `#?@` splicing doesn't work at
+;; file top level. :test must come before :cljs because both features are
+;; active in the test build and first match wins.
+#?(:test
+   (do
+     (def I nil)
+     (def IV [1 0 0 1 0 0])
+     (def url-params nil)
+     (def current-workspace nil))
+   :cljs
+   (do
+     (def I (js/DOMMatrixReadOnly.))
+     (def IV (transform-vec I))
+     (def url-params (js/URLSearchParams. js/window.location.search))
+     (def current-workspace (.get url-params "ws"))
+     (extend-type js/DOMMatrixReadOnly
+       IPrintWithWriter
+       (-pr-writer [obj writer _opts]
+         (write-all writer
+                    "#transform ["
+                    (.-a obj) " " (.-b obj) " " (.-c obj) " "
+                    (.-d obj) " " (.-e obj) " " (.-f obj)
+                    "]")))))
 
 (defn viewbox-coord [e]
   (let [^js el (js/document.querySelector ".mosaic-canvas")
@@ -225,18 +254,6 @@
       (if (< x 0) :right :left)
       (if (< y 0) :bottom :top))))
 
-(extend-type js/DOMMatrixReadOnly
-  IPrintWithWriter
-  (-pr-writer [obj writer _opts]
-    (write-all writer
-               "#transform ["
-               (.-a obj) " "
-               (.-b obj) " "
-               (.-c obj) " "
-               (.-d obj) " "
-               (.-e obj) " "
-               (.-f obj)
-               "]")))
 
 (s/def ::x number?)
 (s/def ::y number?)
@@ -259,14 +276,18 @@
 (s/def ::type (clojure.set/union device-types schematic-only-types))
 
 (s/def ::variant #{"hv" "vh" "d"})
+;; Port-name keys are keywords in the in-memory representation (round-trip
+;; through json->clj keywordizes object keys); net-name values are strings.
+(s/def ::nets (s/map-of keyword? string?))
+(s/def ::net string?)
 
 (defmulti device-spec :type)
 (defmethod device-spec "wire" [_]
   (s/keys :req-un [::rx ::ry ::type ::x ::y]
-          :opt-un [::variant]))
+          :opt-un [::variant ::net]))
 (defmethod device-spec :default [_]
   (s/keys :req-un [::type ::transform ::x ::y]
-          :opt-un [::model]))
+          :opt-un [::model ::nets]))
 (s/def ::device (s/multi-spec device-spec ::type))
 (s/def ::schematic (s/map-of string? ::device))
 
@@ -770,8 +791,6 @@
        (apply str)))
 
 ;; Workspace support - read from URL param
-(def url-params (js/URLSearchParams. js/window.location.search))
-(def current-workspace (.get url-params "ws"))  ; nil if not set (uses personal library)
 
 ;; User's workspace list (fetched on demand)
 (defonce user-workspaces (r/atom []))

@@ -41,9 +41,38 @@ jobs:
       - name: Run nyancad-server tests
         run: pytest python/nyancad-server/tests -v
 
+  # Fast CLJS unit tests — Node-only, no browser or CouchDB. Covers pure
+  # functions in common.cljc / editor.cljc / couchdb.cljs via the :test
+  # shadow-cljs build. Runs `cljs.test` under :node-test with autorun.
+  test-cljs-unit:
+    name: CLJS unit tests 🧪
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Install npm dependencies
+        # `npm install` rather than `npm ci` — package-lock.json is gitignored.
+        run: npm install
+
+      - name: Compile CLJS test build
+        run: npx shadow-cljs compile test
+
+      - name: Run CLJS tests
+        run: node out/node-tests.js
+
   build:
     name: Build distribution 📦
-    needs: test-python-unit
     runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
@@ -127,8 +156,7 @@ jobs:
   publish-nyancad-to-pypi:
     name: Publish nyancad 🐍 distribution 📦 to PyPI
     if: startsWith(github.ref, 'refs/tags/')
-    needs:
-    - build
+    needs: [test-python-unit, test-cljs-unit, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download nyancad distributions
@@ -144,8 +172,7 @@ jobs:
   publish-nyancad-server-to-pypi:
     name: Publish nyancad-server 🐍 distribution 📦 to PyPI
     if: startsWith(github.ref, 'refs/tags/')
-    needs:
-    - build
+    needs: [test-python-unit, test-cljs-unit, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download nyancad-server distributions
@@ -161,7 +188,7 @@ jobs:
   deploy:
     name: Deploy to server 🚀
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [test-python-unit, test-cljs-unit, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download nyancad distributions
@@ -198,7 +225,7 @@ jobs:
   publish-vscode-extension:
     name: Publish VS Code Extension 📦
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [test-python-unit, test-cljs-unit, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download VSCode extension
@@ -227,7 +254,7 @@ jobs:
   create-github-release:
     name: Create GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [test-python-unit, test-cljs-unit, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write

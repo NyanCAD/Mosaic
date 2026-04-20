@@ -15,7 +15,7 @@ class DeviceBase(BaseModel):
     """Base class for all schematic devices.
 
     Defines common fields shared by wires and components: position, name, CouchDB metadata,
-    and computed port locations.
+    and editor-computed net assignments.
     """
     model_config = ConfigDict(populate_by_name=True)
 
@@ -40,10 +40,13 @@ class DeviceBase(BaseModel):
     y: float = Field(description="Y grid coordinate")
     name: str = Field(description="Human-readable label (R1, C2, W1, etc). NOT the same as _id.")
 
-    # Computed data (read-only)
-    ports: Optional[Dict[str, Optional[str]]] = Field(
+    # Net assignments (read-only)
+    nets: Optional[Dict[str, str]] = Field(
         None,
-        description="Port locations as '(x,y)' → port_name. Computed from geometry.",
+        description=(
+            "Net assignments for this device: port_name → net_name. "
+            "Computed and persisted by the editor. Read-only from Python."
+        ),
         json_schema_extra={"readOnly": True}
     )
 
@@ -69,6 +72,14 @@ class Wire(DeviceBase):
     device_type: Literal["wire"] = Field(alias="type")
     rx: float = Field(description="Relative X delta (end_x - start_x)")
     ry: float = Field(description="Relative Y delta (end_y - start_y)")
+    net: Optional[str] = Field(
+        None,
+        description=(
+            "Net name this wire carries. Computed and persisted by the editor. "
+            "Read-only from Python."
+        ),
+        json_schema_extra={"readOnly": True}
+    )
 
 
 class Component(DeviceBase):

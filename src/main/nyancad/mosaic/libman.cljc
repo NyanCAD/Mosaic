@@ -6,16 +6,12 @@
   (:require clojure.string
             [reagent.core :as r]
             [reagent.dom.client :as rdc]
-            #?@(:vscode [[nyancad.mosaic.libman.platform-vscode
-                           :refer [modeldb syncactive
-                                   preview-url get-preview search-remote-models
-                                   remote-models-section
-                                   edit-url import-ports workspace-selector init-extra!]]]
-                :cljs    [[nyancad.mosaic.libman.platform-web
-                           :refer [modeldb syncactive
-                                   preview-url get-preview search-remote-models
-                                   remote-models-section
-                                   edit-url import-ports workspace-selector init-extra!]]])
+            [#?(:web    nyancad.mosaic.libman.platform-web
+                :vscode nyancad.mosaic.libman.platform-vscode)
+             :refer [modeldb syncactive
+                     preview-url get-preview search-remote-models
+                     remote-models-section
+                     edit-url import-ports workspace-selector init-extra!]]
             [nyancad.mosaic.common :as cm]))
 
 ;; --- Ephemeral UI state ---

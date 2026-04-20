@@ -6,9 +6,8 @@ This module communicates with CouchDB to fetch schematics, and generate SPICE ne
 
 """
 
-import math
 import re
-from collections import deque, namedtuple
+from collections import namedtuple
 from InSpice.Spice.Netlist import Circuit, SubCircuit
 from InSpice.Spice.Parser.HighLevelParser import SpiceSource
 from InSpice.Spice.Parser.Translator import Builder
@@ -80,239 +79,15 @@ class SchemId(namedtuple("SchemId", ["schem", "device"])):
         return cls(schem, dev)
 
 
-def shape_ports(shape, port_type='electric'):
-    for y, s in enumerate(shape):
-        for x, c in enumerate(s):
-            if c != ' ':
-                yield {'name': c, 'x': x, 'y': y, 'type': port_type}
+def default_port_order(ports):
+    """Canonical port order for subcircuit calls: sorted by name.
 
-
-mosfet_shape = list(shape_ports([
-    " D ",
-    "GB ",
-    " S ",
-]))
-
-bjt_shape = list(shape_ports([
-    " C ",
-    "B  ",
-    " E ",
-]))
-
-
-twoport_shape = list(shape_ports([
-    " P ",
-    "   ",
-    " N ",
-]))
-
-
-def rotate(shape, transform, devx, devy, size=None):
-    a, b, c, d, e, f = transform
-    if size is None:
-        size = max(max(p['x'], p['y']) for p in shape)+1
-    mid = size/2-0.5
-    res = {}
-    for port in shape:
-        x = port['x']-mid
-        y = port['y']-mid
-        nx = a*x+c*y+e
-        ny = b*x+d*y+f
-        res[round(devx+nx+mid), round(devy+ny+mid)] = port['name']
-    return res
-
-
-def port_perimeter(ports, shape=None):
-    """Calculate device perimeter [width, height] based on ports.
-
-    Ports are [{name, side, type}].
-    Height is determined by left/right port counts (vertical sides).
-    Width is determined by top/bottom port counts (horizontal sides).
-    Optional shape parameter: 'amp' constrains aspect ratio.
+    Used as the default argument order when a model entry doesn't declare
+    ``port-order`` explicitly. Sorting by name is stable regardless of how
+    the user arranges ports around the device perimeter in the editor, and
+    applies symmetrically to both the SUBCKT definition and its X call.
     """
-    by_side = {}
-    for p in ports:
-        by_side.setdefault(p['side'], []).append(p)
-    left_n = len(by_side.get('left', []))
-    right_n = len(by_side.get('right', []))
-    top_n = len(by_side.get('top', []))
-    bottom_n = len(by_side.get('bottom', []))
-    raw_height = max(1, left_n, right_n)
-    raw_width = max(1, top_n, bottom_n)
-    # Widen to odd if parities differ on opposite sides
-    height = raw_height + 1 if (left_n % 2 != right_n % 2) and (raw_height % 2 == 0) else raw_height
-    base_width = raw_width + 1 if (top_n % 2 != bottom_n % 2) and (raw_width % 2 == 0) else raw_width
-    # For amp: ensure minimum width proportional to height
-    width = max(base_width, math.ceil(height / 2)) if shape == 'amp' else base_width
-    return width, height
-
-def spread_ports(n, size):
-    """Spread n ports in size slots. Gap in middle if n < size."""
-    if n == size:
-        return list(range(1, n + 1))
-    elif n == 0:
-        return []
-    elif n < size:
-        mid = (size + 1) // 2
-        half = n // 2
-        first_half = list(range(1, half + 1))
-        second_half = list(range(size - half + 1, size + 1))
-        if n % 2 == 1:  # odd
-            return first_half + [mid] + second_half
-        else:
-            return first_half + second_half
-    else:
-        return list(range(1, n + 1))
-
-def port_locations(ports, shape=None):
-    """Calculate port positions from [{name, side, type}].
-
-    Returns list of port dicts with x, y added.
-    Optional shape parameter: 'amp' left-aligns top/bottom ports.
-    """
-    width, height = port_perimeter(ports, shape)
-    by_side = {}
-    for p in ports:
-        by_side.setdefault(p['side'], []).append(p)
-    top = by_side.get('top', [])
-    bottom = by_side.get('bottom', [])
-    left = by_side.get('left', [])
-    right = by_side.get('right', [])
-    left_ys = spread_ports(len(left), height)
-    right_ys = spread_ports(len(right), height)
-    # For amp: left-align top/bottom (triangle narrows to right)
-    if shape == 'amp':
-        top_xs = list(range(1, len(top) + 1))
-        bottom_xs = list(range(1, len(bottom) + 1))
-    else:
-        top_xs = spread_ports(len(top), width)
-        bottom_xs = spread_ports(len(bottom), width)
-    top_locs = [{**p, 'x': top_xs[i], 'y': 0} for i, p in enumerate(top)]
-    bottom_locs = [{**p, 'x': bottom_xs[i], 'y': height + 1} for i, p in enumerate(bottom)]
-    left_locs = [{**p, 'x': 0, 'y': left_ys[i]} for i, p in enumerate(left)]
-    right_locs = [{**p, 'x': width + 1, 'y': right_ys[i]} for i, p in enumerate(right)]
-    return top_locs + bottom_locs + left_locs + right_locs
-
-def getports(doc, models):
-    device_type = doc['type']
-    x = doc['x']
-    y = doc['y']
-    tr = doc.get('transform', [1, 0, 0, 1, 0, 0])
-    if device_type == 'wire':
-        rx = doc.get('rx', 0)
-        ry = doc.get('ry', 0)
-        return {(x, y): None,
-                (x+rx, y+ry): None}
-    elif device_type == 'text':
-        return {}
-    elif device_type == 'port':
-        return {(x, y): doc['name']}
-    elif device_type in {'nmos', 'pmos'}:
-        return rotate(mosfet_shape, tr, x, y)
-    elif device_type in {'npn', 'pnp'}:
-        return rotate(bjt_shape, tr, x, y)
-    elif device_type in {'resistor', 'capacitor', 'inductor', 'vsource', 'isource', 'diode'}:
-        return rotate(twoport_shape, tr, x, y)
-    else:
-        # For user-defined circuit models, use the model field
-        model_id = model_key(doc.get('model'))
-        if model_id and model_id in models:
-            model = models[model_id]
-            shape = 'amp' if device_type == 'amp' else None
-            w, h = port_perimeter(model['ports'], shape)
-            size = 2 + max(w, h)
-            return rotate(port_locations(model['ports'], shape), tr, x, y, size=size)
-        return {}
-
-
-def port_index(docs, models):
-    wire_index = {}
-    device_index = {}
-    for doc in docs.values():
-        device_type = doc['type']
-        for (x, y), p in getports(doc, models).items():
-            if device_type in {'wire', 'port'}:
-                wire_index.setdefault((x, y), []).append(doc)
-            else:
-                device_index.setdefault((x, y), []).append((p, doc))
-                # add a dummy net so two devices can connect directly
-                wire_index.setdefault((x, y), []).append({"type": "wire", "x": x, "y": y, "rx": 0, "ry": 0})
-    return device_index, wire_index
-
-
-def wire_net(wireid, docs, models):
-    device_index, wire_index = port_index(docs, models)
-    netname = None
-    net = deque([docs[wireid]]) # all the wires on this net
-    while net:
-        doc = net.popleft() # take a wire from the net
-        device_type = doc['type']
-        if device_type == 'wire':
-            wirename = doc.get('name')
-            if netname == None and wirename != None:
-                netname = wirename
-            for ploc in getports(doc, models).keys(): # get the wire ends
-                # if the wire connects to another wire,
-                # that we have not seen, add it to the net
-                if ploc in wire_index:
-                    net.extend(wire_index.pop(ploc))
-        elif device_type == 'port':
-            netname = doc.get('name')
-        else:
-            raise ValueError(device_type)
-    return netname
-
-def netlist(docs, models):
-    """
-    Turn a collection of documents as returned by `get_docs` into a netlist structure.
-    Returns a dictionary of device ID: {port: net}
-    Usage:
-    ```
-    async with SchematicService("http://localhost:5984/offline") as service:
-        name = "top$top"
-        seq, docs = await service.get_all_schem_docs(name)
-        print(netlist(docs[name], models))
-    ```
-    """
-    device_index, wire_index = port_index(docs, models)
-    nl = {}
-    netnum = 0
-    while wire_index:  # while there are wires left
-        loc, locwires = wire_index.popitem()  # take one
-        netname = None
-        net = deque(locwires) # all the wires on this net
-        netdevs = {} # all the devices on this net
-        while net:
-            doc = net.popleft() # take a wire from the net
-            device_type = doc['type']
-            if device_type == 'wire':
-                wirename = doc.get('name')
-                if netname == None and wirename != None:
-                    netname = wirename
-                for ploc in getports(doc, models).keys(): # get the wire ends
-                    # if the wire connects to another wire,
-                    # that we have not seen, add it to the net
-                    if ploc in wire_index:
-                        net.extend(wire_index.pop(ploc))
-                    # if the wire connect to a device, add its port to netdevs
-                    if ploc in device_index:
-                        for p, dev in device_index[ploc]:
-                            netdevs.setdefault(dev['_id'], []).append(p)
-            elif device_type == 'port':
-                netname = doc.get('name')
-            else:
-                raise ValueError(device_type)
-        if netname == None:
-            netname = f"net{netnum}"
-            netnum += 1
-        for k, v in netdevs.items():
-            nl.setdefault(netname, {}).setdefault(k, []).extend(v)
-    inl = {}
-    for net, devs in nl.items():
-        for dev, pts in devs.items():
-            for port in pts:
-                inl.setdefault(dev, {})[port] = net
-    return inl
+    return [p['name'] for p in sorted(ports, key=lambda p: p['name'])]
 
 
 def _select_corner(sections, corners):
@@ -396,12 +171,19 @@ class NyanCADMixin:
         return spice_entries[0]  # Use first as default
     
     def populate_from_nyancad(self, docs, models, corners=None, sim='NgSpice'):
-        """Populate this netlist with elements from NyanCAD docs."""
-        self.used_models = set()
-        nl = netlist(docs, models)
+        """Populate this netlist with elements from NyanCAD docs.
 
-        for dev_id, ports in nl.items():
-            dev = docs[dev_id]
+        Each device doc carries its net assignments in ``dev['nets']`` (written
+        by the ClojureScript editor). Devices without ``nets`` — disconnected,
+        or legacy data not yet re-annotated — are skipped.
+        """
+        self.used_models = set()
+        for dev_id, dev in docs.items():
+            if dev.get('type') in ('wire', 'text', 'port'):
+                continue
+            ports = dev.get('nets')
+            if not ports:
+                continue
             self._add_nyancad_element(dev_id, dev, ports, models, corners, sim)
     
     def _add_nyancad_element(self, dev_id, dev, ports, models, corners, sim):
@@ -444,7 +226,9 @@ class NyanCADMixin:
                     merged = {**defaults, **dev.get('props', {})}
                     props = _eval_params(selected_entry['params'], merged)
 
-        # Helper to get port by name
+        # Helper to get port by name. The editor annotates every port with
+        # a net — disconnected pins get their own generated netN — so the
+        # lookup is total and a plain dict access is correct.
         def p(port_name):
             return ports[port_name]
 
@@ -461,14 +245,11 @@ class NyanCADMixin:
             subcircuit_model = props.pop('model', model_name)
             element_fn = _spice_type_map.get(spice_type.upper(), self.X)
 
-            # Build positional port list from port-order or default geometry
+            # Build positional port list from port-order or default (sorted by name)
             if port_order:
                 port_list = [p(pn) for pn in port_order]
             elif model_id and model_id in models:
-                m = models[model_id]
-                shape = 'amp' if device_type == 'amp' else None
-                port_locs = port_locations(m['ports'], shape)
-                port_list = [p(c['name']) for c in port_locs]
+                port_list = [p(pn) for pn in default_port_order(models[model_id]['ports'])]
             else:
                 # Fallback for built-in types: use known default port orders
                 port_list = self._default_port_list(device_type, ports, p)
@@ -516,10 +297,7 @@ class NyanCADMixin:
 
         else:  # subcircuit
             if model_id in models:
-                m = models[model_id]
-                shape = 'amp' if device_type == 'amp' else None
-                port_locs = port_locations(m['ports'], shape)
-                port_list = [p(c['name']) for c in port_locs]
+                port_list = [p(pn) for pn in default_port_order(models[model_id]['ports'])]
                 params = props.copy()
                 model_name = params.pop('model', model_id)
                 self.X(name, model_name, *port_list, **params)
@@ -573,8 +351,7 @@ class NyanCircuit(NyanCADMixin, Circuit):
                 if model_id in schem:
                     # Create subcircuit for models with schematic implementations
                     docs = schem[model_id]
-                    shape = 'amp' if model_def.get('type') == 'amp' else None
-                    nodes = [c['name'] for c in port_locations(model_def['ports'], shape)]
+                    nodes = default_port_order(model_def['ports'])
                     # Pass model parameter definitions as subcircuit parameters (default to 0)
                     model_params = {p['name']: p.get('default', '0')
                                     for p in model_def.get('props', [])

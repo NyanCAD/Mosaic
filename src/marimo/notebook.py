@@ -337,7 +337,7 @@ async def _():
     import numpy as np
     import holoviews as hv
     from nyancad.anywidget import schematic_bridge
-    from nyancad.netlist import inspice_netlist, wire_net
+    from nyancad.netlist import inspice_netlist
     from nyancad.plot import timeplot, sweepplot, bodeplot
     from InSpice import Simulator
     return (
@@ -352,7 +352,6 @@ async def _():
         schematic_bridge,
         sweepplot,
         timeplot,
-        wire_net,
     )
 
 
@@ -372,21 +371,21 @@ async def _(inspice_netlist, reader):
 
 
 @app.cell
-def _(reader, wire_net):
-    # Resolve probed element_id to net name
+def _(reader):
+    # Resolve probed element_id to net name. The editor annotates wires with
+    # :net and port docs carry their net as :name; devices have :nets per port
+    # but no single net makes sense at the device level.
     _probed_element_id = reader.probed_element_id
     reader.probed_element_id = ""
 
+    probed_net = ""
     if _probed_element_id:
         _docs = reader.schematic_data[reader.name]
-        _models_dict = reader.schematic_data.get("models", {})
-        probed_net = wire_net(_probed_element_id, _docs, _models_dict)
-        if probed_net:
-            probed_net = probed_net.lower()
-        else:
-            probed_net = ""
-    else:
-        probed_net = ""
+        _doc = _docs.get(_probed_element_id, {})
+        if _doc.get('type') == 'wire':
+            probed_net = (_doc.get('net') or '').lower()
+        elif _doc.get('type') == 'port':
+            probed_net = (_doc.get('name') or '').lower()
     return (probed_net,)
 
 
