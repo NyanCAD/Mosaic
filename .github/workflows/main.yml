@@ -41,9 +41,38 @@ jobs:
       - name: Run nyancad-server tests
         run: pytest python/nyancad-server/tests -v
 
+  # Fast CLJS unit tests — Node-only, no browser or CouchDB. Covers pure
+  # functions in common.cljc / editor.cljc / couchdb.cljs via the :test
+  # shadow-cljs build. Runs `cljs.test` under :node-test with autorun.
+  test-cljs-unit:
+    name: CLJS unit tests 🧪
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Compile CLJS test build
+        run: npx shadow-cljs compile test
+
+      - name: Run CLJS tests
+        run: node out/node-tests.js
+
   build:
     name: Build distribution 📦
-    needs: test-python-unit
+    needs: [test-python-unit, test-cljs-unit]
     runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it

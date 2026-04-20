@@ -9,6 +9,7 @@
             reagent.ratom
             [nyancad.hipflask.util :refer [json->clj]]
             #?@(:vscode [nyancad.mosaic.jsatom]
+                :test []
                 :cljs [nyancad.hipflask])
             clojure.edn
             clojure.set
@@ -20,6 +21,7 @@
 
 ; allow taking a cursor of a pouch/json atom
 #?(:vscode (extend-type ^js nyancad.mosaic.jsatom/JsAtom reagent.ratom/IReactiveAtom)
+   :test nil
    :cljs (extend-type ^js nyancad.hipflask/PAtom reagent.ratom/IReactiveAtom))
 
 (def grid-size 50)
@@ -184,8 +186,10 @@
 (defn transform-vec [obj]
   [(.-a obj) (.-b obj) (.-c obj) (.-d obj) (.-e obj) (.-f obj)])
 (defn point [x y] (.fromPoint js/DOMPointReadOnly (clj->js {:x x :y y})))
-(def I (js/DOMMatrixReadOnly.))
-(def IV (transform-vec I))
+;; DOMMatrixReadOnly is a browser API — not present in Node, so the test
+;; build falls back to the identity vector directly.
+(def I #?(:test nil :default (js/DOMMatrixReadOnly.)))
+(def IV #?(:test [1 0 0 1 0 0] :default (transform-vec I)))
 
 (defn viewbox-coord [e]
   (let [^js el (js/document.querySelector ".mosaic-canvas")
@@ -225,18 +229,20 @@
       (if (< x 0) :right :left)
       (if (< y 0) :bottom :top))))
 
-(extend-type js/DOMMatrixReadOnly
-  IPrintWithWriter
-  (-pr-writer [obj writer _opts]
-    (write-all writer
-               "#transform ["
-               (.-a obj) " "
-               (.-b obj) " "
-               (.-c obj) " "
-               (.-d obj) " "
-               (.-e obj) " "
-               (.-f obj)
-               "]")))
+#?(:test nil
+   :default
+   (extend-type js/DOMMatrixReadOnly
+     IPrintWithWriter
+     (-pr-writer [obj writer _opts]
+       (write-all writer
+                  "#transform ["
+                  (.-a obj) " "
+                  (.-b obj) " "
+                  (.-c obj) " "
+                  (.-d obj) " "
+                  (.-e obj) " "
+                  (.-f obj)
+                  "]"))))
 
 (s/def ::x number?)
 (s/def ::y number?)
@@ -772,8 +778,8 @@
        (apply str)))
 
 ;; Workspace support - read from URL param
-(def url-params (js/URLSearchParams. js/window.location.search))
-(def current-workspace (.get url-params "ws"))  ; nil if not set (uses personal library)
+(def url-params #?(:test nil :default (js/URLSearchParams. js/window.location.search)))
+(def current-workspace #?(:test nil :default (.get url-params "ws")))  ; nil if not set (uses personal library)
 
 ;; User's workspace list (fetched on demand)
 (defonce user-workspaces (r/atom []))

@@ -9,7 +9,8 @@
   "src/test"]
 
  :dependencies
- [[reagent "2.0.1"]]
+ [[reagent "2.0.1"]
+  [org.clojure/test.check "1.1.1"]]
 
  :dev-http {8080 {:root "public" :host "0.0.0.0"}}
  :builds
@@ -44,4 +45,14 @@
   {:target :node-library
    :output-to "vscode-ext/out/main.js"
    :exports-var nyancad.mosaic.extension/exports
-   :compiler-options {:optimizations :simple}}}}
+   :compiler-options {:optimizations :simple}}
+
+  ;; Unit-test build: runs cljs.test on Node. Run via
+  ;;   shadow-cljs compile test && node out/node-tests.js
+  ;; so the node process propagates the cljs.test exit code.
+  ;; The `:test` reader feature swaps in a platform stub for editor.
+  :test
+  {:target    :node-test
+   :output-to "out/node-tests.js"
+   :ns-regexp "-test$"
+   :compiler-options {:reader-features #{:test}}}}}

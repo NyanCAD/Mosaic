@@ -6,13 +6,17 @@
   (:require [clojure.string :as str]))
 
 (defn generate-suffixes
-  "Generate search suffixes using reductions with reverse tokenization.
-  Elegant approach that builds suffixes from right-to-left."
+  "Generate search suffixes: tokenize into runs of letters, digits, or
+   underscores, then build right-to-left cumulative suffixes so a CouchDB
+   prefix search matches at any word boundary. Drop suffixes starting with
+   '_' (users don't type those) and return nil for an empty input so no
+   stray empty-key entry is emitted."
   [s]
-  (->> (re-seq #"[a-z]+|[0-9]+|_+" s)
-       reverse
-       (reductions #(str %2 %1))
-       (remove #(str/starts-with? % "_"))))
+  (when-let [tokens (seq (re-seq #"[a-z]+|[0-9]+|_+" s))]
+    (->> tokens
+         reverse
+         (reductions #(str %2 %1))
+         (remove #(str/starts-with? % "_")))))
 
 (defn name-search-view
   "CouchDB view function for name-based model search with word boundary optimization"

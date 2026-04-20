@@ -10,6 +10,10 @@
                            :refer [group schematic modeldb snapshots simulations local
                                    done? syncactive notebook-panel secondary-menu-items
                                    open-schematic resolve-symbol-url init-extra!]]]
+                :test [[nyancad.mosaic.editor.platform-test
+                         :refer [group schematic modeldb snapshots simulations local
+                                 done? syncactive notebook-panel secondary-menu-items
+                                 open-schematic resolve-symbol-url init-extra!]]]
                 :cljs [[nyancad.mosaic.editor.platform-web
                          :refer [group schematic modeldb snapshots simulations local
                                  done? syncactive notebook-panel secondary-menu-items
@@ -1247,20 +1251,38 @@
                  w (:wires c)]
              [w i])))
 
+(defn- cover-bare-junctions
+  "After the BFS, any point-idx cell where two or more device ports meet but
+   no wire or port-doc was seeded still represents a net — the presence of a
+   wire is a drawing affordance, not a logical requirement. Promote each
+   such cell to its own singleton component."
+  [components point-idx]
+  (let [covered (into #{} (mapcat :points) components)]
+    (reduce-kv
+     (fn [acc pt {:keys [ports]}]
+       (if (and ports (>= (count ports) 2) (not (covered pt)))
+         (conj acc (merge empty-component
+                          {:attributions (vec ports)
+                           :points #{pt}}))
+         acc))
+     components point-idx)))
+
 (defn build-wire-networks
   "Partition connected wires + port-docs into networks.
    Returns {:components [{:wires :attributions :port-names :wire-names :points} ...]
             :wire->component {wire-id -> component-idx}}."
   [sch point-idx]
-  (loop [[[id _] & rst] (seed-order sch)
-         visited        #{}
-         components     []]
-    (cond
-      (nil? id)    {:components components
-                    :wire->component (wire->component-index components)}
-      (visited id) (recur rst visited components)
-      :else (let [[comp visited'] (expand-network sch point-idx visited id)]
-              (recur rst visited' (conj components comp))))))
+  (let [seeded (loop [[[id _] & rst] (seed-order sch)
+                      visited        #{}
+                      components     []]
+                 (cond
+                   (nil? id)    components
+                   (visited id) (recur rst visited components)
+                   :else (let [[comp visited'] (expand-network sch point-idx visited id)]
+                           (recur rst visited' (conj components comp)))))
+        all (cover-bare-junctions seeded point-idx)]
+    {:components all
+     :wire->component (wire->component-index all)}))
 
 (def wire-networks
   (r/track #(build-wire-networks @schematic @point-index)))
@@ -2686,7 +2708,8 @@
 (def immediate-shortcuts
   {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))})
 
-(defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-editor")))
+(defonce root #?(:test nil
+                 :default (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-editor"))))
 
 (defn ^:dev/after-load ^:export  render []
   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
