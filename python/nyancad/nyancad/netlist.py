@@ -226,16 +226,11 @@ class NyanCADMixin:
                     merged = {**defaults, **dev.get('props', {})}
                     props = _eval_params(selected_entry['params'], merged)
 
-        # Helper to get port by name. Partial :nets maps (a pin connected but
-        # others dangling) pass `populate_from_nyancad`'s truthy guard, so
-        # `ports[port_name]` would raise KeyError on the dangling pin. Fall
-        # back to a unique floating-net name so mid-drawing schematics still
-        # netlist — matching the pre-refactor behaviour where the Python
-        # flood-fill seeded a dummy wire per port.
+        # Helper to get port by name. The editor annotates every port with
+        # a net — disconnected pins get their own generated netN — so the
+        # lookup is total and a plain dict access is correct.
         def p(port_name):
-            if port_name in ports:
-                return ports[port_name]
-            return f"{name}_{port_name}_NC"
+            return ports[port_name]
 
         # Map SPICE element type letters to InSpice methods
         _spice_type_map = {

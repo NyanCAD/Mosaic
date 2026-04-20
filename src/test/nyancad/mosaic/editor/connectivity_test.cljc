@@ -219,99 +219,112 @@
         (reset! pform/modeldb {})))))
 
 ;; ---------------------------------------------------------------------------
-;; build-wire-networks — shared BFS primitive
+;; build-wire-networks — cell-seeded BFS
 ;; ---------------------------------------------------------------------------
-;; Contract: partition the graph where nodes are wires + port-docs and edges
-;; are shared cells. For each component, collect:
-;;   :wires         — set of wire ids
+;; Contract: partition device-port cells into connected components, where
+;; wire-like docs (wires, port-docs) are edges between cells. Every cell
+;; carrying a device-port attribution is a seed, so every port gets a net —
+;; including dangling single-port cells (their own singleton component).
+;; Dangling wires with no attached ports are absent from the output (they
+;; have no netlist consumer).
+;;
+;; Each component collects:
+;;   :wires         — set of wire ids traversed
 ;;   :attributions  — vector of [dev-id port-name] for device ports attached
-;;   :port-names    — names collected from port-doc nodes
-;;   :wire-names    — names collected from named wire nodes
+;;   :port-names    — names collected from port-doc edges
+;;   :wire-names    — names collected from named wire edges
 ;;   :points        — set of cells the component touches
-;; Plus :wire->component {wire-id → component-index} for reverse lookup.
-;; Component numbering is deterministic: seeds sorted by [x y].
+;; Plus :wire->component {wire-id → component-index}. Component numbering
+;; is deterministic: port-cell seeds sorted by [x y].
 
 (defn- build-networks [schem]
   (let [pt-idx (e/build-point-index schem)]
     (e/build-wire-networks schem pt-idx)))
 
 (deftest wire-networks-single-wire-between-two-devices
-  (testing "R1--W1--R2: one component with attributions for both device ports"
-    ;; R1 at (0, 0): ports at (1, 0) and (1, 2).
-    ;; R2 at (0, 2): ports at (1, 2) and (1, 4).
-    ;; Put a 0-length wire W1 at (1, 2) so it touches both device ports
-    ;; without any path. Wire endpoints are both (1, 2).
-    ;; A wire with rx=ry=0 is degenerate; use a straight wire with length 2
-    ;; running R1.N (1,2) to another point. To keep the attribution map
-    ;; clean, place R2 so its P is at (1, 2) via direct stacking:
-    (let [schem (sch (resistor "R1" 0 0)  ; ports (1,0) (1,2)
-                     (wire "W1" 1 2 0 2)   ; endpoints (1,2) (1,4)
-                     (resistor "R2" 0 4))  ; ports (1,4) (1,6)
-          {:keys [components wire->component]} (build-networks schem)]
-      (is (= 1 (count components)) "one wire → one component")
-      (let [c (first components)]
-        (testing "wires and points"
-          (is (= #{"W1"} (:wires c)))
-          (is (contains? (:points c) [1 2]))
-          (is (contains? (:points c) [1 4])))
-        (testing "attributions: both device ports touching the wire's endpoints"
-          (is (= #{["R1" :N] ["R2" :P]} (set (:attributions c))))))
-      (is (= {"W1" 0} wire->component)))))
+  (testing "R1--W1--R2: R1.N and R2.P share one component via W1"
+    (let [schem (sch (resistor "R1" 0 0)
+                     (wire "W1" 1 2 0 2)
+                     (resistor "R2" 0 4))
+          {:keys [components wire->component]} (build-networks schem)
+          chain (first (filter #(contains? (:wires %) "W1") components))]
+      (is (= #{"W1"} (:wires chain)))
+      (is (= #{["R1" :N] ["R2" :P]} (set (:attributions chain))))
+      (is (= #{[1 2] [1 4]} (:points chain)))
+      (is (contains? wire->component "W1")))))
 
-(deftest wire-networks-disjoint-wires
-  (testing "two wires with no shared cell → two components"
-    (let [schem (sch (wire "W1" 0 0 2 0)
-                     (wire "W2" 10 10 2 0))
-          {:keys [components]} (build-networks schem)]
-      (is (= 2 (count components))))))
+(deftest wire-networks-disjoint-groups-stay-separate
+  (testing "two independent R-W-R chains produce two separate wire-bearing components"
+    ;; Core connectivity property: nothing connects the two groups, so the
+    ;; nets stay disjoint.
+    (let [schem (sch (resistor "R1" 0 0)    (wire "W1" 1 2 0 2)  (resistor "R2" 0 4)
+                     (resistor "R3" 10 10) (wire "W2" 11 12 0 2) (resistor "R4" 10 14))
+          {:keys [components]} (build-networks schem)
+          wire-comps (filter #(seq (:wires %)) components)]
+      (is (= 2 (count wire-comps)))
+      (is (= #{#{"W1"} #{"W2"}} (set (map :wires wire-comps)))))))
+
+(deftest wire-networks-dangling-wire-absent
+  (testing "a wire with no device ports at either endpoint produces no component"
+    ;; Dangling wires have no netlist consumer; they're edges with nothing
+    ;; to connect, so the cell-seeded BFS simply never reaches them.
+    (let [schem (sch (wire "W1" 0 0 2 0))
+          {:keys [components wire->component]} (build-networks schem)]
+      (is (empty? components))
+      (is (empty? wire->component)))))
 
 (deftest wire-networks-wire-chain
-  (testing "W1--W2--W3 sharing endpoints form one component"
-    ;; W1 (0,0)-(2,0), W2 (2,0)-(4,0), W3 (4,0)-(6,0)
-    (let [schem (sch (wire "W1" 0 0 2 0)
-                     (wire "W2" 2 0 2 0)
-                     (wire "W3" 4 0 2 0))
-          {:keys [components]} (build-networks schem)]
-      (is (= 1 (count components)))
-      (is (= #{"W1" "W2" "W3"} (:wires (first components)))))))
+  (testing "W1--W2--W3 sharing endpoints absorb into one component"
+    (let [schem (sch (resistor "R1" 0 0)
+                     (wire "W1" 1 2 0 2)
+                     (wire "W2" 1 4 0 2)
+                     (wire "W3" 1 6 0 2)
+                     (resistor "R2" 0 8))
+          {:keys [components]} (build-networks schem)
+          chain (first (filter #(seq (:wires %)) components))]
+      (is (= #{"W1" "W2" "W3"} (:wires chain)))
+      (is (= #{["R1" :N] ["R2" :P]} (set (:attributions chain)))))))
 
 (deftest wire-networks-port-doc-on-wire
-  (testing "a port doc touching a wire contributes its name via :port-names"
-    (let [schem (sch (wire "W1" 0 0 2 0)
-                     (port-doc "P1" 2 0 "GND"))
-          {:keys [components]} (build-networks schem)]
-      (is (= 1 (count components)))
-      (is (= ["GND"] (:port-names (first components)))))))
+  (testing "a port doc on a wire connecting a device contributes its name"
+    (let [schem (sch (resistor "R1" 0 0)             ; N at (1,2)
+                     (wire "W1" 1 2 0 2)              ; (1,2)→(1,4)
+                     (port-doc "P1" 1 4 "GND"))       ; at the far end
+          {:keys [components]} (build-networks schem)
+          chain (first (filter #(seq (:wires %)) components))]
+      (is (= ["GND"] (:port-names chain))))))
 
 (deftest wire-networks-named-wire-tracks-name
-  (let [schem (sch (named-wire "W1" 0 0 2 0 "my_net"))
-        {:keys [components]} (build-networks schem)]
-    (is (= ["my_net"] (:wire-names (first components))))))
+  (testing "a named wire's name shows up in :wire-names of its component"
+    (let [schem (sch (resistor "R1" 0 0)                    ; N at (1,2)
+                     (named-wire "W1" 1 2 0 2 "my_net")      ; ends (1,2)→(1,4)
+                     (resistor "R2" 0 4))                    ; P at (1,4)
+          {:keys [components]} (build-networks schem)
+          chain (first (filter #(seq (:wires %)) components))]
+      (is (= ["my_net"] (:wire-names chain))))))
 
 (deftest wire-networks-component-order-deterministic
-  (testing "regardless of insertion order, components come out sorted by seed [x y]"
-    (let [s1 (sch (wire "Wa" 10 10 1 0) (wire "Wb" 0 0 1 0))
-          s2 (sch (wire "Wb" 0 0 1 0) (wire "Wa" 10 10 1 0))
-          n1 (build-networks s1)
-          n2 (build-networks s2)]
-      ;; Seed order is by [x y], so Wb (at 0,0) seeds component 0 in both.
-      (is (= (:wire->component n1) (:wire->component n2))))))
+  (testing "regardless of insertion order, components come out sorted by port-cell seed [x y]"
+    (let [s1 (sch (resistor "Ra" 10 10) (resistor "Rb" 0 0))
+          s2 (sch (resistor "Rb" 0 0) (resistor "Ra" 10 10))
+          netlist1 (e/build-netlist (build-networks s1))
+          netlist2 (e/build-netlist (build-networks s2))]
+      ;; netN numbering derives from component order. Same netN assignments
+      ;; regardless of how devices were added to the schematic map.
+      (is (= (:devices netlist1) (:devices netlist2))))))
 
 (deftest wire-networks-direct-device-to-device
-  ;; Contract: a net is a maximal connected set of device ports. The
-  ;; existence of a wire between them is a drawing affordance, not a logical
-  ;; requirement. Two devices sharing a port cell share a net even with no
-  ;; intermediate wire — this is handled by `cover-bare-junctions` after
-  ;; the main BFS.
-  (testing "two devices with co-located ports and no wire → share a singleton net"
-    (let [schem (sch (resistor "R1" 0 0)  ; N at (1, 2)
-                     (resistor "R2" 0 2)) ; P at (1, 2)
-          {:keys [components]} (build-networks schem)]
-      (is (= 1 (count components))
-          "one component tying R1.N and R2.P together")
+  ;; Contract: a net is a maximal connected set of device ports. Two devices
+  ;; sharing a port cell share a net even with no intermediate wire —
+  ;; handled natively now that port cells seed the BFS.
+  (testing "two devices with co-located ports and no wire → share a component"
+    (let [schem (sch (resistor "R1" 0 0)  ; ports (1,0) (1,2)
+                     (resistor "R2" 0 2)) ; ports (1,2) (1,4) — shares (1,2)
+          {:keys [components]} (build-networks schem)
+          shared (first (filter #(= 2 (count (:attributions %))) components))]
       (is (= #{["R1" :N] ["R2" :P]}
-             (set (:attributions (first components)))))
-      (is (empty? (:wires (first components)))
+             (set (:attributions shared))))
+      (is (empty? (:wires shared))
           "no wires — the component covers a single cell"))))
 
 ;; ---------------------------------------------------------------------------
@@ -344,7 +357,7 @@
       (is (= "mid" (get wires "W1"))))))
 
 (deftest netlist-anonymous-components-generate-netN
-  (testing "with no names, components get generated netN names in seed order"
+  (testing "anonymous components get distinct generated netN names"
     (let [schem (sch (resistor "R1" 0 0)
                      (wire "W1" 1 2 0 2)
                      (resistor "R2" 0 4)
@@ -352,17 +365,21 @@
                      (wire "W2" 11 12 0 2)
                      (resistor "R4" 10 14))
           {:keys [wires]} (e/build-netlist (build-networks schem))]
-      (testing "two components, two distinct net numbers"
-        (is (= #{"net0" "net1"} (set (vals wires)))))
-      (testing "W1 (lower [x y]) is net0, W2 is net1"
-        (is (= "net0" (get wires "W1")))
-        (is (= "net1" (get wires "W2")))))))
+      (is (not= (get wires "W1") (get wires "W2"))
+          "disjoint wires land in different nets")
+      (is (every? #(re-matches #"net\d+" %) (vals wires))
+          "generated names follow the netN pattern"))))
 
-(deftest netlist-disconnected-devices-absent
-  (testing "a device that touches no wire or port-doc doesn't appear in :devices"
-    (let [schem (sch (resistor "R1" 0 0))  ; no wire touching
-          {:keys [devices]} (e/build-netlist (build-networks schem))]
-      (is (nil? (get devices "R1"))))))
+(deftest netlist-disconnected-device-each-pin-its-own-net
+  (testing "a disconnected device's ports each become their own singleton net"
+    ;; Every port is a first-class seed, so disconnected pins get generated
+    ;; netN entries rather than being dropped. This matches old Python's
+    ;; behaviour where every port had a dummy wire.
+    (let [schem (sch (resistor "R1" 0 0))
+          {:keys [devices]} (e/build-netlist (build-networks schem))
+          r1-nets (get devices "R1")]
+      (is (= 2 (count r1-nets)) "both ports present")
+      (is (not= (:P r1-nets) (:N r1-nets)) "P and N are on different floating nets"))))
 
 ;; ---------------------------------------------------------------------------
 ;; build-wire-type-index — propagate port types across components
@@ -394,8 +411,9 @@
 ;; build-net-annotations — partial update map keyed by doc-id
 ;; ---------------------------------------------------------------------------
 ;; Contract: return {doc-id {:nets …} | {:net …}} containing ONLY docs whose
-;; annotation differs from their current value. Missing :nets is equivalent
-;; to {} — no spurious entry for a disconnected device that never had nets.
+;; annotation differs from their current value. Every attributable device
+;; gets :nets with an entry for EVERY port — a disconnected pin gets a
+;; floating netN rather than being absent.
 
 (defn- annotations [schem]
   (let [pt-idx   (e/build-point-index schem)
@@ -409,8 +427,13 @@
                      (named-wire "W1" 1 2 0 2 "middle")
                      (resistor "R2" 0 4))
           a (annotations schem)]
-      (is (= {:N "middle"} (get-in a ["R1" :nets])))
-      (is (= {:P "middle"} (get-in a ["R2" :nets])))
+      (testing "connected ports get the named net; disconnected ports get generated netN"
+        (is (= "middle" (get-in a ["R1" :nets :N])))
+        (is (= "middle" (get-in a ["R2" :nets :P])))
+        (is (string? (get-in a ["R1" :nets :P]))
+            "R1.P is disconnected — gets its own generated net")
+        (is (string? (get-in a ["R2" :nets :N]))
+            "R2.N is disconnected — gets its own generated net"))
       (is (= "middle" (get-in a ["W1" :net]))))))
 
 (deftest annotations-idempotent
@@ -423,18 +446,26 @@
           a2 (annotations applied)]
       (is (= {} a2) "no further changes on the second pass"))))
 
-(deftest annotations-nil-vs-empty-nets
-  (testing "a disconnected device with no :nets produces NO entry (not {:nets {}})"
-    (let [schem (sch (resistor "R1" 0 0))  ; disconnected
+(deftest annotations-disconnected-device-gets-floating-nets
+  (testing "a disconnected device gets :nets entries with floating netN for each port"
+    ;; Matches old Python's behaviour: every port has a net, dangling or not.
+    (let [schem (sch (resistor "R1" 0 0))
           a (annotations schem)]
-      (is (not (contains? a "R1"))))))
+      (is (contains? a "R1"))
+      (is (= 2 (count (get-in a ["R1" :nets]))))
+      (is (every? string? (vals (get-in a ["R1" :nets])))))))
 
-(deftest annotations-stale-nets-get-cleared
-  (testing "a disconnected device carrying stale :nets → cleared to {}"
+(deftest annotations-stale-nets-replaced-with-fresh
+  (testing "stale :nets on a disconnected device get replaced with fresh floating nets"
     (let [schem (sch ["R1" {:type "resistor" :x 0 :y 0 :transform [1 0 0 1 0 0]
                             :name "R1" :nets {:P "old" :N "old"}}])
           a (annotations schem)]
-      (is (= {:nets {}} (get a "R1"))))))
+      (is (contains? a "R1"))
+      (let [new-nets (get-in a ["R1" :nets])]
+        (is (not= {:P "old" :N "old"} new-nets)
+            "stale values replaced")
+        (is (= 2 (count new-nets))
+            "both ports still have nets")))))
 
 ;; ---------------------------------------------------------------------------
 ;; build-wire-split-index — split wires where they cross another endpoint

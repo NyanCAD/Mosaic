@@ -1211,88 +1211,89 @@
     "wire" [[x y] [(+ x rx) (+ y ry)]]
     "port" [[x y]]))
 
-(defn- wire-neighbors
-  "Unvisited wire/port-doc ids reachable from any of `endpoints`."
-  [sch point-idx visited endpoints]
-  (for [pt endpoints
-        id (:ids (get point-idx pt))
-        :when (and (wire-like (:type (get sch id)))
-                   (not (visited id)))]
-    id))
-
-(defn- absorb
-  "Merge one doc's contribution into the component-in-progress."
-  [comp id dev point-idx]
-  (let [ends (doc-endpoints dev)
-        nm   (:name dev)]
-    (cond-> comp
-      true                                  (update :points into ends)
-      true                                  (update :attributions
-                                                    into (mapcat #(:ports (get point-idx %))) ends)
-      (= "wire" (:type dev))                (update :wires conj id)
-      (and (= "wire" (:type dev)) nm)       (update :wire-names conj nm)
-      (and (= "port" (:type dev)) nm)       (update :port-names conj nm))))
-
 (def ^:private empty-component
   {:wires #{} :attributions [] :port-names [] :wire-names [] :points #{}})
 
-(defn- expand-network
-  "BFS from `seed-id`, returning [component new-visited]."
-  [sch point-idx visited seed-id]
-  (loop [queue   [seed-id]
-         visited (conj visited seed-id)
-         comp    empty-component]
-    (if-let [id (peek queue)]
-      (let [dev   (get sch id)
-            comp' (absorb comp id dev point-idx)
-            nbrs  (wire-neighbors sch point-idx visited (doc-endpoints dev))]
-        (recur (into (pop queue) nbrs) (into visited nbrs) comp'))
-      [comp visited])))
+(defn- absorb-cell
+  "Record a cell's attributions into the component-in-progress."
+  [comp point-idx cell]
+  (-> comp
+      (update :points conj cell)
+      (update :attributions into (:ports (get point-idx cell)))))
 
-(defn- seed-order
-  "Wires and port-docs sorted by [x y] — deterministic netN numbering."
-  [sch]
-  (->> sch
-       (filter (fn [[_ d]] (wire-like (:type d))))
-       (sort-by (fn [[_ {:keys [x y]}]] [x y]))))
+(defn- absorb-doc
+  "Record a wire-like doc's contribution — :wires for wires, plus :wire-names
+   / :port-names when named."
+  [comp id dev]
+  (let [nm (:name dev)]
+    (cond-> comp
+      (= "wire" (:type dev))          (update :wires conj id)
+      (and (= "wire" (:type dev)) nm) (update :wire-names conj nm)
+      (and (= "port" (:type dev)) nm) (update :port-names conj nm))))
+
+(defn- expand-from-cell
+  "BFS from `seed-cell`. The queue holds cells; wire-like docs are edges that
+   get absorbed when the BFS walks their endpoint cells. Returns
+   [component visited-cells visited-docs]."
+  [sch point-idx visited-cells visited-docs seed-cell]
+  (loop [queue         [seed-cell]
+         visited-cells (conj visited-cells seed-cell)
+         visited-docs  visited-docs
+         comp          (absorb-cell empty-component point-idx seed-cell)]
+    (if-let [cell (peek queue)]
+      (let [new-doc-ids (for [id (:ids (get point-idx cell))
+                              :when (and (wire-like (:type (get sch id)))
+                                         (not (visited-docs id)))]
+                          id)
+            comp'       (reduce (fn [c id] (absorb-doc c id (get sch id)))
+                                comp new-doc-ids)
+            new-cells   (->> new-doc-ids
+                             (mapcat (fn [id] (doc-endpoints (get sch id))))
+                             (remove visited-cells)
+                             distinct)
+            comp''      (reduce #(absorb-cell %1 point-idx %2) comp' new-cells)]
+        (recur (into (pop queue) new-cells)
+               (into visited-cells new-cells)
+               (into visited-docs new-doc-ids)
+               comp''))
+      [comp visited-cells visited-docs])))
+
+(defn- port-cell-seeds
+  "Cells in point-idx carrying device-port attributions, sorted by [x y] for
+   deterministic netN numbering."
+  [point-idx]
+  (->> point-idx
+       (filter (fn [[_ v]] (seq (:ports v))))
+       (map first)
+       sort))
 
 (defn- wire->component-index [components]
   (into {} (for [[i c] (map-indexed vector components)
                  w (:wires c)]
              [w i])))
 
-(defn- cover-bare-junctions
-  "After the BFS, any point-idx cell where two or more device ports meet but
-   no wire or port-doc was seeded still represents a net — the presence of a
-   wire is a drawing affordance, not a logical requirement. Promote each
-   such cell to its own singleton component."
-  [components point-idx]
-  (let [covered (into #{} (mapcat :points) components)]
-    (reduce-kv
-     (fn [acc pt {:keys [ports]}]
-       (if (and ports (>= (count ports) 2) (not (covered pt)))
-         (conj acc (merge empty-component
-                          {:attributions (vec ports)
-                           :points #{pt}}))
-         acc))
-     components point-idx)))
-
 (defn build-wire-networks
-  "Partition connected wires + port-docs into networks.
+  "Partition device-port cells into connected components via wire-like docs.
    Returns {:components [{:wires :attributions :port-names :wire-names :points} ...]
-            :wire->component {wire-id -> component-idx}}."
+            :wire->component {wire-id -> component-idx}}.
+
+   Seeds are cells carrying :ports attributions — every device port is a
+   first-class seed. Wire-like docs (wires, port-docs) are edges absorbed
+   during traversal. Dangling wires without any port contact produce no
+   component (they have no netlist consumer)."
   [sch point-idx]
-  (let [seeded (loop [[[id _] & rst] (seed-order sch)
-                      visited        #{}
-                      components     []]
-                 (cond
-                   (nil? id)    components
-                   (visited id) (recur rst visited components)
-                   :else (let [[comp visited'] (expand-network sch point-idx visited id)]
-                           (recur rst visited' (conj components comp)))))
-        all (cover-bare-junctions seeded point-idx)]
-    {:components all
-     :wire->component (wire->component-index all)}))
+  (loop [[seed-cell & rst] (port-cell-seeds point-idx)
+         visited-cells     #{}
+         visited-docs      #{}
+         components        []]
+    (cond
+      (nil? seed-cell)         {:components components
+                                :wire->component (wire->component-index components)}
+      (visited-cells seed-cell) (recur rst visited-cells visited-docs components)
+      :else (let [[comp vc vd] (expand-from-cell sch point-idx
+                                                 visited-cells visited-docs
+                                                 seed-cell)]
+              (recur rst vc vd (conj components comp))))))
 
 (def wire-networks
   (r/track #(build-wire-networks @schematic @point-index)))
