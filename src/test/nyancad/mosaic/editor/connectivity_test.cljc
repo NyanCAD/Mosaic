@@ -17,7 +17,8 @@
      device origin (x0, y0), the result is P at (x0+1, y0) and N at (x0+1, y0+2);
      body cell is (x0+1, y0+1)."
   (:require [cljs.test :refer [deftest is testing]]
-            [nyancad.mosaic.editor :as e]))
+            [nyancad.mosaic.editor :as e]
+            [nyancad.mosaic.editor.platform-test :as pform]))
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers for building test schematics
@@ -178,6 +179,42 @@
           cell (get idx [5 5])]
       (is (contains? (:ids cell) "P1"))
       (is (nil? (:ports cell))))))
+
+(deftest point-index-rotated-asymmetric-subcircuit-alignment
+  ;; Contract: for any attributable device, every cell where the device
+  ;; appears in :ids must also carry the device's port attribution in :ports,
+  ;; and vice versa. The two sets must be identical — otherwise net
+  ;; attribution is silently lost when a wire meets the device at an :ids
+  ;; cell that has no :ports entry.
+  ;;
+  ;; Pre-fix, `circuit-locations` used `(+ 2 (max w h))` from port-perimeter
+  ;; while `device-port-types` fell back to pattern-size. For subcircuits
+  ;; that don't fill every side (e.g. op-amp: 2 left + 1 right, perimeter
+  ;; [1 3] but max port coord + 1 = 4), those sizes diverge. Identity
+  ;; transform hid the bug because the centering cancels; any non-identity
+  ;; rotation exposed it.
+  (testing "op-amp under 90° rotation: :ids and :ports land at the same cells"
+    (reset! pform/modeldb
+            {"models:opamp"
+             {:name "OpAmp"
+              :ports [{:name "in+" :side :left :type "electric"}
+                      {:name "in-" :side :left :type "electric"}
+                      {:name "out" :side :right :type "electric"}]}})
+    (try
+      (let [schem (sch ["U1" {:type "ckt" :model "opamp"
+                              :x 5 :y 5 :transform [0 1 -1 0 0 0]
+                              :name "U1"}])
+            idx (e/build-point-index schem)
+            id-cells (set (for [[pt {:keys [ids]}] idx
+                                :when (contains? ids "U1")]
+                            pt))
+            port-cells (set (for [[pt {:keys [ports]}] idx
+                                  :when (some #(= "U1" (first %)) ports)]
+                              pt))]
+        (is (= id-cells port-cells)
+            "cells where U1 appears in :ids must match cells where it appears in :ports"))
+      (finally
+        (reset! pform/modeldb {})))))
 
 ;; ---------------------------------------------------------------------------
 ;; build-wire-networks — shared BFS primitive

@@ -1145,8 +1145,14 @@
       (let [mod (get @modeldb (cm/model-key model))
             ports (:ports mod)
             shape (when (= (:type dev) "amp") :amp)
-            conn (if ports (cm/port-locations ports shape) [])]
-        (rotate-shape conn transform x y)))))
+            conn (if ports (cm/port-locations ports shape) [])
+            ;; Must match circuit-locations: (+ 2 (max w h)) from port-perimeter,
+            ;; NOT pattern-size. They diverge for subcircuits that don't fill every
+            ;; side (e.g. op-amp: port-perimeter → [1 3], but max coord + 1 = 4),
+            ;; which silently drops port attribution under rotation.
+            [w h] (if ports (cm/port-perimeter ports shape) [1 1])
+            size (+ 2 (max w h))]
+        (rotate-shape conn size transform x y)))))
 
 ;; --- point-index: unified per-point fold ---------------------------------
 ;; Replaces location-index (:ids/:body-ids), point-type-index (:types/:*-count),

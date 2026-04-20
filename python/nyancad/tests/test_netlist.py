@@ -415,3 +415,24 @@ class TestPopulateFromNyancad:
         assert "R2" in spice.replace(":", "_")
         for net in ("a", "b", "c"):
             assert net in spice
+
+    def test_partial_nets_generates_floating_net_for_missing_pin(self):
+        """Mid-drawing: a device with only some pins connected should still
+        netlist. Pre-fix, `p('N')` on a resistor whose :nets has only 'P'
+        raised KeyError. The editor's build-netlist leaves dangling pins out
+        of :attributions, so :nets ends up partial — not empty, so the
+        truthy guard in populate_from_nyancad doesn't skip. Falling back to
+        a generated net name lets SPICE generation complete."""
+        schem = self._schem({
+            "top:R1": {
+                "_id": "top:R1", "type": "resistor",
+                "x": 1, "y": 1, "transform": [1, 0, 0, 1, 0, 0], "name": "R1",
+                "nets": {"P": "vdd"},  # N is dangling — not in :nets
+                "props": {"resistance": "1k"},
+            },
+        })
+        # Must not raise. Floating-net fallback names include both the
+        # device name and the pin so they're easy to spot in SPICE output.
+        spice = str(NyanCircuit("top", schem))
+        assert "vdd" in spice
+        assert "R1_N_NC" in spice

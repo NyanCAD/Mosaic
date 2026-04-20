@@ -156,8 +156,7 @@ jobs:
   publish-nyancad-to-pypi:
     name: Publish nyancad 🐍 distribution 📦 to PyPI
     if: startsWith(github.ref, 'refs/tags/')
-    needs:
-    - build
+    needs: [test-python-unit, test-cljs-unit, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download nyancad distributions
@@ -173,8 +172,7 @@ jobs:
   publish-nyancad-server-to-pypi:
     name: Publish nyancad-server 🐍 distribution 📦 to PyPI
     if: startsWith(github.ref, 'refs/tags/')
-    needs:
-    - build
+    needs: [test-python-unit, test-cljs-unit, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download nyancad-server distributions
@@ -190,7 +188,7 @@ jobs:
   deploy:
     name: Deploy to server 🚀
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [test-python-unit, test-cljs-unit, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download nyancad distributions
@@ -227,7 +225,7 @@ jobs:
   publish-vscode-extension:
     name: Publish VS Code Extension 📦
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [test-python-unit, test-cljs-unit, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download VSCode extension
@@ -256,7 +254,7 @@ jobs:
   create-github-release:
     name: Create GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [test-python-unit, test-cljs-unit, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write

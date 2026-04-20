@@ -316,9 +316,12 @@ async def bulk_update_schematic(
             if "model" in doc and doc["model"]:
                 doc["model"] = normalize_to_bare_id(doc["model"])
 
-            # Strip :nets — the editor re-annotates on the next action,
-            # so bulk updates from MCP intentionally drop stale net info.
+            # Strip editor-computed net info — the editor re-annotates on
+            # the next action, so bulk updates from MCP intentionally drop
+            # stale net info. :nets lives on devices (port → net map),
+            # :net lives on wires (single net). Both must be dropped.
             doc.pop("nets", None)
+            doc.pop("net", None)
 
             docs_to_write.append(doc)
 
