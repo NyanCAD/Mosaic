@@ -62,7 +62,8 @@ jobs:
           node-version: '20'
 
       - name: Install npm dependencies
-        run: npm ci
+        # `npm install` rather than `npm ci` — package-lock.json is gitignored.
+        run: npm install
 
       - name: Compile CLJS test build
         run: npx shadow-cljs compile test
