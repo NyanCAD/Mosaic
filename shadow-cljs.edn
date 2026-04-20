@@ -23,7 +23,8 @@
              :filestore {:init-fn nyancad.mosaic.filestore/init :depends-on #{:common}}
              :anywidget {:exports {render nyancad.mosaic.anywidget/render} :depends-on #{:common}}
              :auth {:init-fn nyancad.mosaic.auth/init :depends-on #{:common}}}
-   :compiler-options {:output-feature-set :es2018}}
+   :compiler-options {:output-feature-set :es2018
+                      :reader-features #{:web}}}
   :couchdb
   {:target    :node-library
    :output-to "public/js/view.js"

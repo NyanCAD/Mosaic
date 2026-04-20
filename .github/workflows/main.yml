@@ -73,7 +73,6 @@ jobs:
 
   build:
     name: Build distribution 📦
-    needs: [test-python-unit, test-cljs-unit]
     runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it

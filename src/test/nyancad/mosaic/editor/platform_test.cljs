@@ -24,6 +24,9 @@
 (defonce local (r/atom {}))
 (defonce syncactive (r/atom false))
 
+;; No DOM in Node — render is never called from tests.
+(def root nil)
+
 (defn done?
   "Match the JsAtom/pouch-atom contract: returns a channel. Nothing to
    synchronize in tests, so close immediately."

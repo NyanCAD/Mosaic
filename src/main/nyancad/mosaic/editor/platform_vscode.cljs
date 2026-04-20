@@ -6,6 +6,7 @@
   (:require [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request!]]
             [nyancad.mosaic.common :as cm]
             [reagent.core :as r]
+            [reagent.dom.client :as rdc]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [cljs.core.async :refer [go <!]]))
@@ -30,6 +31,9 @@
 (defonce local (r/atom {}))
 
 (defonce syncactive (r/atom false))
+
+;; React root for the editor canvas.
+(defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-editor")))
 
 ;; --- Symbol URL resolution ---
 

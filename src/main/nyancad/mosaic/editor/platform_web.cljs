@@ -6,6 +6,7 @@
   (:require [nyancad.hipflask :as hf :refer [pouch-atom pouchdb watch-changes]]
             [nyancad.mosaic.common :as cm]
             [reagent.core :as r]
+            [reagent.dom.client :as rdc]
             [clojure.spec.alpha :as s]))
 
 ;; Re-export done? so editor can :refer it from this namespace
@@ -31,6 +32,9 @@
 (defonce lwatcher (watch-changes ldb local))
 
 (defonce syncactive (r/atom false))
+
+;; React root for the editor canvas.
+(defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-editor")))
 
 ;; --- Sync ---
 

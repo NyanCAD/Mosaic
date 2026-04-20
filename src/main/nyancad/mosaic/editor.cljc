@@ -6,18 +6,18 @@
   (:require [reagent.core :as r]
             [reagent.dom.client :as rdc]
             [shadow.resource :as rc]
-            #?@(:vscode [[nyancad.mosaic.editor.platform-vscode
+            #?@(:web [[nyancad.mosaic.editor.platform-web
+                         :refer [group schematic modeldb snapshots simulations local
+                                 done? syncactive notebook-panel secondary-menu-items
+                                 open-schematic resolve-symbol-url init-extra! root]]]
+                :vscode [[nyancad.mosaic.editor.platform-vscode
                            :refer [group schematic modeldb snapshots simulations local
                                    done? syncactive notebook-panel secondary-menu-items
-                                   open-schematic resolve-symbol-url init-extra!]]]
+                                   open-schematic resolve-symbol-url init-extra! root]]]
                 :test [[nyancad.mosaic.editor.platform-test
                          :refer [group schematic modeldb snapshots simulations local
                                  done? syncactive notebook-panel secondary-menu-items
-                                 open-schematic resolve-symbol-url init-extra!]]]
-                :cljs [[nyancad.mosaic.editor.platform-web
-                         :refer [group schematic modeldb snapshots simulations local
-                                 done? syncactive notebook-panel secondary-menu-items
-                                 open-schematic resolve-symbol-url init-extra!]]])
+                                 open-schematic resolve-symbol-url init-extra! root]]])
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go go-loop <!]]
             [clojure.math :as math]
@@ -2708,8 +2708,6 @@
 (def immediate-shortcuts
   {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))})
 
-(defonce root #?(:test nil
-                 :default (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-editor"))))
 
 (defn ^:dev/after-load ^:export  render []
   (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))

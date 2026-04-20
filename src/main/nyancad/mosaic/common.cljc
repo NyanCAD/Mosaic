@@ -8,9 +8,9 @@
             [clojure.spec.alpha :as s]
             reagent.ratom
             [nyancad.hipflask.util :refer [json->clj]]
-            #?@(:vscode [nyancad.mosaic.jsatom]
-                :test []
-                :cljs [nyancad.hipflask])
+            #?@(:web [nyancad.hipflask]
+                :vscode [nyancad.mosaic.jsatom]
+                :test [])
             clojure.edn
             clojure.set
             clojure.string
@@ -19,10 +19,12 @@
             goog.functions
             [shadow.resource :as rc]))
 
-; allow taking a cursor of a pouch/json atom
-#?(:vscode (extend-type ^js nyancad.mosaic.jsatom/JsAtom reagent.ratom/IReactiveAtom)
-   :test nil
-   :cljs (extend-type ^js nyancad.hipflask/PAtom reagent.ratom/IReactiveAtom))
+;; Reactive-atom protocol extension. The underlying atom type depends on the
+;; platform: PAtom (PouchDB-backed) for the web app, JsAtom (jsonc-backed)
+;; for the VSCode webview. The :test build runs under Node without either.
+#?(:web (extend-type ^js nyancad.hipflask/PAtom reagent.ratom/IReactiveAtom)
+   :vscode (extend-type ^js nyancad.mosaic.jsatom/JsAtom reagent.ratom/IReactiveAtom)
+   :test nil)
 
 (def grid-size 50)
 (def debounce #(goog.functions/debounce % 1000))
@@ -186,10 +188,45 @@
 (defn transform-vec [obj]
   [(.-a obj) (.-b obj) (.-c obj) (.-d obj) (.-e obj) (.-f obj)])
 (defn point [x y] (.fromPoint js/DOMPointReadOnly (clj->js {:x x :y y})))
-;; DOMMatrixReadOnly is a browser API — not present in Node, so the test
-;; build falls back to the identity vector directly.
-(def I #?(:test nil :default (js/DOMMatrixReadOnly.)))
-(def IV #?(:test [1 0 0 1 0 0] :default (transform-vec I)))
+
+;; Top-level values and extensions that touch browser APIs at load time.
+;; :web and :vscode both run in a DOM context and share identical bodies;
+;; :test runs under Node and gets inert stubs. `do`-wrapping is required
+;; because `#?@` splicing doesn't work at file top level.
+#?(:web
+   (do
+     (def I (js/DOMMatrixReadOnly.))
+     (def IV (transform-vec I))
+     (def url-params (js/URLSearchParams. js/window.location.search))
+     (def current-workspace (.get url-params "ws"))
+     (extend-type js/DOMMatrixReadOnly
+       IPrintWithWriter
+       (-pr-writer [obj writer _opts]
+         (write-all writer
+                    "#transform ["
+                    (.-a obj) " " (.-b obj) " " (.-c obj) " "
+                    (.-d obj) " " (.-e obj) " " (.-f obj)
+                    "]"))))
+   :vscode
+   (do
+     (def I (js/DOMMatrixReadOnly.))
+     (def IV (transform-vec I))
+     (def url-params (js/URLSearchParams. js/window.location.search))
+     (def current-workspace (.get url-params "ws"))
+     (extend-type js/DOMMatrixReadOnly
+       IPrintWithWriter
+       (-pr-writer [obj writer _opts]
+         (write-all writer
+                    "#transform ["
+                    (.-a obj) " " (.-b obj) " " (.-c obj) " "
+                    (.-d obj) " " (.-e obj) " " (.-f obj)
+                    "]"))))
+   :test
+   (do
+     (def I nil)
+     (def IV [1 0 0 1 0 0])
+     (def url-params nil)
+     (def current-workspace nil)))
 
 (defn viewbox-coord [e]
   (let [^js el (js/document.querySelector ".mosaic-canvas")
@@ -229,20 +266,6 @@
       (if (< x 0) :right :left)
       (if (< y 0) :bottom :top))))
 
-#?(:test nil
-   :default
-   (extend-type js/DOMMatrixReadOnly
-     IPrintWithWriter
-     (-pr-writer [obj writer _opts]
-       (write-all writer
-                  "#transform ["
-                  (.-a obj) " "
-                  (.-b obj) " "
-                  (.-c obj) " "
-                  (.-d obj) " "
-                  (.-e obj) " "
-                  (.-f obj)
-                  "]"))))
 
 (s/def ::x number?)
 (s/def ::y number?)
@@ -778,8 +801,6 @@
        (apply str)))
 
 ;; Workspace support - read from URL param
-(def url-params #?(:test nil :default (js/URLSearchParams. js/window.location.search)))
-(def current-workspace #?(:test nil :default (.get url-params "ws")))  ; nil if not set (uses personal library)
 
 ;; User's workspace list (fetched on demand)
 (defonce user-workspaces (r/atom []))
