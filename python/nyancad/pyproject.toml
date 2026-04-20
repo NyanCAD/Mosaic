@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nyancad"
-version = "0.12.1"
+version = "0.13.0"
 description = "NyanCAD Python library for schematic editor with anywidget integration"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -45,7 +45,7 @@ include = ["nyancad*"]
 testpaths = ["tests"]
 
 [tool.bumpversion]
-current_version = "0.12.1"
+current_version = "0.13.0"
 commit = true
 tag = false
 allow_dirty = true
