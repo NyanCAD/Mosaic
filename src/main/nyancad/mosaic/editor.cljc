@@ -1168,10 +1168,14 @@
   (reduce (fn [i pt] (update-in i [pt k] (fnil conj #{}) id)) idx pts))
 
 (defn- record-port [idx dev-id {:keys [x y name type]}]
+  ;; Port names are stored as KEYWORDS in the in-memory representation so
+  ;; they round-trip cleanly through jsatom/json->clj (which keywordizes
+  ;; object keys on load). A string-keyed :nets written to disk reads back
+  ;; as keyword-keyed, so we canonicalize at the source.
   (let [pt [x y]
         counter (when type (keyword (str (clojure.core/name type) "-count")))]
     (cond-> idx
-      true    (update-in [pt :ports] (fnil conj []) [dev-id name])
+      true    (update-in [pt :ports] (fnil conj []) [dev-id (keyword name)])
       type    (update-in [pt :types] (fnil conj #{}) type)
       counter (update-in [pt counter] (fnil inc 0)))))
 

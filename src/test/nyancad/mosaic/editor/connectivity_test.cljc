@@ -123,7 +123,9 @@
 ;; Contract: for every cell touched by any device, record
 ;;   :ids       — #{dev-ids with a connection endpoint at this cell}
 ;;   :body-ids  — #{dev-ids with body/path at this cell}
-;;   :ports     — [[dev-id port-name] …] for attributable devices only
+;;   :ports     — [[dev-id :port-name] …] for attributable devices only
+;;                (port names are keywords to round-trip cleanly through
+;;                jsatom/json->clj, which keywordizes object keys)
 ;;   :types     — #{port types present, e.g. "electric" "photonic"}
 ;;   :<type>-count — count per type
 ;; Cells untouched by any device are absent from the map.
@@ -140,9 +142,9 @@
       (testing ":body-ids at the body cell, not the port cells"
         (is (= #{"R1"} (get-in idx [[1 1] :body-ids])))
         (is (nil? (get-in idx [[1 0] :body-ids]))))
-      (testing ":ports attributions for each named port"
-        (is (= [["R1" "P"]] (get-in idx [[1 0] :ports])))
-        (is (= [["R1" "N"]] (get-in idx [[1 2] :ports]))))
+      (testing ":ports attributions for each named port (keyword-keyed)"
+        (is (= [["R1" :P]] (get-in idx [[1 0] :ports])))
+        (is (= [["R1" :N]] (get-in idx [[1 2] :ports]))))
       (testing ":types and :electric-count"
         (is (= #{"electric"} (get-in idx [[1 0] :types])))
         (is (= 1 (get-in idx [[1 0] :electric-count])))))))
@@ -158,7 +160,7 @@
           "both IDs present at the shared cell")
       (is (= 2 (count (:ports cell)))
           "both attributions present (vector preserves duplicates)")
-      (is (= #{["R1" "N"] ["R2" "P"]} (set (:ports cell)))
+      (is (= #{["R1" :N] ["R2" :P]} (set (:ports cell)))
           "attributions name the right ports on the right devices")
       (is (= 2 (:electric-count cell))
           "counts sum across devices"))))
@@ -253,7 +255,7 @@
           (is (contains? (:points c) [1 2]))
           (is (contains? (:points c) [1 4])))
         (testing "attributions: both device ports touching the wire's endpoints"
-          (is (= #{["R1" "N"] ["R2" "P"]} (set (:attributions c))))))
+          (is (= #{["R1" :N] ["R2" :P]} (set (:attributions c))))))
       (is (= {"W1" 0} wire->component)))))
 
 (deftest wire-networks-disjoint-wires
@@ -307,7 +309,7 @@
           {:keys [components]} (build-networks schem)]
       (is (= 1 (count components))
           "one component tying R1.N and R2.P together")
-      (is (= #{["R1" "N"] ["R2" "P"]}
+      (is (= #{["R1" :N] ["R2" :P]}
              (set (:attributions (first components)))))
       (is (empty? (:wires (first components)))
           "no wires — the component covers a single cell"))))
@@ -328,8 +330,8 @@
                      (resistor "R2" 0 4))
           networks (build-networks schem)
           {:keys [devices wires]} (e/build-netlist networks)]
-      (is (= "VDD" (get-in devices ["R1" "N"])))
-      (is (= "VDD" (get-in devices ["R2" "P"])))
+      (is (= "VDD" (get-in devices ["R1" :N])))
+      (is (= "VDD" (get-in devices ["R2" :P])))
       (is (= "VDD" (get wires "W1"))))))
 
 (deftest netlist-wire-name-beats-generated
@@ -338,7 +340,7 @@
                      (named-wire "W1" 1 2 0 2 "mid")
                      (resistor "R2" 0 4))
           {:keys [devices wires]} (e/build-netlist (build-networks schem))]
-      (is (= "mid" (get-in devices ["R1" "N"])))
+      (is (= "mid" (get-in devices ["R1" :N])))
       (is (= "mid" (get wires "W1"))))))
 
 (deftest netlist-anonymous-components-generate-netN
@@ -407,8 +409,8 @@
                      (named-wire "W1" 1 2 0 2 "middle")
                      (resistor "R2" 0 4))
           a (annotations schem)]
-      (is (= {"N" "middle"} (get-in a ["R1" :nets])))
-      (is (= {"P" "middle"} (get-in a ["R2" :nets])))
+      (is (= {:N "middle"} (get-in a ["R1" :nets])))
+      (is (= {:P "middle"} (get-in a ["R2" :nets])))
       (is (= "middle" (get-in a ["W1" :net]))))))
 
 (deftest annotations-idempotent
@@ -430,7 +432,7 @@
 (deftest annotations-stale-nets-get-cleared
   (testing "a disconnected device carrying stale :nets → cleared to {}"
     (let [schem (sch ["R1" {:type "resistor" :x 0 :y 0 :transform [1 0 0 1 0 0]
-                            :name "R1" :nets {"P" "old" "N" "old"}}])
+                            :name "R1" :nets {:P "old" :N "old"}}])
           a (annotations schem)]
       (is (= {:nets {}} (get a "R1"))))))
 

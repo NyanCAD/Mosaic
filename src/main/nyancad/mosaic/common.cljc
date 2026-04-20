@@ -288,7 +288,9 @@
 (s/def ::type (clojure.set/union device-types schematic-only-types))
 
 (s/def ::variant #{"hv" "vh" "d"})
-(s/def ::nets (s/map-of string? string?))
+;; Port-name keys are keywords in the in-memory representation (round-trip
+;; through json->clj keywordizes object keys); net-name values are strings.
+(s/def ::nets (s/map-of keyword? string?))
 (s/def ::net string?)
 
 (defmulti device-spec :type)
