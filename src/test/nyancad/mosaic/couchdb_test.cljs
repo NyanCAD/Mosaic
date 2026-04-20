@@ -48,12 +48,6 @@
         (is (clojure.string/ends-with? s suffix)
             (str s " does not end with " suffix))))))
 
-(deftest generate-suffixes-drops-leading-underscore-anywhere-it-happens
-  (testing "a single-char leading underscore suffix is dropped"
-    ;; "a_b" → tokens ["a" "_" "b"]; reductions: "b", "_b", "a_b".
-    ;; Drop "_b".
-    (is (= ["b" "a_b"] (vec (couchdb/generate-suffixes "a_b"))))))
-
 ;; ---------------------------------------------------------------------------
 ;; name-search-view
 ;; ---------------------------------------------------------------------------

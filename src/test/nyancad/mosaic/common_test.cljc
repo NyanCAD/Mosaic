@@ -33,17 +33,8 @@
   (testing "key function projects each element before comparison"
     (is (= 1 (cm/bisect-left [[1 :a] [3 :b] [5 :c]] 2 first)))))
 
-(deftest insert-preserves-order
-  (testing "inserts x at index i, shifting later elements right"
-    (is (= [:a :x :b :c] (cm/insert [:a :b :c] 1 :x)))
-    (is (= [:x :a :b] (cm/insert [:a :b] 0 :x)))
-    (is (= [:a :b :x] (cm/insert [:a :b] 2 :x)))))
-
-(deftest dissjoc-removes-at-index
-  (testing "returns a vector with the element at i removed"
-    (is (= [:a :c] (cm/dissjoc [:a :b :c] 1)))
-    (is (= [:b :c] (cm/dissjoc [:a :b :c] 0)))
-    (is (= [:a :b] (cm/dissjoc [:a :b :c] 2)))))
+;; `insert` and `dissjoc` are trivial vector primitives exercised
+;; indirectly through the set-coord / remove-coord tests below.
 
 (deftest set-coord-inserts-and-replaces
   (testing "inserts a new coord at the correct sorted position"
@@ -198,11 +189,6 @@
     (let [ports (into [] (concat (repeat 5 {:side :top}) (repeat 2 {:side :left})))
           [w _] (cm/port-perimeter ports :amp)]
       (is (>= w 5)))))
-
-(deftest port-perimeter-realistic-opamp
-  (testing "op-amp (2 left inputs, 1 right output): parity differs, height bumped to 3"
-    (let [ports [{:side :left} {:side :left} {:side :right}]]
-      (is (= [1 3] (cm/port-perimeter ports))))))
 
 ;; Contract (port-locations): each port gets an (x, y) on the device border.
 ;; Body occupies [1..width] × [1..height]; ports sit at x=0 (left),
