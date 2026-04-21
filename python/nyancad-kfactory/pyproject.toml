@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=7.0", "pytest-asyncio>=0.21"]
+test = ["pytest>=7.0"]
 
 [project.urls]
 Homepage = "https://github.com/NyanCAD/Mosaic"
@@ -38,4 +38,3 @@ include = ["nyancad_kfactory*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-asyncio_mode = "auto"
