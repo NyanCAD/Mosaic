@@ -185,7 +185,8 @@
                                   (swap! modeldb assoc model-id
                                          {:name name
                                           :type "ckt"
-                                          :tags (plain-tags @selcat)}))))
+                                          :tags (plain-tags @selcat)})
+                                  (reset! selmodel model-id))))
         add-spice #(spice-model-modal
                     (fn [device-type model-name]
                       (let [model-id (str "models:" (cm/random-name))]
@@ -193,7 +194,8 @@
                                {:name model-name
                                 :type device-type
                                 :tags (plain-tags @selcat)
-                                :models [{:language "spice"}]}))))]
+                                :models [{:language "spice"}]})
+                        (reset! selmodel model-id))))]
     [:<>
      [:div.schsel
       [:div.addbuttons
