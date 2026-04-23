@@ -178,24 +178,40 @@
   [tags]
   (vec (remove cm/parse-prop-tag tags)))
 
+(defn- prop-tag-matches?
+  "True if tag is plain, or if it's a prop-tag whose k:v matches doc."
+  [tag doc]
+  (if-let [[k v] (cm/parse-prop-tag tag)]
+    (= v (str (get doc (keyword k))))
+    true))
+
 (defn cell-view []
-  (let [add-schem #(cm/prompt "Enter the name of the new schematic"
-                              (fn [name]
-                                (let [model-id (str "models:" (cm/random-name))]
-                                  (swap! modeldb assoc model-id
-                                         {:name name
-                                          :type "ckt"
-                                          :tags (plain-tags @selcat)})
-                                  (reset! selmodel model-id))))
-        add-spice #(spice-model-modal
-                    (fn [device-type model-name]
-                      (let [model-id (str "models:" (cm/random-name))]
-                        (swap! modeldb assoc model-id
-                               {:name model-name
-                                :type device-type
-                                :tags (plain-tags @selcat)
-                                :models [{:language "spice"}]})
-                        (reset! selmodel model-id))))]
+  (letfn [(create-model! [model-id doc]
+            (swap! modeldb assoc model-id doc)
+            (swap! selcat (fn [v] (vec (filter #(prop-tag-matches? % doc) v))))
+            (reset! filter-text "")
+            (reset! selmodel model-id)
+            (js/requestAnimationFrame
+             (fn []
+               (when-let [label (some-> (js/document.getElementById model-id)
+                                        .-labels
+                                        (.item 0))]
+                 (.scrollIntoView label #js {:block "nearest" :behavior "smooth"})))))
+          (add-schem []
+            (cm/prompt "Enter the name of the new schematic"
+                       (fn [name]
+                         (create-model! (str "models:" (cm/random-name))
+                                        {:name name
+                                         :type "ckt"
+                                         :tags (plain-tags @selcat)}))))
+          (add-spice []
+            (spice-model-modal
+             (fn [device-type model-name]
+               (create-model! (str "models:" (cm/random-name))
+                              {:name model-name
+                               :type device-type
+                               :tags (plain-tags @selcat)
+                               :models [{:language "spice"}]}))))]
     [:<>
      [:div.schsel
       [:div.addbuttons
