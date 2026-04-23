@@ -1104,9 +1104,20 @@ rect.select {
     cursor: url(icons/eraser.svg) 6 14, crosshair;
 }
 
-/* VS Code theme: propagate to color-scheme so light-dark() responds */
-.vscode-dark { color-scheme: dark; }
-.vscode-light { color-scheme: light; }
+/* Propagate effective color-scheme to :root so <html>'s UA-default
+   background matches the theme. VS Code applies .vscode-dark/.vscode-light
+   to <body> only, which leaves <html>'s default bg tied to the OS
+   prefers-color-scheme — causing light panels on a dark backdrop when
+   the OS and VS Code themes disagree (#173). Later rules win on equal
+   specificity; manual container-class rules also have higher specificity
+   than the VS Code body-class rules, so manual toggle always wins. */
+:root:has(body.vscode-dark) { color-scheme: dark; }
+:root:has(body.vscode-light) { color-scheme: light; }
+:root:has(.mosaic-container.dark-cursors) { color-scheme: dark; }
+:root:has(.mosaic-container.light-cursors) { color-scheme: light; }
+/* Eyesore easter-egg: dark canvas with light chrome — overrides
+   .dark-cursors above. */
+:root:has(.mosaic-container.eyesore) { color-scheme: light; }
 
 /* Light cursors for dark mode — auto (OS), manual toggle, and VS Code */
 @media (prefers-color-scheme: dark) {

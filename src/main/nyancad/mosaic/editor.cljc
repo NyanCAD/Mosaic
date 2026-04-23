@@ -2224,7 +2224,9 @@
    (cond
      (= t "dark") true
      (= t "light") false
+     (= t "eyesore") false
      (.. js/document -body -classList (contains "vscode-dark")) true
+     (.. js/document -body -classList (contains "vscode-light")) false
      :else (.-matches (js/window.matchMedia "(prefers-color-scheme: dark)")))))
 
 (defn toggle-theme! []
@@ -2617,19 +2619,14 @@
                      (let [schem @schematic]
                        (map #(vector % (get schem %)) sel))]])))
 
-(defn- set-color-scheme!
-  "Set color-scheme on body so light-dark() CSS function responds correctly.
-   Targets body so inline style overrides VS Code's .vscode-dark class."
-  [scheme]
-  (.. js/document -body -style (setProperty "color-scheme" scheme)))
-
 (defn- theme-attrs
-  "CSS attributes for the current theme. Returns {:class ...}"
+  "CSS classes for the current manual theme. :root:has() rules in
+   style.css pick up these container classes and set color-scheme."
   []
   (case @theme
-    "eyesore" (do (set-color-scheme! "light") {:class "eyesore dark-cursors"})
-    "light"   (do (set-color-scheme! "light") {:class "light-cursors"})
-    "dark"    (do (set-color-scheme! "dark") {:class "dark-cursors"})
+    "eyesore" {:class "eyesore dark-cursors"}
+    "light"   {:class "light-cursors"}
+    "dark"    {:class "dark-cursors"}
     {}))
 
 (defn schematic-ui []
