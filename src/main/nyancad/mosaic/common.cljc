@@ -255,11 +255,25 @@
       (if (< y 0) :bottom :top))))
 
 
-(s/def ::x number?)
-(s/def ::y number?)
+;; `number?` on its own admits ##NaN and ±##Inf, which JSON can't
+;; represent and Pydantic rejects as "not a number." Schematic
+;; coordinates are always finite — enforce that in the spec so generated
+;; samples are JSON-safe.
+(s/def ::finite-number (s/and number? #(js/Number.isFinite %)))
+(s/def ::x ::finite-number)
+(s/def ::y ::finite-number)
+;; Wire endpoints are relative to (x, y).
+(s/def ::rx ::finite-number)
+(s/def ::ry ::finite-number)
 (s/def ::name string?)
-(s/def ::transform (s/coll-of number? :count 6))
+(s/def ::transform (s/coll-of ::finite-number :count 6))
 (s/def ::model (s/nilable string?))
+
+;; Device-level optional fields that Pydantic also models. CouchDB
+;; envelope fields (_id, _rev, _deleted) are deliberately NOT specced —
+;; s/keys is open, so extra keys pass through, and these are transport
+;; concerns the in-memory schematic shouldn't care about.
+(s/def ::template (s/nilable string?))
 
 ; Device type specs
 (def device-types #{"pmos" "nmos" "npn" "pnp" "resistor" "capacitor"
@@ -282,20 +296,38 @@
 (s/def ::net string?)
 
 (defmulti device-spec :type)
+;; Components require a :name — the schematic renders by name and the
+;; SPICE netlist keys off it. commit-staged (editor.cljc) assigns one
+;; before validating, so pre-commit state is never unnamed.
+;;
+;; Wires deliberately keep :name as :opt-un. split-wire (editor.cljc)
+;; creates fresh gensym-keyed wire segments during merge; those don't
+;; get a human-readable name because wires display by their computed
+;; net, not by :name. The stored :name on wires is CouchDB housekeeping.
 (defmethod device-spec "wire" [_]
   (s/keys :req-un [::rx ::ry ::type ::x ::y]
-          :opt-un [::variant ::net]))
+          :opt-un [::name ::variant ::net]))
 (defmethod device-spec :default [_]
-  (s/keys :req-un [::type ::transform ::x ::y]
-          :opt-un [::model ::nets]))
-(s/def ::device (s/multi-spec device-spec ::type))
+  (s/keys :req-un [::type ::transform ::x ::y ::name]
+          :opt-un [::model ::nets ::template]))
+;; Retag uses the unqualified :type so generation round-trips through
+;; device-spec's dispatch (which reads :type, not ::type).
+(s/def ::device (s/multi-spec device-spec :type))
 (s/def ::schematic (s/map-of string? ::device))
 
 ; Model specs for modeldb
 (s/def ::tags (s/coll-of string? :kind vector?))
 (s/def ::side #{"top" "bottom" "left" "right"})
-(s/def ::port-type #{"electric" "photonic"})
-(s/def ::port-entry (s/keys :req-un [::name ::side]))
+;; Port "type" field (electric vs photonic). The spec keyword is qualified
+;; under :port/ rather than :nyancad.mosaic.common/ so its NAME ("type")
+;; can be used as an unqualified map-key validator in ::port-entry without
+;; clashing with ::type (the device-type enum) in the same spec registry.
+;; s/keys :req-un/:opt-un uses the spec keyword's name portion as the map
+;; key, so :port/type validates the :type field of port entries while
+;; ::type independently validates the :type field of devices.
+(s/def :port/type #{"electric" "photonic"})
+(s/def ::port-entry (s/keys :req-un [::name ::side]
+                             :opt-un [:port/type]))
 (s/def ::ports (s/coll-of ::port-entry :kind vector?))
 (s/def ::code string?)
 (s/def ::language string?)
