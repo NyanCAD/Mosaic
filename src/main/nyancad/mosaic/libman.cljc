@@ -12,7 +12,8 @@
              :refer [modeldb syncactive
                      preview-url get-preview search-remote-models
                      remote-models-section
-                     edit-url import-ports workspace-selector init-extra!]]
+                     edit-url import-ports workspace-selector init-extra!
+                     root]]
             [nyancad.mosaic.common :as cm]))
 
 ;; --- Ephemeral UI state ---
@@ -253,12 +254,6 @@
    [cm/modal]])
 
 (def shortcuts {})
-
-;; The react root binds to a DOM element at load time, which can't
-;; happen under :test (Node has no document). Only create it for real
-;; deployments; tests exercise helpers directly and never render.
-#?(:web    (defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-libman")))
-   :vscode (defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-libman"))))
 
 (defn ^:dev/after-load render []
   (rdc/render root [library-manager]))

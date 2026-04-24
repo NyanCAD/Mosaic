@@ -18,6 +18,9 @@
 (defonce syncactive (r/atom false))
 (defonce preview-url (r/atom nil))
 
+;; No DOM under :node-test — render is never called from tests.
+(def root nil)
+
 ;; UI hooks — no-ops in tests.
 (defn get-preview [_ _ _ _] nil)
 (defn search-remote-models [_ _] nil)
