@@ -7,7 +7,8 @@
             [reagent.core :as r]
             [reagent.dom.client :as rdc]
             [#?(:web    nyancad.mosaic.libman.platform-web
-                :vscode nyancad.mosaic.libman.platform-vscode)
+                :vscode nyancad.mosaic.libman.platform-vscode
+                :test   nyancad.mosaic.libman.platform-test)
              :refer [modeldb syncactive
                      preview-url get-preview search-remote-models
                      remote-models-section
@@ -253,7 +254,11 @@
 
 (def shortcuts {})
 
-(defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-libman")))
+;; The react root binds to a DOM element at load time, which can't
+;; happen under :test (Node has no document). Only create it for real
+;; deployments; tests exercise helpers directly and never render.
+#?(:web    (defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-libman")))
+   :vscode (defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-libman"))))
 
 (defn ^:dev/after-load render []
   (rdc/render root [library-manager]))
