@@ -318,8 +318,16 @@
 ; Model specs for modeldb
 (s/def ::tags (s/coll-of string? :kind vector?))
 (s/def ::side #{"top" "bottom" "left" "right"})
-(s/def ::port-type #{"electric" "photonic"})
-(s/def ::port-entry (s/keys :req-un [::name ::side]))
+;; Port "type" field (electric vs photonic). The spec keyword is qualified
+;; under :port/ rather than :nyancad.mosaic.common/ so its NAME ("type")
+;; can be used as an unqualified map-key validator in ::port-entry without
+;; clashing with ::type (the device-type enum) in the same spec registry.
+;; s/keys :req-un/:opt-un uses the spec keyword's name portion as the map
+;; key, so :port/type validates the :type field of port entries while
+;; ::type independently validates the :type field of devices.
+(s/def :port/type #{"electric" "photonic"})
+(s/def ::port-entry (s/keys :req-un [::name ::side]
+                             :opt-un [:port/type]))
 (s/def ::ports (s/coll-of ::port-entry :kind vector?))
 (s/def ::code string?)
 (s/def ::language string?)
