@@ -1523,13 +1523,13 @@
                     (+ y (/ h 2)))))
 
 (defn commit-staged [dev]
-  (when (s/valid? :nyancad.mosaic.common/device dev)
-    (let [name (make-name (:type dev))
-          id (str group sep name)]
-      (swap! schematic assoc id
-             (if (:name dev)
-               dev
-               (assoc dev :name name)))
+  ;; Assign :name before validating so the component spec (which now
+  ;; requires :name) sees a fully-named device. For wires the :name is
+  ;; still effectively advisory — the wire spec keeps :name as :opt-un.
+  (let [named (update dev :name (fnil identity (make-name (:type dev))))
+        id (str group sep (:name named))]
+    (when (s/valid? :nyancad.mosaic.common/device named)
+      (swap! schematic assoc id named)
       (post-action!))))
 
 (defn transform-selected [tf]

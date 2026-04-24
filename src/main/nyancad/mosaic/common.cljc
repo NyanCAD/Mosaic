@@ -296,18 +296,20 @@
 (s/def ::net string?)
 
 (defmulti device-spec :type)
-;; :name is :opt-un (not :req-un) on purpose — devices are sometimes
-;; staged / merged from wire operations before a name is assigned (see
-;; editor/commit-staged and the wire merger at ~editor.cljc:1414). The
-;; on-disk contract (modeled by Pydantic in schemas.py) does require
-;; name; parity tests augment generated devices with :name at the
-;; serialization boundary before sending them through Pydantic.
+;; Components require a :name — the schematic renders by name and the
+;; SPICE netlist keys off it. commit-staged (editor.cljc) assigns one
+;; before validating, so pre-commit state is never unnamed.
+;;
+;; Wires deliberately keep :name as :opt-un. split-wire (editor.cljc)
+;; creates fresh gensym-keyed wire segments during merge; those don't
+;; get a human-readable name because wires display by their computed
+;; net, not by :name. The stored :name on wires is CouchDB housekeeping.
 (defmethod device-spec "wire" [_]
   (s/keys :req-un [::rx ::ry ::type ::x ::y]
           :opt-un [::name ::variant ::net]))
 (defmethod device-spec :default [_]
-  (s/keys :req-un [::type ::transform ::x ::y]
-          :opt-un [::name ::model ::nets ::template]))
+  (s/keys :req-un [::type ::transform ::x ::y ::name]
+          :opt-un [::model ::nets ::template]))
 ;; Retag uses the unqualified :type so generation round-trips through
 ;; device-spec's dispatch (which reads :type, not ::type).
 (s/def ::device (s/multi-spec device-spec :type))

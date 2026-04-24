@@ -134,7 +134,9 @@
   (testing "a hand-rolled resistor and wire are accepted by both sides
             (sanity check for the plumbing — independent of generators)"
     (when (= ::ok (skip-or-run))
-      (let [resistor {:type "resistor" :x 1 :y 2 :transform [1 0 0 1 0 0]}
+      ;; Components require :name per the spec; wires do not (split-wire
+      ;; creates unnamed wire segments during merge, so :name stays opt).
+      (let [resistor {:type "resistor" :name "R1" :x 1 :y 2 :transform [1 0 0 1 0 0]}
             wire     {:type "wire" :x 0 :y 0 :rx 3 :ry 0}]
         (is (s/valid? ::cm/device resistor))
         (is (s/valid? ::cm/device wire))
