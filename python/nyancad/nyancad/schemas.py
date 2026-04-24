@@ -11,6 +11,31 @@ from typing import Annotated, Any, Dict, Literal, Optional, Union
 from pydantic import BaseModel, Field, ConfigDict
 
 
+# Device type enum — the single source of truth is
+# nyancad.mosaic.common/device-types (common.cljc). Keep this Literal in
+# sync when that set changes. Excludes "wire" (handled by the Wire class
+# below) but includes "port" and "text" from schematic-only-types because
+# Components are the class that represents those.
+ComponentType = Literal[
+    # Electrical devices
+    "pmos", "nmos", "npn", "pnp",
+    "resistor", "capacitor", "inductor",
+    "vsource", "isource",
+    "diode", "led", "photodiode", "modulator",
+    # Subcircuits
+    "ckt", "amp",
+    # Schematic-only (handled as Components on this side)
+    "port", "text",
+    # Photonics
+    "straight", "bend", "sbend", "taper", "transition",
+    "terminator", "crossing",
+    "ring-single", "ring-double", "spiral",
+    "splitter-1x2", "coupler", "coupler-ring",
+    "mmi-1x2", "mmi-2x2", "mzi-1x2", "mzi-2x2",
+    "grating-coupler",
+]
+
+
 class DeviceBase(BaseModel):
     """Base class for all schematic devices.
 
@@ -115,11 +140,10 @@ class Component(DeviceBase):
         }
         ```
     """
-    device_type: Literal[
-        "resistor", "capacitor", "inductor", "vsource", "isource",
-        "diode", "pmos", "nmos", "npn", "pnp", "ckt", "port", "text"
-    ] = Field(alias="type")
+    device_type: ComponentType = Field(alias="type")
     transform: list[float] = Field(
+        min_length=6,
+        max_length=6,
         description="2D affine transform matrix [a, b, c, d, e, f] for rotation/mirroring"
     )
 
@@ -203,8 +227,15 @@ class ModelMetadata(BaseModel):
     type: Optional[str] = Field(None, description="Component type (resistor, capacitor, ckt, etc.)")
     tags: list[str] = Field(default_factory=list, description="Flat tag list (replaces hierarchical category)")
 
-    # Model entries (flat list replacing nested templates dict)
-    has_models: bool = Field(..., description="Whether model entries exist for netlist generation")
+    # Model entries (flat list replacing nested templates dict). has_models
+    # is a DERIVED flag — it's not stored; mcp_server.py computes it before
+    # returning a model to API consumers. Declared Optional here so validation
+    # accepts either shape: dicts arriving from CouchDB (no has_models) and
+    # dicts that have been through the MCP server (has_models injected).
+    has_models: Optional[bool] = Field(
+        None,
+        description="Whether model entries exist for netlist generation (derived; set by mcp_server.py, not stored in DB)"
+    )
     models: Optional[list[ModelEntry]] = Field(
         None,
         description="Flat list of model/template entries by language and implementation"

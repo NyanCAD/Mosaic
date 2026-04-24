@@ -255,11 +255,30 @@
       (if (< y 0) :bottom :top))))
 
 
-(s/def ::x number?)
-(s/def ::y number?)
+;; `number?` on its own admits ##NaN and ±##Inf, which JSON can't
+;; represent and Pydantic rejects as "not a number." Schematic
+;; coordinates are always finite — enforce that in the spec so generated
+;; samples are JSON-safe.
+(s/def ::finite-number (s/and number? #(js/Number.isFinite %)))
+(s/def ::x ::finite-number)
+(s/def ::y ::finite-number)
+;; Wire endpoints are relative to (x, y).
+(s/def ::rx ::finite-number)
+(s/def ::ry ::finite-number)
 (s/def ::name string?)
-(s/def ::transform (s/coll-of number? :count 6))
+(s/def ::transform (s/coll-of ::finite-number :count 6))
 (s/def ::model (s/nilable string?))
+
+;; CouchDB envelope fields. The map key in ::schematic already acts as
+;; the _id, but after a PouchDB round-trip the _id is also stamped onto
+;; the value itself (see hipflask/prepare). _rev and _deleted appear on
+;; every live doc that has been through the DB at least once.
+(s/def ::_id string?)
+(s/def ::_rev string?)
+(s/def ::_deleted boolean?)
+
+;; Device-level optional fields that Pydantic also models.
+(s/def ::template (s/nilable string?))
 
 ; Device type specs
 (def device-types #{"pmos" "nmos" "npn" "pnp" "resistor" "capacitor"
@@ -282,13 +301,21 @@
 (s/def ::net string?)
 
 (defmulti device-spec :type)
+;; :name is :opt-un (not :req-un) on purpose — devices are sometimes
+;; staged / merged from wire operations before a name is assigned (see
+;; editor/commit-staged and the wire merger at ~editor.cljc:1414). The
+;; on-disk contract (modeled by Pydantic in schemas.py) does require
+;; name; parity tests augment generated devices with :name at the
+;; serialization boundary before sending them through Pydantic.
 (defmethod device-spec "wire" [_]
   (s/keys :req-un [::rx ::ry ::type ::x ::y]
-          :opt-un [::variant ::net]))
+          :opt-un [::_id ::_rev ::_deleted ::name ::variant ::net]))
 (defmethod device-spec :default [_]
   (s/keys :req-un [::type ::transform ::x ::y]
-          :opt-un [::model ::nets]))
-(s/def ::device (s/multi-spec device-spec ::type))
+          :opt-un [::_id ::_rev ::_deleted ::name ::model ::nets ::template]))
+;; Retag uses the unqualified :type so generation round-trips through
+;; device-spec's dispatch (which reads :type, not ::type).
+(s/def ::device (s/multi-spec device-spec :type))
 (s/def ::schematic (s/map-of string? ::device))
 
 ; Model specs for modeldb
