@@ -269,15 +269,10 @@
 (s/def ::transform (s/coll-of ::finite-number :count 6))
 (s/def ::model (s/nilable string?))
 
-;; CouchDB envelope fields. The map key in ::schematic already acts as
-;; the _id, but after a PouchDB round-trip the _id is also stamped onto
-;; the value itself (see hipflask/prepare). _rev and _deleted appear on
-;; every live doc that has been through the DB at least once.
-(s/def ::_id string?)
-(s/def ::_rev string?)
-(s/def ::_deleted boolean?)
-
-;; Device-level optional fields that Pydantic also models.
+;; Device-level optional fields that Pydantic also models. CouchDB
+;; envelope fields (_id, _rev, _deleted) are deliberately NOT specced —
+;; s/keys is open, so extra keys pass through, and these are transport
+;; concerns the in-memory schematic shouldn't care about.
 (s/def ::template (s/nilable string?))
 
 ; Device type specs
@@ -309,10 +304,10 @@
 ;; serialization boundary before sending them through Pydantic.
 (defmethod device-spec "wire" [_]
   (s/keys :req-un [::rx ::ry ::type ::x ::y]
-          :opt-un [::_id ::_rev ::_deleted ::name ::variant ::net]))
+          :opt-un [::name ::variant ::net]))
 (defmethod device-spec :default [_]
   (s/keys :req-un [::type ::transform ::x ::y]
-          :opt-un [::_id ::_rev ::_deleted ::name ::model ::nets ::template]))
+          :opt-un [::name ::model ::nets ::template]))
 ;; Retag uses the unqualified :type so generation round-trips through
 ;; device-spec's dispatch (which reads :type, not ::type).
 (s/def ::device (s/multi-spec device-spec :type))
