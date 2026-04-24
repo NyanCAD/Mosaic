@@ -6,12 +6,17 @@
   "PouchDB-backed platform module for the library manager (web deployment)."
   (:require clojure.string
             [reagent.core :as r]
+            [reagent.dom.client :as rdc]
             [clojure.spec.alpha :as s]
             [nyancad.hipflask :refer [pouch-atom pouchdb watch-changes get-group alldocs get-view-group get-mango-group]]
             [nyancad.hipflask.util :refer [sep json->clj]]
             [cljs.core.async :refer [go <!]]
             [cljs.core.async.interop :refer-macros [<p!]]
             [nyancad.mosaic.common :as cm]))
+
+;; React root — bound at module load time, so has to live in the
+;; platform module (Node has no document under :test).
+(defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-libman")))
 
 ;; --- Database setup ---
 

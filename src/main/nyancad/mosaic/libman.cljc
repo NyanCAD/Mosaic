@@ -7,11 +7,13 @@
             [reagent.core :as r]
             [reagent.dom.client :as rdc]
             [#?(:web    nyancad.mosaic.libman.platform-web
-                :vscode nyancad.mosaic.libman.platform-vscode)
+                :vscode nyancad.mosaic.libman.platform-vscode
+                :test   nyancad.mosaic.libman.platform-test)
              :refer [modeldb syncactive
                      preview-url get-preview search-remote-models
                      remote-models-section
-                     edit-url import-ports workspace-selector init-extra!]]
+                     edit-url import-ports workspace-selector init-extra!
+                     root]]
             [nyancad.mosaic.common :as cm]))
 
 ;; --- Ephemeral UI state ---
@@ -252,8 +254,6 @@
    [cm/modal]])
 
 (def shortcuts {})
-
-(defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-libman")))
 
 (defn ^:dev/after-load render []
   (rdc/render root [library-manager]))

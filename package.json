@@ -4,6 +4,7 @@
   "private": true,
   "devDependencies": {
     "@vscode/vsce": "^3.2.0",
+    "pouchdb-adapter-memory": "^9.0.0",
     "shadow-cljs": "^3.3.6"
   },
   "dependencies": {

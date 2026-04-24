@@ -1,0 +1,30 @@
+{
+  "models:opamp_1": {
+    "name": "OpAmp",
+    "type": "amp",
+    "tags": ["analog", "amplifier"],
+    "ports": [
+      {"name": "in+", "side": "left", "type": "electric"},
+      {"name": "in-", "side": "left", "type": "electric"},
+      {"name": "out", "side": "right", "type": "electric"}
+    ]
+  },
+  "models:nmos_ihp": {
+    "name": "NMOS_3p3",
+    "type": "nmos",
+    "tags": ["IHP", "nmos", "transistor"],
+    "models": [
+      {"language": "spice", "name": "sg13_lv_nmos", "implementation": "NgSpice"}
+    ]
+  },
+  "models:divider_ckt": {
+    "name": "Resistor Divider",
+    "type": "ckt",
+    "tags": ["analog", "passive"],
+    "ports": [
+      {"name": "in", "side": "top", "type": "electric"},
+      {"name": "out", "side": "right", "type": "electric"},
+      {"name": "gnd", "side": "bottom", "type": "electric"}
+    ]
+  }
+}

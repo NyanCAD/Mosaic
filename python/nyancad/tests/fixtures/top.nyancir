@@ -1,0 +1,42 @@
+{
+  "top:R1": {
+    "type": "resistor",
+    "x": 0,
+    "y": 0,
+    "name": "R1",
+    "transform": [1, 0, 0, 1, 0, 0],
+    "props": {"resistance": "10k"}
+  },
+  "top:R2": {
+    "type": "resistor",
+    "x": 2,
+    "y": 0,
+    "name": "R2",
+    "transform": [1, 0, 0, 1, 0, 0],
+    "props": {"resistance": "5k"}
+  },
+  "top:C1": {
+    "type": "capacitor",
+    "x": 4,
+    "y": 0,
+    "name": "C1",
+    "transform": [1, 0, 0, 1, 0, 0],
+    "props": {"capacitance": "1u"}
+  },
+  "top:W1": {
+    "type": "wire",
+    "x": 0, "y": 1, "rx": 2, "ry": 0,
+    "name": "W1"
+  },
+  "top:W2": {
+    "type": "wire",
+    "x": 2, "y": 1, "rx": 2, "ry": 0,
+    "name": "W2"
+  },
+  "other:stray": {
+    "type": "resistor",
+    "x": 10,
+    "y": 10,
+    "name": "stray"
+  }
+}

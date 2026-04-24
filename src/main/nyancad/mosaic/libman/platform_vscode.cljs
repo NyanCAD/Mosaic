@@ -5,10 +5,15 @@
 (ns nyancad.mosaic.libman.platform-vscode
   "JsAtom-backed platform module for the library manager (VS Code deployment)."
   (:require [reagent.core :as r]
+            [reagent.dom.client :as rdc]
             [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request!]]
             [nyancad.mosaic.common :as cm]
             [nyancad.hipflask.util :refer [json->clj]]
             [cljs.core.async :refer [go <!]]))
+
+;; React root — bound at module load time, so has to live in the
+;; platform module (Node has no document under :test).
+(defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-libman")))
 
 ;; --- State ---
 
