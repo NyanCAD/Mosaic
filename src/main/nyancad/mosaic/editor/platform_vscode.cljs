@@ -87,17 +87,11 @@
     (first (remove #(contains? @schematic (str group ":" %))
                    (map #(str prefix %) (next (range)))))))
 
-(defn- parse-drop-fqn [^js dt]
-  (let [new-payload (.getData dt "text/x-gfp-factory")]
-    (if (seq new-payload)
-      (-> new-payload js/JSON.parse .-factory)
-      (.getData dt "application/gfp"))))
-
 (defn- on-drop [e]
   (.preventDefault e)
   (.stopPropagation e)
   (let [dt (.-dataTransfer e)
-        fqn (parse-drop-fqn dt)]
+        fqn (some-> (.getData dt "text/x-gfp-factory") js/JSON.parse .-factory)]
     (when (seq fqn)
       (let [model-key (cm/model-key fqn)
             model-def (get @modeldb model-key)]
