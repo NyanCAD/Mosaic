@@ -9,14 +9,13 @@ import logging
 import secrets
 import time
 import uuid
-from typing import Any
 
 import httpx
 import jwt
 from pydantic import AnyHttpUrl, AnyUrl
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from mcp.server.auth.provider import (
@@ -31,7 +30,13 @@ from mcp.server.auth.routes import create_auth_routes, cors_middleware
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
-from .config import JWT_SECRET, SERVER_URL, COUCHDB_URL, COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS
+from .config import (
+    JWT_SECRET,
+    SERVER_URL,
+    COUCHDB_URL,
+    COUCHDB_ADMIN_USER,
+    COUCHDB_ADMIN_PASS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +69,7 @@ class JWTTokenVerifier:
                 JWT_SECRET,
                 algorithms=["HS256"],
                 audience=COUCHDB_URL,
-                options={"require": ["sub", "exp", "iat"]}
+                options={"require": ["sub", "exp", "iat"]},
             )
 
             # Extract claims
@@ -91,7 +96,9 @@ class JWTTokenVerifier:
             logger.warning("Token verification failed: Token expired")
             return None
         except jwt.InvalidAudienceError:
-            logger.warning(f"Token verification failed: Invalid audience (expected {COUCHDB_URL})")
+            logger.warning(
+                f"Token verification failed: Invalid audience (expected {COUCHDB_URL})"
+            )
             return None
         except jwt.InvalidTokenError as e:
             logger.warning(f"Token verification failed: {e}")
@@ -101,7 +108,9 @@ class JWTTokenVerifier:
             return None
 
 
-class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, RefreshToken, AccessToken]):
+class CouchDBOAuthProvider(
+    OAuthAuthorizationServerProvider[AuthorizationCode, RefreshToken, AccessToken]
+):
     """OAuth provider that integrates with CouchDB for authentication.
 
     This provider:
@@ -116,7 +125,9 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         user_id = f"org.couchdb.user:{username}"
         return await self._couchdb_get(user_id, database="_users")
 
-    async def _update_user_doc(self, username: str, updates: dict, user_doc: dict | None = None) -> bool:
+    async def _update_user_doc(
+        self, username: str, updates: dict, user_doc: dict | None = None
+    ) -> bool:
         """Update user document in CouchDB _users database.
 
         Args:
@@ -141,13 +152,15 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
 
         return success
 
-    async def _couchdb_get(self, doc_id: str, database: str = "oauth_clients") -> dict | None:
+    async def _couchdb_get(
+        self, doc_id: str, database: str = "oauth_clients"
+    ) -> dict | None:
         """Generic CouchDB GET operation."""
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(
                     f"{COUCHDB_URL}/{database}/{doc_id}",
-                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS),
                 )
                 if response.status_code != 200:
                     return None
@@ -156,17 +169,21 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 logger.error(f"CouchDB GET {doc_id} failed: {e}")
                 return None
 
-    async def _couchdb_put(self, doc_id: str, doc: dict, database: str = "oauth_clients") -> bool:
+    async def _couchdb_put(
+        self, doc_id: str, doc: dict, database: str = "oauth_clients"
+    ) -> bool:
         """Generic CouchDB PUT operation."""
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.put(
                     f"{COUCHDB_URL}/{database}/{doc_id}",
                     json=doc,
-                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS),
                 )
                 if response.status_code not in (200, 201, 202):
-                    logger.error(f"CouchDB PUT {doc_id} failed: {response.status_code} - {response.text}")
+                    logger.error(
+                        f"CouchDB PUT {doc_id} failed: {response.status_code} - {response.text}"
+                    )
                     return False
                 logger.debug(f"CouchDB PUT {doc_id} succeeded")
                 return True
@@ -174,7 +191,9 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 logger.error(f"CouchDB PUT {doc_id} error: {e}")
                 return False
 
-    async def _couchdb_delete(self, doc_id: str, database: str = "oauth_clients") -> bool:
+    async def _couchdb_delete(
+        self, doc_id: str, database: str = "oauth_clients"
+    ) -> bool:
         """Generic CouchDB DELETE with atomic _rev handling."""
         doc = await self._couchdb_get(doc_id, database)
         if not doc:
@@ -184,7 +203,7 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             try:
                 response = await client.delete(
                     f"{COUCHDB_URL}/{database}/{doc_id}?rev={doc['_rev']}",
-                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS),
                 )
                 if response.status_code in (200, 404, 409):  # 409 = race condition
                     return True
@@ -229,12 +248,14 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         """Delete OAuth state from oauth_clients database."""
         return await self._couchdb_delete(f"state:{state}")
 
-    async def _store_auth_code(self, code: str, auth_code: AuthorizationCode, user_data: dict) -> bool:
+    async def _store_auth_code(
+        self, code: str, auth_code: AuthorizationCode, user_data: dict
+    ) -> bool:
         """Store authorization code to oauth_clients database."""
         doc_id = f"code:{code}"
 
         # Serialize AuthorizationCode using Pydantic
-        auth_code_dict = auth_code.model_dump(mode='json', exclude_none=True)
+        auth_code_dict = auth_code.model_dump(mode="json", exclude_none=True)
 
         doc = {
             "_id": doc_id,
@@ -286,7 +307,7 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             raise ValueError("No client_id provided")
 
         doc_id = f"client:{client_info.client_id}"
-        client_data = client_info.model_dump(mode='json', exclude_none=True)
+        client_data = client_info.model_dump(mode="json", exclude_none=True)
 
         # Try to fetch existing doc to get _rev
         existing_doc = await self._couchdb_get(doc_id)
@@ -300,13 +321,17 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         if not success:
             logger.error(f"Failed to register client {client_info.client_id}")
 
-    async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
+    async def authorize(
+        self, client: OAuthClientInformationFull, params: AuthorizationParams
+    ) -> str:
         """Generate authorization URL that redirects to login page."""
         state = params.state or secrets.token_hex(16)
 
         # Store authorization parameters in CouchDB for use after login
         # Use Pydantic model_dump, exclude state (it's the key), add client_id
-        state_data = params.model_dump(mode='json', exclude={'state'}, exclude_none=True)
+        state_data = params.model_dump(
+            mode="json", exclude={"state"}, exclude_none=True
+        )
         state_data["client_id"] = client.client_id
         await self._store_state(state, state_data)
 
@@ -381,21 +406,27 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         tokens = oauth_data.get("tokens", [])
 
         # Add new token to array
-        tokens.append({
-            "jti": refresh_jti,
-            "expires_at": refresh_expires_at,
-            "issued_at": now,
-            "client_id": client.client_id or "",
-        })
+        tokens.append(
+            {
+                "jti": refresh_jti,
+                "expires_at": refresh_expires_at,
+                "issued_at": now,
+                "client_id": client.client_id or "",
+            }
+        )
 
         # Clean up expired tokens (keep array manageable)
         tokens = [t for t in tokens if t.get("expires_at", 0) > now]
 
-        await self._update_user_doc(username, {
-            "oauth": {
-                "tokens": tokens,
-            }
-        }, user_doc=user_doc)
+        await self._update_user_doc(
+            username,
+            {
+                "oauth": {
+                    "tokens": tokens,
+                }
+            },
+            user_doc=user_doc,
+        )
 
         # Clean up used authorization code (single-use)
         await self._delete_auth_code(authorization_code.code)
@@ -420,7 +451,7 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 JWT_SECRET,
                 algorithms=["HS256"],
                 audience=f"{SERVER_URL}/token",
-                options={"require": ["sub", "exp", "iat", "jti", "type"]}
+                options={"require": ["sub", "exp", "iat", "jti", "type"]},
             )
 
             # Verify it's a refresh token (not access token)
@@ -490,7 +521,7 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 JWT_SECRET,
                 algorithms=["HS256"],
                 audience=f"{SERVER_URL}/token",
-                options={"require": ["sub", "type"]}
+                options={"require": ["sub", "type"]},
             )
 
             if payload.get("type") != "refresh":
@@ -533,7 +564,9 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 "jti": new_refresh_jti,
                 "type": "refresh",
             }
-            new_refresh_token = jwt.encode(refresh_payload, JWT_SECRET, algorithm="HS256")
+            new_refresh_token = jwt.encode(
+                refresh_payload, JWT_SECRET, algorithm="HS256"
+            )
 
             # Update user document: remove old token and add new one (rotation)
             # Pass user_doc to avoid extra GET request
@@ -542,19 +575,20 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
 
             # Get old JTI from the refresh token being rotated
             old_payload = jwt.decode(
-                refresh_token.token,
-                options={"verify_signature": False}
+                refresh_token.token, options={"verify_signature": False}
             )
             old_jti = old_payload.get("jti")
 
             # Remove old token and add new one (rotation invalidates old token)
             tokens = [t for t in tokens if t.get("jti") != old_jti]
-            tokens.append({
-                "jti": new_refresh_jti,
-                "expires_at": refresh_expires_at,
-                "issued_at": now,
-                "client_id": client.client_id or "",
-            })
+            tokens.append(
+                {
+                    "jti": new_refresh_jti,
+                    "expires_at": refresh_expires_at,
+                    "issued_at": now,
+                    "client_id": client.client_id or "",
+                }
+            )
 
             # Clean up expired tokens
             tokens = [t for t in tokens if t.get("expires_at", 0) > now]
@@ -566,7 +600,7 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         "tokens": tokens,
                     }
                 },
-                user_doc=user_doc  # Reuse already-fetched doc
+                user_doc=user_doc,  # Reuse already-fetched doc
             )
 
             if not success:
@@ -595,7 +629,7 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 JWT_SECRET,
                 algorithms=["HS256"],
                 audience=COUCHDB_URL,
-                options={"require": ["sub", "exp", "iat"]}
+                options={"require": ["sub", "exp", "iat"]},
             )
 
             username = payload.get("sub")
@@ -621,7 +655,9 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             logger.error(f"Token introspection error: {e}")
             return None
 
-    async def revoke_token(self, token: str, token_type_hint: str | None = None) -> None:  # type: ignore
+    async def revoke_token(
+        self, token: str, token_type_hint: str | None = None
+    ) -> None:  # type: ignore
         """Revoke a token.
 
         For refresh tokens: decode JWT to get username, then clear from user document.
@@ -634,7 +670,7 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 JWT_SECRET,
                 algorithms=["HS256"],
                 audience=f"{SERVER_URL}/token",
-                options={"verify_exp": False}  # Allow revoking expired tokens
+                options={"verify_exp": False},  # Allow revoking expired tokens
             )
 
             if payload.get("type") == "refresh":
@@ -647,7 +683,9 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         oauth_data = user_doc.get("oauth", {})
                         tokens = oauth_data.get("tokens", [])
                         tokens = [t for t in tokens if t.get("jti") != jti]
-                        await self._update_user_doc(username, {"oauth": {"tokens": tokens}}, user_doc=user_doc)
+                        await self._update_user_doc(
+                            username, {"oauth": {"tokens": tokens}}, user_doc=user_doc
+                        )
                     logger.info(f"Revoked refresh token for user {username}")
                     return
 
@@ -662,10 +700,7 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             logger.error(f"Error revoking token: {e}")
 
     async def validate_credentials(
-        self,
-        request: Request,
-        username: str | None = None,
-        password: str | None = None
+        self, request: Request, username: str | None = None, password: str | None = None
     ) -> tuple[bool, str, list[str]]:
         """Validate credentials against CouchDB and return user info.
 
@@ -681,7 +716,9 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                     url = f"{COUCHDB_URL}/_session"
                     kwargs = {
                         "data": {"name": username, "password": password},
-                        "headers": {"Content-Type": "application/x-www-form-urlencoded"}
+                        "headers": {
+                            "Content-Type": "application/x-www-form-urlencoded"
+                        },
                     }
                 else:
                     # Session-based: GET with cookie
@@ -736,16 +773,14 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
 
             if not state:
                 return JSONResponse(
-                    {"error": "Missing state parameter"},
-                    status_code=400
+                    {"error": "Missing state parameter"}, status_code=400
                 )
 
             # Get state mapping from CouchDB
             auth_params = await self._get_state(state)
             if not auth_params:
                 return JSONResponse(
-                    {"error": "Invalid or expired state parameter"},
-                    status_code=400
+                    {"error": "Invalid or expired state parameter"}, status_code=400
                 )
 
             # Validate credentials (handles both modes)
@@ -766,8 +801,12 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             auth_code = AuthorizationCode(
                 code=code,
                 client_id=auth_params["client_id"],
-                redirect_uri=AnyUrl(auth_params["redirect_uri"]),  # Use AnyUrl to support custom schemes like vscode://
-                redirect_uri_provided_explicitly=auth_params["redirect_uri_provided_explicitly"],
+                redirect_uri=AnyUrl(
+                    auth_params["redirect_uri"]
+                ),  # Use AnyUrl to support custom schemes like vscode://
+                redirect_uri_provided_explicitly=auth_params[
+                    "redirect_uri_provided_explicitly"
+                ],
                 expires_at=time.time() + 300,
                 scopes=auth_params.get("scopes") or ["user"],  # Handle None values
                 code_challenge=auth_params.get("code_challenge"),
@@ -775,15 +814,18 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             )
 
             # Store authorization code and user data in CouchDB
-            success = await self._store_auth_code(code, auth_code, {
-                "username": authenticated_username,
-                "roles": roles,
-            })
+            success = await self._store_auth_code(
+                code,
+                auth_code,
+                {
+                    "username": authenticated_username,
+                    "roles": roles,
+                },
+            )
 
             if not success:
                 return JSONResponse(
-                    {"error": "Failed to create authorization code"},
-                    status_code=500
+                    {"error": "Failed to create authorization code"}, status_code=500
                 )
 
             # Clean up used state mapping
@@ -799,10 +841,7 @@ class CouchDBOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
 
         except Exception as e:
             logger.error(f"OAuth login error: {e}")
-            return JSONResponse(
-                {"error": "Internal server error"},
-                status_code=500
-            )
+            return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 # Create global provider instance

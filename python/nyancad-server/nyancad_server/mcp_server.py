@@ -4,7 +4,7 @@ This module provides an MCP server that exposes tools and resources
 for interacting with NyanCAD projects, schematics, and simulations.
 """
 
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, Optional
 
 import httpx
 import jwt
@@ -14,9 +14,9 @@ from pydantic import AnyHttpUrl, BaseModel, Field, TypeAdapter
 
 from nyancad.api import ServerAPI
 from nyancad.netlist import NyanCircuit
-from nyancad.schemas import Device, Wire, Component, ModelMetadata
+from nyancad.schemas import Device, ModelMetadata
 
-from .config import SERVER_URL, COUCHDB_URL, JWT_SECRET
+from .config import SERVER_URL, COUCHDB_URL
 from .oauth import JWTTokenVerifier
 
 # Create TypeAdapter for discriminated union validation
@@ -28,12 +28,14 @@ class SchematicResponse(BaseModel):
 
     Contains validated devices with computed port locations and a generated SPICE netlist.
     """
+
     schematic: Dict[str, Device] = Field(
         ...,
-        description="Devices keyed by full document ID (format: 'schematic_id:device_name')"
+        description="Devices keyed by full document ID (format: 'schematic_id:device_name')",
     )
-    spice: str = Field(..., description="Generated SPICE netlist including all subcircuits")
-
+    spice: str = Field(
+        ..., description="Generated SPICE netlist including all subcircuits"
+    )
 
 
 def str_to_hex(s: str) -> str:
@@ -44,7 +46,7 @@ def str_to_hex(s: str) -> str:
     this is identical to per-character code-point hex, but differs for
     non-ASCII characters.
     """
-    return s.encode('utf-8').hex()
+    return s.encode("utf-8").hex()
 
 
 def normalize_to_bare_id(id_str: str) -> str:
@@ -89,6 +91,7 @@ mcp = FastMCP(
     ),
 )
 
+
 def get_api_from_context(ctx: Context) -> ServerAPI:
     """Extract authentication from context and create ServerAPI instance.
 
@@ -101,10 +104,10 @@ def get_api_from_context(ctx: Context) -> ServerAPI:
     request = ctx.request_context.request
 
     # Extract JWT token
-    auth_header = request.headers.get('authorization', '')
+    auth_header = request.headers.get("authorization", "")
     token = None
-    if auth_header and ' ' in auth_header:
-        token = auth_header.split(' ')[1]
+    if auth_header and " " in auth_header:
+        token = auth_header.split(" ")[1]
 
     # Extract username from JWT claims
     username = None
@@ -112,7 +115,7 @@ def get_api_from_context(ctx: Context) -> ServerAPI:
         try:
             # Decode without verification (already verified by FastMCP)
             claims = jwt.decode(token, options={"verify_signature": False})
-            username = claims.get('sub')  # 'sub' claim contains username
+            username = claims.get("sub")  # 'sub' claim contains username
         except Exception:
             pass  # Token decode failed
 
@@ -124,7 +127,6 @@ def get_api_from_context(ctx: Context) -> ServerAPI:
         db_url = f"{COUCHDB_URL}/schematics"
 
     return ServerAPI(db_url, auth_token=token)
-
 
 
 @mcp.tool()
@@ -139,13 +141,12 @@ async def hello(ctx: Context) -> dict[str, Any]:
     """
     # Extract authorization header from request
     request = ctx.request_context.request
-    authorization = request.headers.get('authorization')
+    authorization = request.headers.get("authorization")
 
     # Forward to CouchDB session endpoint
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            f"{COUCHDB_URL}/_session",
-            headers={"Authorization": authorization}
+            f"{COUCHDB_URL}/_session", headers={"Authorization": authorization}
         )
         return response.json()
 
@@ -154,7 +155,7 @@ async def hello(ctx: Context) -> dict[str, Any]:
 async def get_schematic(
     ctx: Context,
     id: Annotated[Optional[str], "Schematic ID (UUID format)"] = None,
-    name: Annotated[Optional[str], "Schematic name to search for"] = None
+    name: Annotated[Optional[str], "Schematic name to search for"] = None,
 ) -> SchematicResponse:
     """Get schematic with computed port locations and SPICE netlist.
 
@@ -189,8 +190,8 @@ async def get_schematic(
             first_partial = None
             for model_id, model in models.items():
                 # Schematics have no model entries
-                if not model.get('models'):
-                    model_name = model.get('name', '')
+                if not model.get("models"):
+                    model_name = model.get("name", "")
                     if model_name.lower() == name.lower():
                         # Exact match - use immediately
                         schematic_id = normalize_to_bare_id(model_id)
@@ -236,8 +237,10 @@ async def get_schematic(
 async def list_library(
     ctx: Context,
     filter: Annotated[Optional[str], "Filter by model name (substring match)"] = None,
-    tags: Annotated[Optional[list[str]], "Filter by tags (e.g., ['IHP', 'bjt'])"] = None,
-    include_models: Annotated[bool, "Include full model entries in results"] = False
+    tags: Annotated[
+        Optional[list[str]], "Filter by tags (e.g., ['IHP', 'bjt'])"
+    ] = None,
+    include_models: Annotated[bool, "Include full model entries in results"] = False,
 ) -> dict[str, ModelMetadata]:
     """List available component models with optional filtering.
 
@@ -256,11 +259,11 @@ async def list_library(
         result = {}
         for model_id, model in models.items():
             # Compute has_models (not stored in DB)
-            model['has_models'] = bool(model.get('models'))
+            model["has_models"] = bool(model.get("models"))
 
             # Conditionally exclude model entries
             if not include_models:
-                model.pop('models', None)
+                model.pop("models", None)
 
             metadata = ModelMetadata.model_validate(model)
             result[model_id] = metadata
@@ -269,18 +272,14 @@ async def list_library(
         await api.close()
 
 
-
-
-
-
 @mcp.tool()
 async def bulk_update_schematic(
     ctx: Context,
     schematic_id: Annotated[str, "Schematic ID"],
     docs: Annotated[
         list[Device],
-        "List of complete Wire or Component documents. See Device schema for required fields."
-    ]
+        "List of complete Wire or Component documents. See Device schema for required fields.",
+    ],
 ) -> list[dict[str, Any]]:
     """Bulk update schematic documents with complete device data.
 
@@ -333,10 +332,11 @@ async def bulk_update_schematic(
     finally:
         await api.close()
 
+
 @mcp.tool()
 async def update_model(
     ctx: Context,
-    model: Annotated[ModelMetadata, "Model document to create, update, or delete"]
+    model: Annotated[ModelMetadata, "Model document to create, update, or delete"],
 ) -> dict[str, Any]:
     """Update a single model in the library (create, update, or delete).
 
@@ -375,10 +375,10 @@ async def update_model(
     finally:
         await api.close()
 
+
 @mcp.tool()
 async def get_simulation_result(
-    ctx: Context,
-    id: Annotated[str, "Schematic ID"]
+    ctx: Context, id: Annotated[str, "Schematic ID"]
 ) -> dict[str, Any]:
     """Get the latest simulation result for a schematic.
 

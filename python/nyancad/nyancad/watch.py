@@ -24,7 +24,7 @@ def _snapshot(path: Path) -> dict[str, float]:
     files = {}
     try:
         for f in path.iterdir():
-            if f.suffix in ('.nyancir', '.nyanlib'):
+            if f.suffix in (".nyancir", ".nyanlib"):
                 try:
                     files[f.name] = f.stat().st_mtime
                 except FileNotFoundError:
@@ -60,21 +60,15 @@ class ProjectState(PathState):
     re-execution when any change is detected.
     """
 
-    _forbidden_attributes = {
-        "open", "rename", "replace", "write_text", "write_bytes"
-    }
+    _forbidden_attributes = {"open", "rename", "replace", "write_text", "write_bytes"}
     _target = staticmethod(watch_project)
 
     def __getattr__(self, name: str) -> Any:
         if name in self._forbidden_attributes:
-            raise AttributeError(
-                f"'ProjectState' does not expose attribute '{name}'"
-            )
+            raise AttributeError(f"'ProjectState' does not expose attribute '{name}'")
         if hasattr(self._value, name):
             return getattr(self._value, name)
-        raise AttributeError(
-            f"'ProjectState' object has no attribute '{name}'"
-        )
+        raise AttributeError(f"'ProjectState' object has no attribute '{name}'")
 
 
 def watch_project_dir(path: str | Path) -> ProjectState:

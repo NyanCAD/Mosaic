@@ -74,7 +74,7 @@ class SchematicAPI(ABC):
 
         while queue:
             dev = queue.popleft()
-            model_id_bare = dev.get('model')
+            model_id_bare = dev.get("model")
 
             if not model_id_bare:
                 continue
@@ -92,7 +92,7 @@ class SchematicAPI(ABC):
                 model_def = models[model_id_prefixed]
 
                 # Schematic models have no model entries
-                if not model_def.get('models'):
+                if not model_def.get("models"):
                     # Fetch subcircuit documents
                     if model_id_bare not in schem:
                         seq, subdocs = await self.get_docs(model_id_bare)
@@ -104,9 +104,7 @@ class SchematicAPI(ABC):
 
     @abstractmethod
     async def get_library(
-        self,
-        filter: Optional[str] = None,
-        tags: Optional[list[str]] = None
+        self, filter: Optional[str] = None, tags: Optional[list[str]] = None
     ) -> dict[str, dict]:
         """List available models and schematics with filtering.
 
@@ -156,7 +154,7 @@ class BridgeAPI(SchematicAPI):
     async def get_library(
         self,
         filter: Optional[str] = None,  # noqa: ARG002
-        tags: Optional[list[str]] = None  # noqa: ARG002
+        tags: Optional[list[str]] = None,  # noqa: ARG002
     ) -> dict[str, dict]:
         """Not implemented - adds complexity not needed for bridge mode.
 
@@ -178,7 +176,7 @@ class ServerAPI(SchematicAPI):
         db_url: str,
         username: Optional[str] = None,
         password: Optional[str] = None,
-        auth_token: Optional[str] = None
+        auth_token: Optional[str] = None,
     ):
         """Create ServerAPI with CouchDB connection.
 
@@ -188,7 +186,7 @@ class ServerAPI(SchematicAPI):
             password: Optional CouchDB password for basic auth
             auth_token: Optional JWT Bearer token (alternative to username/password)
         """
-        self.base_url = db_url.rstrip('/')
+        self.base_url = db_url.rstrip("/")
 
         # Build headers
         headers = {}
@@ -201,11 +199,7 @@ class ServerAPI(SchematicAPI):
             auth = (username, password)
 
         # Create persistent httpx client (reused across calls)
-        self.client = httpx.AsyncClient(
-            headers=headers,
-            auth=auth,
-            timeout=30.0
-        )
+        self.client = httpx.AsyncClient(headers=headers, auth=auth, timeout=30.0)
 
     async def close(self):
         """Close httpx client."""
@@ -238,22 +232,18 @@ class ServerAPI(SchematicAPI):
                 "include_docs": "true",
                 "startkey": f'"{name}:"',
                 "endkey": f'"{name}:\ufff0"',  # \ufff0 is unicode max for range
-                "update_seq": "true"
-            }
+                "update_seq": "true",
+            },
         )
         response.raise_for_status()
         data = response.json()
 
-        seq = data.get('update_seq')
-        docs = {row['id']: row['doc'] for row in data.get('rows', [])}
+        seq = data.get("update_seq")
+        docs = {row["id"]: row["doc"] for row in data.get("rows", [])}
 
         return seq, docs
 
-    def _build_selector(
-        self,
-        filter: Optional[str],
-        tags: Optional[list[str]]
-    ) -> dict:
+    def _build_selector(self, filter: Optional[str], tags: Optional[list[str]]) -> dict:
         """Build Mango selector for tag and name filtering.
 
         Args:
@@ -277,9 +267,7 @@ class ServerAPI(SchematicAPI):
         return selector
 
     async def get_library(
-        self,
-        filter: Optional[str] = None,
-        tags: Optional[list[str]] = None
+        self, filter: Optional[str] = None, tags: Optional[list[str]] = None
     ) -> dict[str, dict]:
         """List available models with filtering via CouchDB views/queries.
 
@@ -306,8 +294,7 @@ class ServerAPI(SchematicAPI):
         if tags or (is_user_db and filter):
             selector = self._build_selector(filter, tags)
             response = await self.client.post(
-                f"{self.base_url}/_find",
-                json={"selector": selector}
+                f"{self.base_url}/_find", json={"selector": selector}
             )
             response.raise_for_status()
             data = response.json()
@@ -317,10 +304,7 @@ class ServerAPI(SchematicAPI):
         elif filter:
             response = await self.client.get(
                 f"{self.base_url}/_design/models/_view/name_search",
-                params={
-                    "startkey": f'"{filter.lower()}"',
-                    "include_docs": "true"
-                }
+                params={"startkey": f'"{filter.lower()}"', "include_docs": "true"},
             )
             response.raise_for_status()
             data = response.json()
@@ -333,8 +317,8 @@ class ServerAPI(SchematicAPI):
                 params={
                     "include_docs": "true",
                     "startkey": '"models:"',
-                    "endkey": '"models:\ufff0"'
-                }
+                    "endkey": '"models:\ufff0"',
+                },
             )
             response.raise_for_status()
             data = response.json()
@@ -357,8 +341,7 @@ class ServerAPI(SchematicAPI):
             httpx.HTTPStatusError: If the request fails
         """
         response = await self.client.post(
-            f"{self.base_url}/_bulk_docs",
-            json={"docs": docs}
+            f"{self.base_url}/_bulk_docs", json={"docs": docs}
         )
         response.raise_for_status()
         return response.json()
@@ -401,15 +384,15 @@ class ServerAPI(SchematicAPI):
                 "startkey": f'"{group}$result:\ufff0"',
                 "endkey": f'"{group}$result:"',
                 "descending": "true",
-                "limit": "1"
-            }
+                "limit": "1",
+            },
         )
         response.raise_for_status()
         data = response.json()
 
-        rows = data.get('rows', [])
+        rows = data.get("rows", [])
         if rows:
-            return rows[0].get('doc', {})
+            return rows[0].get("doc", {})
         return {}
 
 
@@ -436,13 +419,13 @@ class FileAPI(SchematicAPI):
         """
         if not path.exists():
             return {}
-        text = path.read_text(encoding='utf-8')
+        text = path.read_text(encoding="utf-8")
         if not text.strip():
             return {}
         flat = json.loads(text)
         for doc_id, doc in flat.items():
             if isinstance(doc, dict):
-                doc['_id'] = doc_id
+                doc["_id"] = doc_id
         return flat
 
     async def get_docs(self, name: str) -> tuple[Any, dict[str, dict]]:
@@ -463,9 +446,7 @@ class FileAPI(SchematicAPI):
         return (None, docs)
 
     async def get_library(
-        self,
-        filter: Optional[str] = None,
-        tags: Optional[list[str]] = None
+        self, filter: Optional[str] = None, tags: Optional[list[str]] = None
     ) -> dict[str, dict]:
         """List models from models.nyanlib with optional filtering.
 
@@ -484,12 +465,12 @@ class FileAPI(SchematicAPI):
         result = {}
         for model_id, model_def in all_models.items():
             if filter:
-                name = model_def.get('name', '')
+                name = model_def.get("name", "")
                 if not re.search(filter, name, re.IGNORECASE):
                     continue
 
             if tags:
-                model_tags = set(model_def.get('tags', []))
+                model_tags = set(model_def.get("tags", []))
                 if not set(tags).issubset(model_tags):
                     continue
 

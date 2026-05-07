@@ -31,8 +31,11 @@ _NON_IDENT = re.compile(r"\W")
 
 
 def _placement(dev: dict[str, Any], scale: float) -> dict[str, Any]:
-    x, y = (dev["irl_x"], dev["irl_y"]) if "irl_x" in dev and "irl_y" in dev \
+    x, y = (
+        (dev["irl_x"], dev["irl_y"])
+        if "irl_x" in dev and "irl_y" in dev
         else (dev["x"] * scale, dev["y"] * scale)
+    )
     return {
         "x": float(x),
         "y": float(y),
@@ -64,12 +67,23 @@ def _polyline_terminal(term: Any) -> tuple[str, str] | None:
     return None
 
 
-def _route_settings(polyline: dict[str, Any], vias: list[dict], tapers: list[dict]) -> dict[str, Any]:
-    settings = {k: polyline[k] for k in ("width", "cross_section", "waypoints", "bend_radius") if k in polyline}
+def _route_settings(
+    polyline: dict[str, Any], vias: list[dict], tapers: list[dict]
+) -> dict[str, Any]:
+    settings = {
+        k: polyline[k]
+        for k in ("width", "cross_section", "waypoints", "bend_radius")
+        if k in polyline
+    }
     if vias:
-        settings["vias"] = [{k: v[k] for k in ("bottom_layer", "top_layer") if k in v} for v in vias]
+        settings["vias"] = [
+            {k: v[k] for k in ("bottom_layer", "top_layer") if k in v} for v in vias
+        ]
     if tapers:
-        settings["tapers"] = [{k: t[k] for k in ("input_xsection", "output_xsection") if k in t} for t in tapers]
+        settings["tapers"] = [
+            {k: t[k] for k in ("input_xsection", "output_xsection") if k in t}
+            for t in tapers
+        ]
     return settings
 
 
@@ -89,7 +103,12 @@ class MosaicToDSchematic:
         self._subcircuit_cache: dict[str, str] = {}
 
     def convert(self, schem_name: str, all_docs: dict[str, Any]) -> kf.DSchematic:
-        return self._build(schem_name, all_docs.get(schem_name, {}), all_docs.get("models", {}), all_docs)
+        return self._build(
+            schem_name,
+            all_docs.get(schem_name, {}),
+            all_docs.get("models", {}),
+            all_docs,
+        )
 
     def _build(
         self,
@@ -146,27 +165,38 @@ class MosaicToDSchematic:
                 continue
             anchor = PortRef(instance=insts[0][0], port=insts[0][1])
             for d, p in insts[1:]:
-                schematic.connections.append(Connection((anchor, PortRef(instance=d, port=p))))
+                schematic.connections.append(
+                    Connection((anchor, PortRef(instance=d, port=p)))
+                )
 
-        self._emit_top_ports(schematic, schem_name, port_devices, net_map, models, port_dev_ids)
+        self._emit_top_ports(
+            schematic, schem_name, port_devices, net_map, models, port_dev_ids
+        )
         return schematic
 
-    def _register_subcircuit(self, dev: dict[str, Any], models: dict, all_docs: dict) -> None:
+    def _register_subcircuit(
+        self, dev: dict[str, Any], models: dict, all_docs: dict
+    ) -> None:
         model_id = dev.get("model")
         if not model_id or model_id in self._subcircuit_cache:
             return
         model_def = models.get(f"models:{model_id}")
-        if not model_def or model_def.get("models"):  # leaf model (SPICE/etc) — not a subcircuit
+        if not model_def or model_def.get(
+            "models"
+        ):  # leaf model (SPICE/etc) — not a subcircuit
             return
         sub_devices = all_docs.get(model_id, {})
         if not sub_devices:
             return
         factory_name = _NON_IDENT.sub("_", model_id)
-        self._subcircuit_cache[model_id] = factory_name  # cache before build to break cycles
+        self._subcircuit_cache[model_id] = (
+            factory_name  # cache before build to break cycles
+        )
         sub = self._build(model_id, sub_devices, models, all_docs)
 
         def factory() -> kf.DKCell:
             return sub.create_cell(kf.DKCell)
+
         factory.__name__ = factory_name
         self.kcl.cell(factory)
 
@@ -194,15 +224,23 @@ class MosaicToDSchematic:
         name = polyline.get("_id") or f"route_{len(schematic.routes)}"
         schematic.routes[name] = Route(
             name=name,
-            links=[Link(root=(PortRef(instance=start[0], port=start[1]),
-                              PortRef(instance=finish[0], port=finish[1])))],
+            links=[
+                Link(
+                    root=(
+                        PortRef(instance=start[0], port=start[1]),
+                        PortRef(instance=finish[0], port=finish[1]),
+                    )
+                )
+            ],
             routing_strategy=polyline.get("routing_strategy", "route_bundle"),
             settings=_route_settings(polyline, vias_here, tapers_here),
         )
         if net:
             used_nets.add(net)
 
-    def _emit_top_ports(self, schematic, schem_name, port_devices, net_map, models, port_dev_ids):
+    def _emit_top_ports(
+        self, schematic, schem_name, port_devices, net_map, models, port_dev_ids
+    ):
         # The parent model's :ports list is the canonical, editor-extracted port set
         # (populated in nyanlib from the schematic's "port" devices at save time).
         model_ports = (models.get(f"models:{schem_name}") or {}).get("ports") or []
@@ -212,11 +250,18 @@ class MosaicToDSchematic:
             if not port_dev:
                 continue
             net = next((v for v in (port_dev.get("nets") or {}).values() if v), None)
-            target = next(
-                ((d, p) for d, p in net_map.get(net, []) if d not in port_dev_ids), None
-            ) if net else None
+            target = (
+                next(
+                    ((d, p) for d, p in net_map.get(net, []) if d not in port_dev_ids),
+                    None,
+                )
+                if net
+                else None
+            )
             if target:
-                schematic.add_port(pname, port=PortRef(instance=target[0], port=target[1]))
+                schematic.add_port(
+                    pname, port=PortRef(instance=target[0], port=target[1])
+                )
 
 
 def convert_schematic(
@@ -226,4 +271,6 @@ def convert_schematic(
     grid_to_um: float = DEFAULT_GRID_TO_UM,
     component_map: dict[str, str] | None = None,
 ) -> kf.DSchematic:
-    return MosaicToDSchematic(kcl, grid_to_um, component_map).convert(schem_name, all_docs)
+    return MosaicToDSchematic(kcl, grid_to_um, component_map).convert(
+        schem_name, all_docs
+    )
