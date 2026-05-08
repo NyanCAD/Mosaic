@@ -38,6 +38,13 @@
   [^js uri]
   (uri-join uri ".."))
 
+(def ^:private bundle-uri
+  "Filesystem URI of the directory containing this compiled extension bundle.
+   Webview assets (style.css, shared.js, editor.js, libman.js) are siblings of
+   main.js in the same out/ directory, so resolving them against __dirname
+   keeps mosaic independent of how the host extension lays out its files."
+  (vscode/Uri.file js/__dirname))
+
 ;; ---------------------------------------------------------------------------
 ;; Workspace filesystem helpers — thin wrappers over vscode.workspace.fs
 ;; ---------------------------------------------------------------------------
@@ -229,11 +236,9 @@
 (defn- get-html
   "Generate webview HTML for the schematic editor.
    models-content is the initial JSON string from models.nyanlib."
-  [^js context ^js document ^js webview models-content]
-  (let [ext-uri (.-extensionUri context)
-        out-uri (fn [file]
-                  (.asWebviewUri webview
-                    (uri-join ext-uri "out" file)))
+  [^js document ^js webview models-content]
+  (let [out-uri (fn [file]
+                  (.asWebviewUri webview (uri-join bundle-uri file)))
         nonce (get-nonce)
         csp (str "default-src 'none';"
                  " style-src " (.-cspSource webview) " 'unsafe-inline';"
@@ -260,11 +265,9 @@
 
 (defn- get-libman-html
   "Generate webview HTML for the library manager."
-  [^js context ^js document ^js webview]
-  (let [ext-uri (.-extensionUri context)
-        out-uri (fn [file]
-                  (.asWebviewUri webview
-                    (uri-join ext-uri "out" file)))
+  [^js document ^js webview]
+  (let [out-uri (fn [file]
+                  (.asWebviewUri webview (uri-join bundle-uri file)))
         nonce (get-nonce)
         csp (str "default-src 'none';"
                  " style-src " (.-cspSource webview) " 'unsafe-inline';"
@@ -395,9 +398,8 @@
 
 (deftype SchematicEditorProvider [^js context]
   Object
-  (resolveCustomTextEditor [^js this ^js document ^js webviewpanel _token]
-    (let [^js ctx (.-context this)
-          ^js webview (.-webview webviewpanel)
+  (resolveCustomTextEditor [^js _this ^js document ^js webviewpanel _token]
+    (let [^js webview (.-webview webviewpanel)
           doc-uri (uri-parent (.-uri document))
           basename (uri-basename (.-uri document) ".nyancir")
           disposables #js[]
@@ -417,8 +419,8 @@
                 ;; Configure webview
                 (set! (.-options webview)
                       #js{:enableScripts true
-                          :localResourceRoots #js[(uri-join (.-extensionUri ctx) "out")]})
-                (set! (.-html webview) (get-html ctx document webview models-content))
+                          :localResourceRoots #js[bundle-uri]})
+                (set! (.-html webview) (get-html document webview models-content))
 
                 ;; Create atom channels for schematic and models documents
                 (let [schem-ch (create-atom-channel webview document "schematic")
@@ -458,16 +460,15 @@
 
 (deftype LibraryEditorProvider [^js context]
   Object
-  (resolveCustomTextEditor [^js this ^js document ^js webviewpanel _token]
-    (let [^js ctx (.-context this)
-          ^js webview (.-webview webviewpanel)
+  (resolveCustomTextEditor [^js _this ^js document ^js webviewpanel _token]
+    (let [^js webview (.-webview webviewpanel)
           doc-uri (uri-parent (.-uri document))
           disposables #js[]]
       ;; Configure webview
       (set! (.-options webview)
             #js{:enableScripts true
-                :localResourceRoots #js[(uri-join (.-extensionUri ctx) "out")]})
-      (set! (.-html webview) (get-libman-html ctx document webview))
+                :localResourceRoots #js[bundle-uri]})
+      (set! (.-html webview) (get-libman-html document webview))
 
       ;; Create atom channel for the models document (primary)
       (let [models-ch (create-atom-channel webview document "models")

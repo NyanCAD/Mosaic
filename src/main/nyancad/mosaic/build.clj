@@ -23,12 +23,14 @@
 
 (defn release-vscode
   "Build VSCode extension (webview frontend + extension host).
-   Compiles both shadow-cljs targets and copies webview assets into out/."
+   Compiles both shadow-cljs targets and copies webview assets into out/.
+   Respects --config-merge output-dir overrides."
   []
   (shadow/release :vscode-webview)
   (shadow/release :vscode-ext)
-  (sh! "cp" "public/css/style.css" "vscode-ext/out/style.css")
-  (sh! "rsync" "-a" "--delete" "public/css/icons/" "vscode-ext/out/icons/"))
+  (let [out-dir (-> (shadow/get-config) :builds :vscode-webview :output-dir)]
+    (sh! "cp" "public/css/style.css" (str out-dir "/style.css"))
+    (sh! "rsync" "-a" "--delete" "public/css/icons/" (str out-dir "/icons/"))))
 
 (defn package-vscode
   "Build and package the VSCode extension into a .vsix file.

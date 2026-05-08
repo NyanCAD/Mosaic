@@ -91,7 +91,8 @@
   (.preventDefault e)
   (.stopPropagation e)
   (let [dt (.-dataTransfer e)
-        fqn (some-> (.getData dt "text/x-gfp-factory") js/JSON.parse .-factory)]
+        fqn (some-> (.getData dt "text/x-gfp-factory") js/JSON.parse js->clj (get "factory"))]
+    (js/console.log "Dropped FQN:" fqn)
     (when (seq fqn)
       (let [model-key (cm/model-key fqn)
             model-def (get @modeldb model-key)]
