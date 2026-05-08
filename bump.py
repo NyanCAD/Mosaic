@@ -41,7 +41,11 @@ def run_bump(directory: Path, bump_type: str, name: str) -> bool:
         print(result.stderr, file=sys.stderr)
         return False
 
-    print(result.stdout.strip() if result.stdout.strip() else f"  {name} bumped successfully")
+    print(
+        result.stdout.strip()
+        if result.stdout.strip()
+        else f"  {name} bumped successfully"
+    )
     return True
 
 
@@ -88,7 +92,9 @@ def main():
         success = False
 
     # Bump nyancad-server package
-    if not run_bump(ROOT_DIR / "python" / "nyancad-server", args.server, "nyancad-server"):
+    if not run_bump(
+        ROOT_DIR / "python" / "nyancad-server", args.server, "nyancad-server"
+    ):
         success = False
 
     # Bump tag (top-level)

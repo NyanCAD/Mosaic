@@ -262,12 +262,12 @@
               [0 0.7]
               [0.3 0.7]
               [0.5 0.5]]]])
-   [:text {:text-anchor (case (math/round (first (:transform label)))
+   [:text {:text-anchor (case (math/round (first (:transform label cm/IV)))
                           1 "end"
                           -1 "start"
                           "middle")
            :dominant-baseline "middle"
-           :transform (-> (:transform label)
+           :transform (-> (:transform label cm/IV)
                           transform
                           (.translate (/ grid-size (if (= (:variant label) "text") -4 4)) (/ grid-size -2))
                           .inverse
@@ -606,7 +606,7 @@
 (defn counter-rotate [v x y]
   (.toString (-> (js/DOMMatrix.)
                  (.translate x y)
-                 (.multiply (.inverse (transform (:transform v))))
+                 (.multiply (.inverse (transform (:transform v cm/IV))))
                  (.translate (- x) (- y)))))
 
 ;; Helper: render designator at screen-space top-right corner
@@ -616,7 +616,7 @@
                  [(- 1 half-size) (- 1 half-size)]                       ; top-left
                  [(- 1 half-size) (- (+ 1 height) half-size)]            ; bottom-left
                  [(- (+ 1 width) half-size) (- (+ 1 height) half-size)]] ; bottom-right
-        mat (transform (:transform v))
+        mat (transform (:transform v cm/IV))
         rotated (map (fn [[x y]]
                        (let [pt (.transformPoint mat (js/DOMPoint. x y))]
                          [(.-x pt) (.-y pt)]))
@@ -631,7 +631,7 @@
                         (get-in models [(:type v) ::template])
                         "{self.name}")]
       [:text.identifier
-       {:transform (-> (:transform v) transform
+       {:transform (-> (:transform v cm/IV) transform
                        (.translate (* grid-size (/ size -2)) (* grid-size (/ size -2)))
                        .inverse
                        (.translate (* grid-size desig-offset-x) (* grid-size desig-offset-y))
@@ -1086,7 +1086,8 @@
          :else []))]))
 
 (defn builtin-locations [{:keys [:x :y :type :transform]}]
-  (let [mod (get models type)
+  (let [transform (or transform cm/IV)
+        mod (get models type)
         conn (::conn mod)
         bg (::bg mod)
         [w h] (when (vector? bg) bg)
@@ -1099,7 +1100,8 @@
                                       size transform x y))]))
 
 (defn circuit-locations [{:keys [:x :y :model :transform :type]}]
-  (let [mod (get @modeldb (cm/model-key model))
+  (let [transform (or transform cm/IV)
+        mod (get @modeldb (cm/model-key model))
         ports (:ports mod)
         shape (when (= type "amp") :amp)
         conn (if ports (cm/port-locations ports shape) [])
@@ -1533,12 +1535,13 @@
       (post-action!))))
 
 (defn transform-selected [tf]
-  (let [f (comp transform-vec tf transform)]
+  (let [f (comp transform-vec tf transform)
+        g #(f (or % cm/IV))]
     (if @staging
       (swap! staging
-             update :transform f)
+             update :transform g)
       (do (swap! schematic update-keys @selected
-                 update :transform f)
+                 update :transform g)
           (post-action!)))))
 
 (defn delete-selected []

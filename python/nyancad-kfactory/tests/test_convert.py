@@ -17,6 +17,7 @@ def make_kcl(name: str = "test_kcl") -> "kf.KCLayout":
 
 def test_instance_placement_from_irl_fields():
     kcl = make_kcl("place_irl")
+
     # Register a dummy factory so the instance's component resolves.
     @kcl.cell
     def resistor() -> "kf.DKCell":
@@ -43,7 +44,9 @@ def test_instance_placement_from_irl_fields():
         },
     }
 
-    schem = convert_schematic("top", all_docs, kcl=kcl, component_map={"resistor": "resistor"})
+    schem = convert_schematic(
+        "top", all_docs, kcl=kcl, component_map={"resistor": "resistor"}
+    )
     assert "top:R1" in schem.instances
     placement = schem.placements["top:R1"]
     assert placement.x == 10.0
@@ -98,13 +101,21 @@ def test_two_endpoint_net_emits_single_connection():
         "models": {},
         "top": {
             "top:S1": {
-                "_id": "top:S1", "type": "straight", "name": "S1",
-                "x": 0, "y": 0, "transform": [1, 0, 0, 1, 0, 0],
+                "_id": "top:S1",
+                "type": "straight",
+                "name": "S1",
+                "x": 0,
+                "y": 0,
+                "transform": [1, 0, 0, 1, 0, 0],
                 "nets": {"o1": "net_x"},
             },
             "top:S2": {
-                "_id": "top:S2", "type": "straight", "name": "S2",
-                "x": 2, "y": 0, "transform": [1, 0, 0, 1, 0, 0],
+                "_id": "top:S2",
+                "type": "straight",
+                "name": "S2",
+                "x": 2,
+                "y": 0,
+                "transform": [1, 0, 0, 1, 0, 0],
                 "nets": {"o1": "net_x"},
             },
         },
@@ -128,18 +139,29 @@ def test_polyline_becomes_route_with_terminals_and_settings():
         "models": {},
         "top": {
             "top:S1": {
-                "_id": "top:S1", "type": "straight", "name": "S1",
-                "x": 0, "y": 0, "transform": [1, 0, 0, 1, 0, 0],
+                "_id": "top:S1",
+                "type": "straight",
+                "name": "S1",
+                "x": 0,
+                "y": 0,
+                "transform": [1, 0, 0, 1, 0, 0],
                 "nets": {"o2": "bus"},
             },
             "top:S2": {
-                "_id": "top:S2", "type": "straight", "name": "S2",
-                "x": 2, "y": 0, "transform": [1, 0, 0, 1, 0, 0],
+                "_id": "top:S2",
+                "type": "straight",
+                "name": "S2",
+                "x": 2,
+                "y": 0,
+                "transform": [1, 0, 0, 1, 0, 0],
                 "nets": {"o1": "bus"},
             },
             "top:P1": {
-                "_id": "top:P1", "type": "polyline", "name": "P1",
-                "x": 1, "y": 0,
+                "_id": "top:P1",
+                "type": "polyline",
+                "name": "P1",
+                "x": 1,
+                "y": 0,
                 "net": "bus",
                 "terminals": {
                     "start": {"device": "top:S1", "port": "o2"},
@@ -149,10 +171,14 @@ def test_polyline_becomes_route_with_terminals_and_settings():
                 "bend_radius": 10,
             },
             "top:V1": {
-                "_id": "top:V1", "type": "via", "name": "V1",
-                "x": 1, "y": 0,
+                "_id": "top:V1",
+                "type": "via",
+                "name": "V1",
+                "x": 1,
+                "y": 0,
                 "net": "bus",
-                "bottom_layer": "M1", "top_layer": "M2",
+                "bottom_layer": "M1",
+                "top_layer": "M2",
             },
         },
     }
@@ -191,13 +217,21 @@ def test_top_level_ports_from_model_definition():
         },
         "my_sub": {
             "my_sub:S1": {
-                "_id": "my_sub:S1", "type": "straight", "name": "S1",
-                "x": 0, "y": 0, "transform": [1, 0, 0, 1, 0, 0],
+                "_id": "my_sub:S1",
+                "type": "straight",
+                "name": "S1",
+                "x": 0,
+                "y": 0,
+                "transform": [1, 0, 0, 1, 0, 0],
                 "nets": {"o1": "interior"},
             },
             "my_sub:P_in": {
-                "_id": "my_sub:P_in", "type": "port", "name": "in",
-                "x": -1, "y": 0, "transform": [1, 0, 0, 1, 0, 0],
+                "_id": "my_sub:P_in",
+                "type": "port",
+                "name": "in",
+                "x": -1,
+                "y": 0,
+                "transform": [1, 0, 0, 1, 0, 0],
                 "nets": {"P": "interior"},
             },
         },
@@ -228,16 +262,24 @@ def test_subcircuit_registered_as_factory():
         },
         "my_sub": {
             "my_sub:S1": {
-                "_id": "my_sub:S1", "type": "straight", "name": "S1",
-                "x": 0, "y": 0, "transform": [1, 0, 0, 1, 0, 0],
+                "_id": "my_sub:S1",
+                "type": "straight",
+                "name": "S1",
+                "x": 0,
+                "y": 0,
+                "transform": [1, 0, 0, 1, 0, 0],
                 "nets": {},
             },
         },
         "top": {
             "top:U1": {
-                "_id": "top:U1", "type": "ckt", "name": "U1",
+                "_id": "top:U1",
+                "type": "ckt",
+                "name": "U1",
                 "model": "my_sub",
-                "x": 0, "y": 0, "transform": [1, 0, 0, 1, 0, 0],
+                "x": 0,
+                "y": 0,
+                "transform": [1, 0, 0, 1, 0, 0],
                 "nets": {},
             },
         },
@@ -257,22 +299,40 @@ def test_wires_and_text_are_ignored():
         "models": {},
         "top": {
             "top:R1": {
-                "_id": "top:R1", "type": "resistor", "name": "R1",
-                "x": 0, "y": 0, "transform": [1, 0, 0, 1, 0, 0],
+                "_id": "top:R1",
+                "type": "resistor",
+                "name": "R1",
+                "x": 0,
+                "y": 0,
+                "transform": [1, 0, 0, 1, 0, 0],
                 "nets": {"p": "n1"},
             },
             "top:R2": {
-                "_id": "top:R2", "type": "resistor", "name": "R2",
-                "x": 2, "y": 0, "transform": [1, 0, 0, 1, 0, 0],
+                "_id": "top:R2",
+                "type": "resistor",
+                "name": "R2",
+                "x": 2,
+                "y": 0,
+                "transform": [1, 0, 0, 1, 0, 0],
                 "nets": {"p": "n1"},
             },
             "top:W1": {
-                "_id": "top:W1", "type": "wire", "name": "W1",
-                "x": 0, "y": 0, "rx": 2, "ry": 0, "net": "n1",
+                "_id": "top:W1",
+                "type": "wire",
+                "name": "W1",
+                "x": 0,
+                "y": 0,
+                "rx": 2,
+                "ry": 0,
+                "net": "n1",
             },
             "top:T1": {
-                "_id": "top:T1", "type": "text", "name": "T1",
-                "x": 0, "y": 1, "transform": [1, 0, 0, 1, 0, 0],
+                "_id": "top:T1",
+                "type": "text",
+                "name": "T1",
+                "x": 0,
+                "y": 1,
+                "transform": [1, 0, 0, 1, 0, 0],
             },
         },
     }

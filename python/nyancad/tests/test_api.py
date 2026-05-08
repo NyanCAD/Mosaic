@@ -71,8 +71,7 @@ class TestReadFile:
         # Edge case: a model-file entry that somehow isn't a dict should
         # not crash the loader. FileAPI leaves it as-is.
         p = tmp_path / "odd.nyanlib"
-        p.write_text(json.dumps({"models:a": {"name": "ok"},
-                                 "models:b": "not a dict"}))
+        p.write_text(json.dumps({"models:a": {"name": "ok"}, "models:b": "not a dict"}))
         docs = FileAPI._read_file(p)
         assert docs["models:a"]["_id"] == "models:a"
         assert docs["models:b"] == "not a dict"  # unchanged, no _id
@@ -93,15 +92,16 @@ class TestGetDocs:
         api = FileAPI(project_dir)
         seq, docs = run_async(api.get_docs("models"))
         assert seq is None  # FileAPI has no update sequence
-        assert set(docs.keys()) == {"models:opamp_1",
-                                    "models:nmos_ihp",
-                                    "models:divider_ckt"}
+        assert set(docs.keys()) == {
+            "models:opamp_1",
+            "models:nmos_ihp",
+            "models:divider_ckt",
+        }
 
     def test_circuit_group_reads_nyancir(self, project_dir):
         api = FileAPI(project_dir)
         _, docs = run_async(api.get_docs("top"))
-        assert set(docs.keys()) == {"top:R1", "top:R2", "top:C1",
-                                    "top:W1", "top:W2"}
+        assert set(docs.keys()) == {"top:R1", "top:R2", "top:C1", "top:W1", "top:W2"}
 
     def test_circuit_group_filters_out_other_prefixes(self, project_dir):
         # top.nyancir contains one stray doc with id "other:stray" — the
@@ -209,8 +209,7 @@ class TestBuildSelector:
 
     def test_tags_and_filter(self):
         s = _selector(lambda api: api._build_selector("op", ["analog"]))
-        assert s == {"tags.0": "analog",
-                     "name": {"$regex": "(?i)op"}}
+        assert s == {"tags.0": "analog", "name": {"$regex": "(?i)op"}}
 
     def test_regex_chars_pass_through_unescaped(self):
         # The builder does not escape filter input — regex metachars are

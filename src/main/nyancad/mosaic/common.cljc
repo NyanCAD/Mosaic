@@ -244,7 +244,7 @@
   "Determine cardinal direction from transformation matrix.
   Returns one of: :left, :right, :top, :bottom based on the final orientation."
   [{tfm :transform}]
-  (let [matrix (transform tfm)
+  (let [matrix (transform (or tfm IV))
         pt (.transformPoint matrix (point 1 0))
         x (.-x pt)
         y (.-y pt)
@@ -308,8 +308,8 @@
   (s/keys :req-un [::rx ::ry ::type ::x ::y]
           :opt-un [::name ::variant ::net]))
 (defmethod device-spec :default [_]
-  (s/keys :req-un [::type ::transform ::x ::y ::name]
-          :opt-un [::model ::nets ::template]))
+  (s/keys :req-un [::type ::x ::y ::name]
+          :opt-un [::transform ::model ::nets ::template]))
 ;; Retag uses the unqualified :type so generation round-trips through
 ;; device-spec's dispatch (which reads :type, not ::type).
 (s/def ::device (s/multi-spec device-spec :type))

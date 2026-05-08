@@ -10,7 +10,11 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
+  workflow_call:
   workflow_dispatch:
+
+env:
+  MOSAIC_ROOT: '.'
 
 jobs:
   # Fast Python unit tests — no Docker, no JS build, no native deps.
@@ -30,16 +34,16 @@ jobs:
       - name: Install nyancad with test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e "python/nyancad[test]"
+          pip install -e "$MOSAIC_ROOT/python/nyancad[test]"
 
       - name: Install nyancad-server with test dependencies
-        run: pip install -e "python/nyancad-server[test]"
+        run: pip install -e "$MOSAIC_ROOT/python/nyancad-server[test]"
 
       - name: Run nyancad tests
-        run: pytest python/nyancad/tests -v
+        run: pytest $MOSAIC_ROOT/python/nyancad/tests -v
 
       - name: Run nyancad-server tests
-        run: pytest python/nyancad-server/tests -v
+        run: pytest $MOSAIC_ROOT/python/nyancad-server/tests -v
 
   # Fast CLJS unit tests — Node-only, no browser or CouchDB. Covers pure
   # functions in common.cljc / editor.cljc / couchdb.cljs via the :test
@@ -75,17 +79,19 @@ jobs:
       - name: Install nyancad + server deps (provides pydantic)
         run: |
           python -m pip install --upgrade pip
-          pip install -e "python/nyancad[test]"
-          pip install -e "python/nyancad-server[test]"
+          pip install -e "$MOSAIC_ROOT/python/nyancad[test]"
+          pip install -e "$MOSAIC_ROOT/python/nyancad-server[test]"
 
       - name: Install npm dependencies
-        # `npm install` rather than `npm ci` — package-lock.json is gitignored.
+        working-directory: ${{ env.MOSAIC_ROOT }}
         run: npm install
 
       - name: Compile CLJS test build
+        working-directory: ${{ env.MOSAIC_ROOT }}
         run: npx shadow-cljs compile test
 
       - name: Run CLJS tests
+        working-directory: ${{ env.MOSAIC_ROOT }}
         run: node out/node-tests.js
 
   build:

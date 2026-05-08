@@ -12,5 +12,5 @@ def spice_model_def():
             {"language": "verilog", "implementation": "Verilator"},
             {"language": "spice", "implementation": "NgSpice", "name": "nmos_3p3"},
             {"language": "spice", "implementation": "Xyce", "name": "nmos_xyce"},
-        ]
+        ],
     }

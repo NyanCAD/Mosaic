@@ -23,6 +23,7 @@ from nyancad.netlist import (
 # model_key / bare_id — ID prefix conversion
 # ---------------------------------------------------------------------------
 
+
 class TestModelKey:
     """model_key adds 'models:' prefix to bare IDs."""
 
@@ -69,6 +70,7 @@ class TestModelKeyBareIdRoundtrip:
 # SchemId — schematic:device ID parsing
 # ---------------------------------------------------------------------------
 
+
 class TestSchemId:
     """SchemId.from_string splits 'schematic:device' IDs."""
 
@@ -91,6 +93,7 @@ class TestSchemId:
 # ---------------------------------------------------------------------------
 # default_port_order — canonical SPICE arg order for subcircuit calls
 # ---------------------------------------------------------------------------
+
 
 class TestDefaultPortOrder:
     """default_port_order sorts model port names alphabetically.
@@ -121,6 +124,7 @@ class TestDefaultPortOrder:
 # _default_port_list — SPICE port ordering for built-in types
 # ---------------------------------------------------------------------------
 
+
 class TestDefaultPortList:
     """_default_port_list returns canonical SPICE port order for built-in device types."""
 
@@ -131,32 +135,39 @@ class TestDefaultPortList:
 
     def test_passive_devices(self):
         """Resistors, capacitors, etc. connect P (positive) then N (negative)."""
-        for dtype in ['resistor', 'capacitor', 'inductor', 'vsource', 'isource', 'diode']:
-            ports, p = self._make_ports(['P', 'N'])
+        for dtype in [
+            "resistor",
+            "capacitor",
+            "inductor",
+            "vsource",
+            "isource",
+            "diode",
+        ]:
+            ports, p = self._make_ports(["P", "N"])
             result = NyanCADMixin._default_port_list(dtype, ports, p)
             assert result == ["net_P", "net_N"], f"Failed for {dtype}"
 
     def test_mosfet_with_bulk(self):
         """MOSFET with bulk: Drain, Gate, Source, Bulk."""
-        ports, p = self._make_ports(['D', 'G', 'S', 'B'])
+        ports, p = self._make_ports(["D", "G", "S", "B"])
         result = NyanCADMixin._default_port_list("nmos", ports, p)
         assert result == ["net_D", "net_G", "net_S", "net_B"]
 
     def test_mosfet_without_bulk(self):
         """MOSFET without bulk port: just D, G, S."""
-        ports, p = self._make_ports(['D', 'G', 'S'])
+        ports, p = self._make_ports(["D", "G", "S"])
         result = NyanCADMixin._default_port_list("pmos", ports, p)
         assert result == ["net_D", "net_G", "net_S"]
 
     def test_bjt(self):
         """BJT: Collector, Base, Emitter."""
-        ports, p = self._make_ports(['C', 'B', 'E'])
+        ports, p = self._make_ports(["C", "B", "E"])
         result = NyanCADMixin._default_port_list("npn", ports, p)
         assert result == ["net_C", "net_B", "net_E"]
 
     def test_unknown_type_returns_empty(self):
         """Unknown device types return empty list (handled as subcircuit elsewhere)."""
-        ports, p = self._make_ports(['X'])
+        ports, p = self._make_ports(["X"])
         result = NyanCADMixin._default_port_list("widget", ports, p)
         assert result == []
 
@@ -164,6 +175,7 @@ class TestDefaultPortList:
 # ---------------------------------------------------------------------------
 # _select_model_entry — choose SPICE model variant for simulator
 # ---------------------------------------------------------------------------
+
 
 class TestSelectModelEntry:
     """_select_model_entry picks the right SPICE model entry for a simulator."""
@@ -209,6 +221,7 @@ class TestSelectModelEntry:
 # _select_corner — library section selection
 # ---------------------------------------------------------------------------
 
+
 class TestSelectCorner:
     """_select_corner picks a library corner/section from available options."""
 
@@ -238,6 +251,7 @@ class TestSelectCorner:
 # _eval_params — expression evaluation for model parameters
 # ---------------------------------------------------------------------------
 
+
 class TestEvalParams:
     """_eval_params translates SPICE param expressions using device props.
 
@@ -261,7 +275,9 @@ class TestEvalParams:
     def test_rename_preserves_model_name(self):
         """Non-numeric values (like model names) must NOT be wrapped in braces,
         since SPICE would try to evaluate them as parameter expressions."""
-        assert _eval_params({"model": "name"}, {"name": "nmos_3p3"}) == {"model": "nmos_3p3"}
+        assert _eval_params({"model": "name"}, {"name": "nmos_3p3"}) == {
+            "model": "nmos_3p3"
+        }
 
     def test_rename_preserves_numeric_type(self):
         """Numeric prop value passes through with its original type."""
@@ -272,7 +288,7 @@ class TestEvalParams:
         """Missing rename target → skip so SPICE model's own default is used."""
         result = _eval_params(
             {"w": "width", "vth": "threshold"},
-            {"width": "10"}  # no 'threshold'
+            {"width": "10"},  # no 'threshold'
         )
         assert result == {"w": "10"}
         assert "vth" not in result
@@ -281,7 +297,9 @@ class TestEvalParams:
 
     def test_arithmetic_substitutes_and_wraps(self):
         """Arithmetic is substituted and wrapped for SPICE to evaluate."""
-        assert _eval_params({"w": "width * 1e-6"}, {"width": "10"}) == {"w": "{10 * 1e-6}"}
+        assert _eval_params({"w": "width * 1e-6"}, {"width": "10"}) == {
+            "w": "{10 * 1e-6}"
+        }
 
     def test_arithmetic_with_spice_suffix_notation(self):
         """SPICE suffix notation reaches SPICE intact — the main reason to let
@@ -293,14 +311,16 @@ class TestEvalParams:
     def test_multiple_params(self):
         result = _eval_params(
             {"w": "width * 1e-6", "l": "length * 1e-6"},
-            {"width": "5u", "length": "0.5u"}
+            {"width": "5u", "length": "0.5u"},
         )
         assert result == {"w": "{5u * 1e-6}", "l": "{0.5u * 1e-6}"}
 
     def test_unknown_identifier_preserved(self):
         """Identifiers not in device_props stay as-is so SPICE can resolve them
         (e.g. SPICE math functions, model-level parameters)."""
-        assert _eval_params({"x": "sqrt(width)"}, {"width": "10u"}) == {"x": "{sqrt(10u)}"}
+        assert _eval_params({"x": "sqrt(width)"}, {"width": "10u"}) == {
+            "x": "{sqrt(10u)}"
+        }
 
     def test_identifier_regex_skips_numeric_literals(self):
         """Identifier match uses word boundary, so 'e' in '2e-3' is not
@@ -316,8 +336,7 @@ class TestEvalParams:
     def test_mixed_rename_and_arithmetic(self):
         """A params mapping can mix rename and arithmetic entries."""
         result = _eval_params(
-            {"model": "name", "w": "width * 1e-6"},
-            {"name": "nmos_3p3", "width": "10u"}
+            {"model": "name", "w": "width * 1e-6"}, {"name": "nmos_3p3", "width": "10u"}
         )
         assert result == {"model": "nmos_3p3", "w": "{10u * 1e-6}"}
 
@@ -325,6 +344,7 @@ class TestEvalParams:
 # ---------------------------------------------------------------------------
 # populate_from_nyancad — reads :nets off each device
 # ---------------------------------------------------------------------------
+
 
 class TestPopulateFromNyancad:
     """populate_from_nyancad reads pre-annotated `:nets` from each device doc
@@ -337,17 +357,20 @@ class TestPopulateFromNyancad:
     def test_emits_nets_directly(self):
         """Resistor with :nets {'P': 'vdd', 'N': 'gnd'} produces
         a SPICE line referencing 'vdd' and 'gnd'."""
-        schem = self._schem({
-            "top:R1": {
-                "_id": "top:R1",
-                "type": "resistor",
-                "x": 1, "y": 1,
-                "transform": [1, 0, 0, 1, 0, 0],
-                "name": "R1",
-                "nets": {"P": "vdd", "N": "gnd"},
-                "props": {"resistance": "1k"},
+        schem = self._schem(
+            {
+                "top:R1": {
+                    "_id": "top:R1",
+                    "type": "resistor",
+                    "x": 1,
+                    "y": 1,
+                    "transform": [1, 0, 0, 1, 0, 0],
+                    "name": "R1",
+                    "nets": {"P": "vdd", "N": "gnd"},
+                    "props": {"resistance": "1k"},
+                }
             }
-        })
+        )
         spice = str(NyanCircuit("top", schem))
         assert "vdd" in spice
         assert "gnd" in spice
@@ -356,37 +379,55 @@ class TestPopulateFromNyancad:
     def test_skips_devices_without_nets(self):
         """A device without :nets is treated as disconnected — no SPICE element
         is emitted for it. Legacy data degrades gracefully."""
-        schem = self._schem({
-            "top:R_disconnected": {
-                "_id": "top:R_disconnected",
-                "type": "resistor",
-                "x": 1, "y": 1,
-                "transform": [1, 0, 0, 1, 0, 0],
-                "name": "Rd",
-                "props": {"resistance": "1k"},
-                # no "nets" key
+        schem = self._schem(
+            {
+                "top:R_disconnected": {
+                    "_id": "top:R_disconnected",
+                    "type": "resistor",
+                    "x": 1,
+                    "y": 1,
+                    "transform": [1, 0, 0, 1, 0, 0],
+                    "name": "Rd",
+                    "props": {"resistance": "1k"},
+                    # no "nets" key
+                }
             }
-        })
+        )
         spice = str(NyanCircuit("top", schem))
         assert "Rd" not in spice
 
     def test_skips_structural_types(self):
         """Wires, text, and port docs never produce SPICE elements even if
         they accidentally carry a :nets field."""
-        schem = self._schem({
-            "top:W1": {
-                "_id": "top:W1", "type": "wire",
-                "x": 0, "y": 0, "rx": 1, "ry": 0, "name": "W1",
-            },
-            "top:T1": {
-                "_id": "top:T1", "type": "text",
-                "x": 0, "y": 0, "transform": [1, 0, 0, 1, 0, 0], "name": "T1",
-            },
-            "top:P1": {
-                "_id": "top:P1", "type": "port",
-                "x": 0, "y": 0, "transform": [1, 0, 0, 1, 0, 0], "name": "inp",
-            },
-        })
+        schem = self._schem(
+            {
+                "top:W1": {
+                    "_id": "top:W1",
+                    "type": "wire",
+                    "x": 0,
+                    "y": 0,
+                    "rx": 1,
+                    "ry": 0,
+                    "name": "W1",
+                },
+                "top:T1": {
+                    "_id": "top:T1",
+                    "type": "text",
+                    "x": 0,
+                    "y": 0,
+                    "transform": [1, 0, 0, 1, 0, 0],
+                    "name": "T1",
+                },
+                "top:P1": {
+                    "_id": "top:P1",
+                    "type": "port",
+                    "x": 0,
+                    "y": 0,
+                    "transform": [1, 0, 0, 1, 0, 0],
+                    "name": "inp",
+                },
+            }
+        )
         # Should complete without error and emit no element lines.
         spice = str(NyanCircuit("top", schem))
         assert "W1" not in spice
@@ -395,24 +436,33 @@ class TestPopulateFromNyancad:
     def test_distinct_nets_for_distinct_devices(self):
         """Two resistors with different :nets produce two independent
         SPICE elements referencing the declared nets."""
-        schem = self._schem({
-            "top:R1": {
-                "_id": "top:R1", "type": "resistor",
-                "x": 1, "y": 1, "transform": [1, 0, 0, 1, 0, 0], "name": "R1",
-                "nets": {"P": "a", "N": "b"},
-                "props": {"resistance": "1k"},
-            },
-            "top:R2": {
-                "_id": "top:R2", "type": "resistor",
-                "x": 5, "y": 5, "transform": [1, 0, 0, 1, 0, 0], "name": "R2",
-                "nets": {"P": "b", "N": "c"},
-                "props": {"resistance": "2k"},
-            },
-        })
+        schem = self._schem(
+            {
+                "top:R1": {
+                    "_id": "top:R1",
+                    "type": "resistor",
+                    "x": 1,
+                    "y": 1,
+                    "transform": [1, 0, 0, 1, 0, 0],
+                    "name": "R1",
+                    "nets": {"P": "a", "N": "b"},
+                    "props": {"resistance": "1k"},
+                },
+                "top:R2": {
+                    "_id": "top:R2",
+                    "type": "resistor",
+                    "x": 5,
+                    "y": 5,
+                    "transform": [1, 0, 0, 1, 0, 0],
+                    "name": "R2",
+                    "nets": {"P": "b", "N": "c"},
+                    "props": {"resistance": "2k"},
+                },
+            }
+        )
         spice = str(NyanCircuit("top", schem))
         # Both devices present, all three nets referenced.
         assert "R1" in spice.replace(":", "_")
         assert "R2" in spice.replace(":", "_")
         for net in ("a", "b", "c"):
             assert net in spice
-
