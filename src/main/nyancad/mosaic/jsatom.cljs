@@ -8,23 +8,11 @@
    Top-level keys are strings (matching PouchDB format), inner values use keyword keys.
    Each JsAtom has a group field for message routing in multi-atom webviews."
   (:require ["jsonc-parser" :as jsonc]
-            [nyancad.hipflask.util :refer [json->clj]]
+            [nyancad.mosaic.jsatom.util :refer [doc->state]]
             [cljs.core.async :refer [go put! promise-chan]]
             reagent.ratom))
 
 (defonce vscode (js/acquireVsCodeApi))
-
-(defn- doc->state
-  "Parse JSON document string to Clojure state.
-   Top-level keys remain strings, inner values use keyword keys."
-  [doc-str]
-  (let [parsed (jsonc/parse doc-str)]
-    (if parsed
-      (into {}
-            (map (fn [entry]
-                   [(aget entry 0) (json->clj (aget entry 1))]))
-            (js/Object.entries parsed))
-      {})))
 
 (defn- pouch-swap! [^js ja f x & args]
   (let [old @(.-cache ja)
