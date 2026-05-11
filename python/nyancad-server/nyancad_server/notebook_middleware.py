@@ -51,8 +51,7 @@ async def validate_couchdb_session(cookies: dict[str, str]) -> tuple[bool, str]:
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(
-                f"{COUCHDB_URL}/_session",
-                cookies={"AuthSession": session_cookie}
+                f"{COUCHDB_URL}/_session", cookies={"AuthSession": session_cookie}
             )
 
             if response.status_code != 200:
@@ -85,7 +84,7 @@ class LANSessionManager:
     def shutdown(self):
         """Shutdown all cached marimo apps."""
         for cache_key, app in self.middleware._app_cache.items():
-            if hasattr(app, 'state') and hasattr(app.state, 'session_manager'):
+            if hasattr(app, "state") and hasattr(app.state, "session_manager"):
                 try:
                     app.state.session_manager.shutdown()
                 except Exception as e:
@@ -200,11 +199,13 @@ class UserNotebookMiddleware:
         marimo_app = create_starlette_app(
             base_url="",  # Routes built without prefix (we rewrite scope path)
             host=self.host,
-            lifespan=Lifespans([
-                lifespans.etc,
-                lifespans.logging,
-                *LIFESPAN_REGISTRY.get_all(),
-            ]),
+            lifespan=Lifespans(
+                [
+                    lifespans.etc,
+                    lifespans.logging,
+                    *LIFESPAN_REGISTRY.get_all(),
+                ]
+            ),
             enable_auth=False,
             allow_origins=("*",),
             skew_protection=True,  # Enabled - works with URL-based routing
@@ -231,7 +232,9 @@ class UserNotebookMiddleware:
         headers = dict(scope.get("headers", []))
         cookie_header = headers.get(b"cookie", b"").decode()
         return dict(
-            cookie.split("=", 1) for cookie in cookie_header.split("; ") if "=" in cookie
+            cookie.split("=", 1)
+            for cookie in cookie_header.split("; ")
+            if "=" in cookie
         )
 
     def _parse_query_params(self, scope: Scope) -> dict[str, str]:
@@ -262,8 +265,7 @@ class UserNotebookMiddleware:
             if not valid:
                 if scope["type"] == "http":
                     response = JSONResponse(
-                        {"error": "Authentication required"},
-                        status_code=401
+                        {"error": "Authentication required"}, status_code=401
                     )
                     await response(scope, receive, send)
                     return
@@ -279,7 +281,7 @@ class UserNotebookMiddleware:
         # - /notebook or /notebook/ → needs redirect (get schematic from query)
         # - /notebook/{username}/{schematic}/... → route to app
 
-        path_after_notebook = path[len("/notebook"):]
+        path_after_notebook = path[len("/notebook") :]
         path_parts = [p for p in path_after_notebook.split("/") if p]
 
         if len(path_parts) >= 2:
@@ -287,15 +289,14 @@ class UserNotebookMiddleware:
             # e.g., /notebook/alice/circuit1/api/...
             url_username = path_parts[0]
             schematic = path_parts[1]
-            remaining_path = "/" + "/".join(path_parts[2:]) if len(path_parts) > 2 else "/"
+            remaining_path = (
+                "/" + "/".join(path_parts[2:]) if len(path_parts) > 2 else "/"
+            )
 
             # Security: ensure user can only access their own notebooks
             if self.require_auth and url_username != username:
                 if scope["type"] == "http":
-                    response = JSONResponse(
-                        {"error": "Access denied"},
-                        status_code=403
-                    )
+                    response = JSONResponse({"error": "Access denied"}, status_code=403)
                     await response(scope, receive, send)
                     return
                 else:
@@ -309,7 +310,9 @@ class UserNotebookMiddleware:
 
             if cache_key not in self._app_cache:
                 logger.info(f"Creating marimo app for {cache_key}")
-                self._app_cache[cache_key] = self._create_marimo_app(notebook_path, base_url)
+                self._app_cache[cache_key] = self._create_marimo_app(
+                    notebook_path, base_url
+                )
 
             marimo_app = self._app_cache[cache_key]
 

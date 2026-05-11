@@ -2,7 +2,6 @@
 
 import argparse
 import sys
-import os
 from importlib import resources
 from urllib.parse import quote
 import re
@@ -18,17 +17,16 @@ from starlette.background import BackgroundTask
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
 from .mcp_server import mcp
 from .oauth import create_oauth_routes
-from .config import COUCHDB_URL, COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS, NOTEBOOKS_DIR, DeploymentMode
+from .config import (
+    COUCHDB_URL,
+    COUCHDB_ADMIN_USER,
+    COUCHDB_ADMIN_PASS,
+    NOTEBOOKS_DIR,
+    DeploymentMode,
+)
 from .notebook_middleware import UserNotebookMiddleware
-
-# Rate limiting
-limiter = Limiter(key_func=get_remote_address)
-
-# HTTP client for GitHub proxy (global for connection pooling)
-github_client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
 
 # Marimo server components (mirroring start.py)
 import marimo._server.api.lifespans as lifespans
@@ -45,6 +43,12 @@ from marimo._server.uvicorn_utils import initialize_signals
 from marimo._utils.lifespans import Lifespans
 from marimo._utils.marimo_path import MarimoPath
 
+# Rate limiting
+limiter = Limiter(key_func=get_remote_address)
+
+# HTTP client for GitHub proxy (global for connection pooling)
+github_client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
+
 
 # Authentication endpoints
 async def register_endpoint(request: Request):
@@ -54,61 +58,60 @@ async def register_endpoint(request: Request):
         body = await request.json()
         username = body.get("username", "").strip()
         password = body.get("password", "").strip()
-        
+
         # Basic validation
         if not username or not password:
             return JSONResponse(
-                {"error": "Username and password are required"},
-                status_code=400
+                {"error": "Username and password are required"}, status_code=400
             )
-        
+
         if len(password) < 6:
             return JSONResponse(
                 {"error": "Password must be at least 6 characters long"},
-                status_code=400
+                status_code=400,
             )
-        
+
         # Create user document
         user_doc = {
             "_id": f"org.couchdb.user:{username}",
             "name": username,
             "password": password,
             "type": "user",
-            "roles": []
+            "roles": [],
         }
-        
+
         async with httpx.AsyncClient() as client:
             # Create user in CouchDB
             user_response = await client.put(
                 f"{COUCHDB_URL}/_users/org.couchdb.user:{quote(username)}",
                 json=user_doc,
                 auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS),
-                headers={"Content-Type": "application/json"}
+                headers={"Content-Type": "application/json"},
             )
-            
+
             # If user creation failed, return CouchDB response unchanged
             if user_response.status_code >= 300:
                 return Response(
                     content=user_response.text,
                     status_code=user_response.status_code,
-                    headers=dict(user_response.headers)
+                    headers=dict(user_response.headers),
                 )
-            
+
             # User created successfully, now login to get session
             session_response = await client.post(
                 f"{COUCHDB_URL}/_session",
                 data={"name": username, "password": password},
-                headers={"Content-Type": "application/x-www-form-urlencoded"}
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
-            
+
             # Forward the session response
             return Response(
                 content=session_response.text,
                 status_code=session_response.status_code,
-                headers=dict(session_response.headers)
+                headers=dict(session_response.headers),
             )
-            
-    except Exception as e:
+
+    except Exception:
         return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
@@ -119,30 +122,29 @@ async def login_endpoint(request: Request):
         body = await request.json()
         username = body.get("username", "").strip()
         password = body.get("password", "").strip()
-        
+
         # Basic validation
         if not username or not password:
             return JSONResponse(
-                {"error": "Username and password are required"},
-                status_code=400
+                {"error": "Username and password are required"}, status_code=400
             )
-        
+
         # Forward login request to CouchDB
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{COUCHDB_URL}/_session",
                 data={"name": username, "password": password},
-                headers={"Content-Type": "application/x-www-form-urlencoded"}
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
-            
+
             # Forward the response
             return Response(
                 content=response.text,
                 status_code=response.status_code,
-                headers=dict(response.headers)
+                headers=dict(response.headers),
             )
-            
-    except Exception as e:
+
+    except Exception:
         return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
@@ -156,17 +158,17 @@ async def logout_endpoint(request: Request):
         async with httpx.AsyncClient() as client:
             response = await client.delete(
                 f"{COUCHDB_URL}/_session",
-                cookies={"AuthSession": session_cookie} if session_cookie else {}
+                cookies={"AuthSession": session_cookie} if session_cookie else {},
             )
 
             # Forward the response
             return Response(
                 content=response.text,
                 status_code=response.status_code,
-                headers=dict(response.headers)
+                headers=dict(response.headers),
             )
 
-    except Exception as e:
+    except Exception:
         return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
@@ -179,8 +181,7 @@ async def user_info_endpoint(request: Request):
     # Get username from session (using user's cookie)
     async with httpx.AsyncClient() as client:
         session_resp = await client.get(
-            f"{COUCHDB_URL}/_session",
-            cookies={"AuthSession": session_cookie}
+            f"{COUCHDB_URL}/_session", cookies={"AuthSession": session_cookie}
         )
     if session_resp.status_code != 200:
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
@@ -194,21 +195,19 @@ async def user_info_endpoint(request: Request):
     async with httpx.AsyncClient() as client:
         user_doc_url = f"{COUCHDB_URL}/_users/org.couchdb.user:{quote(username)}"
         user_resp = await client.get(
-            user_doc_url,
-            auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+            user_doc_url, auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
         )
 
     if user_resp.status_code != 200:
         return JSONResponse(
             {"error": f"Failed to fetch user doc: {user_resp.text}"},
-            status_code=user_resp.status_code
+            status_code=user_resp.status_code,
         )
 
     user_doc = user_resp.json()
-    return JSONResponse({
-        "name": username,
-        "workspaces": user_doc.get("workspaces", [])
-    })
+    return JSONResponse(
+        {"name": username, "workspaces": user_doc.get("workspaces", [])}
+    )
 
 
 # Workspace management endpoints
@@ -219,8 +218,7 @@ async def get_authenticated_user(request: Request) -> str | None:
         return None
     async with httpx.AsyncClient() as client:
         resp = await client.get(
-            f"{COUCHDB_URL}/_session",
-            cookies={"AuthSession": session_cookie}
+            f"{COUCHDB_URL}/_session", cookies={"AuthSession": session_cookie}
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -228,7 +226,9 @@ async def get_authenticated_user(request: Request) -> str | None:
     return None
 
 
-async def add_workspace_to_user(client: httpx.AsyncClient, username: str, workspace: str) -> str | None:
+async def add_workspace_to_user(
+    client: httpx.AsyncClient, username: str, workspace: str
+) -> str | None:
     """Add workspace to user's workspace list in their CouchDB user doc.
 
     Returns None on success, or an error message if the user doesn't exist.
@@ -242,12 +242,15 @@ async def add_workspace_to_user(client: httpx.AsyncClient, username: str, worksp
     workspaces = doc.get("workspaces", [])
     if workspace not in workspaces:
         doc["workspaces"] = workspaces + [workspace]
-        await client.put(doc_url, json=doc,
-                       auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS))
+        await client.put(
+            doc_url, json=doc, auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+        )
     return None
 
 
-async def remove_workspace_from_user(client: httpx.AsyncClient, username: str, workspace: str):
+async def remove_workspace_from_user(
+    client: httpx.AsyncClient, username: str, workspace: str
+):
     """Remove workspace from user's workspace list in their CouchDB user doc."""
     doc_url = f"{COUCHDB_URL}/_users/org.couchdb.user:{quote(username)}"
     resp = await client.get(doc_url, auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS))
@@ -256,8 +259,9 @@ async def remove_workspace_from_user(client: httpx.AsyncClient, username: str, w
         workspaces = doc.get("workspaces", [])
         if workspace in workspaces:
             doc["workspaces"] = [w for w in workspaces if w != workspace]
-            await client.put(doc_url, json=doc,
-                           auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS))
+            await client.put(
+                doc_url, json=doc, auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+            )
 
 
 async def workspace_endpoint(request: Request):
@@ -265,10 +269,12 @@ async def workspace_endpoint(request: Request):
     slug = request.path_params["slug"]
 
     # Validate slug format (lowercase alphanumeric and hyphens only)
-    if not re.match(r'^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$', slug):
+    if not re.match(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$", slug):
         return JSONResponse(
-            {"error": "Invalid workspace name. Use lowercase letters, numbers, and hyphens only."},
-            status_code=400
+            {
+                "error": "Invalid workspace name. Use lowercase letters, numbers, and hyphens only."
+            },
+            status_code=400,
         )
 
     db_name = f"ws-{slug}"
@@ -283,7 +289,7 @@ async def workspace_endpoint(request: Request):
             # Get workspace security info
             resp = await client.get(
                 f"{COUCHDB_URL}/{db_name}/_security",
-                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS),
             )
             if resp.status_code != 200:
                 return JSONResponse({"error": "Workspace not found"}, status_code=404)
@@ -295,10 +301,7 @@ async def workspace_endpoint(request: Request):
             if username not in members:
                 return JSONResponse({"error": "Not a member"}, status_code=403)
 
-            return JSONResponse({
-                "workspace": db_name,
-                "members": members
-            })
+            return JSONResponse({"workspace": db_name, "members": members})
 
         elif request.method == "PUT":
             body = await request.json()
@@ -307,14 +310,14 @@ async def workspace_endpoint(request: Request):
             # Check if db exists and get current security
             resp = await client.get(
                 f"{COUCHDB_URL}/{db_name}/_security",
-                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS),
             )
 
             # Handle unexpected errors from CouchDB
             if resp.status_code not in (200, 404):
                 return JSONResponse(
                     {"error": f"CouchDB error: {resp.text}"},
-                    status_code=resp.status_code
+                    status_code=resp.status_code,
                 )
 
             db_exists = resp.status_code == 200
@@ -327,8 +330,7 @@ async def workspace_endpoint(request: Request):
                 # SECURITY: User must be current member to modify
                 if username not in old_members:
                     return JSONResponse(
-                        {"error": "Not a member of this workspace"},
-                        status_code=403
+                        {"error": "Not a member of this workspace"}, status_code=403
                     )
             else:
                 # Creating new workspace - ensure creator is in members
@@ -349,9 +351,7 @@ async def workspace_endpoint(request: Request):
 
             # If any adds failed, abort before making any other changes
             if errors:
-                return JSONResponse({
-                    "error": "; ".join(errors)
-                }, status_code=400)
+                return JSONResponse({"error": "; ".join(errors)}, status_code=400)
 
             # Adds succeeded, now process removals (best effort)
             for user in removed:
@@ -361,37 +361,37 @@ async def workspace_endpoint(request: Request):
             if not db_exists:
                 create_resp = await client.put(
                     f"{COUCHDB_URL}/{db_name}",
-                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                    auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS),
                 )
                 if create_resp.status_code not in (201, 202):
                     return JSONResponse(
                         {"error": f"Failed to create workspace: {create_resp.text}"},
-                        status_code=create_resp.status_code
+                        status_code=create_resp.status_code,
                     )
 
             # Update _security
             security_resp = await client.put(
                 f"{COUCHDB_URL}/{db_name}/_security",
                 json=body,
-                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS),
             )
             if security_resp.status_code != 200:
                 return JSONResponse(
-                    {"error": f"Failed to update workspace security: {security_resp.text}"},
-                    status_code=security_resp.status_code
+                    {
+                        "error": f"Failed to update workspace security: {security_resp.text}"
+                    },
+                    status_code=security_resp.status_code,
                 )
 
-            return JSONResponse({
-                "ok": True,
-                "workspace": db_name,
-                "created": not db_exists
-            })
+            return JSONResponse(
+                {"ok": True, "workspace": db_name, "created": not db_exists}
+            )
 
         elif request.method == "DELETE":
             # Get current security to verify membership
             resp = await client.get(
                 f"{COUCHDB_URL}/{db_name}/_security",
-                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS),
             )
             if resp.status_code != 200:
                 return JSONResponse({"error": "Workspace not found"}, status_code=404)
@@ -402,8 +402,7 @@ async def workspace_endpoint(request: Request):
             # SECURITY: Only members can delete workspace
             if username not in members:
                 return JSONResponse(
-                    {"error": "Not a member of this workspace"},
-                    status_code=403
+                    {"error": "Not a member of this workspace"}, status_code=403
                 )
 
             # Remove workspace from all members' user docs
@@ -413,13 +412,10 @@ async def workspace_endpoint(request: Request):
             # Delete the database
             await client.delete(
                 f"{COUCHDB_URL}/{db_name}",
-                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS)
+                auth=(COUCHDB_ADMIN_USER, COUCHDB_ADMIN_PASS),
             )
 
-            return JSONResponse({
-                "ok": True,
-                "deleted": db_name
-            })
+            return JSONResponse({"ok": True, "deleted": db_name})
 
 
 # Whitelisted GitHub repositories for proxy access
@@ -442,7 +438,7 @@ async def github_proxy_endpoint(request: Request):
         if len(parts) < 2:
             return JSONResponse(
                 {"error": "Invalid path format. Expected: /gh/owner/repo/..."},
-                status_code=400
+                status_code=400,
             )
 
         owner, repo = parts[0], parts[1]
@@ -451,8 +447,7 @@ async def github_proxy_endpoint(request: Request):
         # Check if repo is whitelisted
         if repo_path not in ALLOWED_REPOS:
             return JSONResponse(
-                {"error": f"Repository {repo_path} is not whitelisted"},
-                status_code=403
+                {"error": f"Repository {repo_path} is not whitelisted"}, status_code=403
             )
 
         # Construct GitHub URL
@@ -469,26 +464,25 @@ async def github_proxy_endpoint(request: Request):
             status_code=response.status_code,
             headers=dict(response.headers),
             media_type=response.headers.get("content-type", "application/octet-stream"),
-            background=BackgroundTask(response.aclose)
+            background=BackgroundTask(response.aclose),
         )
 
     except httpx.TimeoutException as e:
         print(f"Timeout error: {e}")
-        return JSONResponse(
-            {"error": "Request to GitHub timed out"},
-            status_code=504
-        )
+        return JSONResponse({"error": "Request to GitHub timed out"}, status_code=504)
     except Exception as e:
         import traceback
+
         print(f"Proxy error: {e}")
         print(traceback.format_exc())
-        return JSONResponse(
-            {"error": f"Proxy error: {str(e)}"},
-            status_code=500
-        )
+        return JSONResponse({"error": f"Proxy error: {str(e)}"}, status_code=500)
 
 
-def create_app(mode: DeploymentMode = DeploymentMode.LOCAL, host: str = "localhost", port: int = 8080) -> Starlette:
+def create_app(
+    mode: DeploymentMode = DeploymentMode.LOCAL,
+    host: str = "localhost",
+    port: int = 8080,
+) -> Starlette:
     """Create the Starlette application with static files and optional marimo edit integration.
 
     Args:
@@ -528,11 +522,13 @@ def create_app(mode: DeploymentMode = DeploymentMode.LOCAL, host: str = "localho
         marimo_app = create_starlette_app(
             base_url="",
             host="localhost",
-            lifespan=Lifespans([
-                lifespans.etc,
-                lifespans.logging,
-                *LIFESPAN_REGISTRY.get_all(),
-            ]),
+            lifespan=Lifespans(
+                [
+                    lifespans.etc,
+                    lifespans.logging,
+                    *LIFESPAN_REGISTRY.get_all(),
+                ]
+            ),
             enable_auth=False,
             allow_origins=("*",),
             skew_protection=True,
@@ -573,21 +569,28 @@ def create_app(mode: DeploymentMode = DeploymentMode.LOCAL, host: str = "localho
             Route("/auth/logout", logout_endpoint, methods=["POST"]),
             Route("/auth/me", user_info_endpoint, methods=["GET"]),
             # Workspace management
-            Route("/workspaces/{slug}", workspace_endpoint, methods=["GET", "PUT", "DELETE"]),
+            Route(
+                "/workspaces/{slug}",
+                workspace_endpoint,
+                methods=["GET", "PUT", "DELETE"],
+            ),
             # GitHub proxy
             Route("/gh/{path:path}", github_proxy_endpoint, methods=["GET"]),
             # MCP server
             Mount("/ai", app=mcp_app),
-        ] + oauth_routes,  # Add all OAuth routes directly at root level
-        lifespan=Lifespans(app_lifespans)
+        ]
+        + oauth_routes,  # Add all OAuth routes directly at root level
+        lifespan=Lifespans(app_lifespans),
     )
 
     # Add rate limiting state
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
-        {"error": "Rate limit exceeded. Try again later."},
-        status_code=429
-    ))
+    app.add_exception_handler(
+        RateLimitExceeded,
+        lambda request, exc: JSONResponse(
+            {"error": "Rate limit exceeded. Try again later."}, status_code=429
+        ),
+    )
     # Note: SlowAPIMiddleware not added globally to avoid middleware conflicts
     # Rate limiting is applied to specific endpoints via @limiter.limit decorator
 
@@ -633,27 +636,20 @@ def main():
     """Main entry point for the server."""
     parser = argparse.ArgumentParser(description="NyanCAD Server")
     parser.add_argument(
-        "--host",
-        default="localhost",
-        help="Host to bind to (default: localhost)"
+        "--host", default="localhost", help="Host to bind to (default: localhost)"
     )
     parser.add_argument(
-        "--port",
-        type=int,
-        default=8080,
-        help="Port to bind to (default: 8080)"
+        "--port", type=int, default=8080, help="Port to bind to (default: 8080)"
     )
     parser.add_argument(
-        "--reload",
-        action="store_true",
-        help="Enable auto-reload for development"
+        "--reload", action="store_true", help="Enable auto-reload for development"
     )
     parser.add_argument(
         "--mode",
         type=str,
         choices=["local", "lan", "wasm"],
         default="local",
-        help="Deployment mode: local (single user), lan (multi-user with auth), wasm (client-side)"
+        help="Deployment mode: local (single user), lan (multi-user with auth), wasm (client-side)",
     )
 
     args = parser.parse_args()
@@ -672,19 +668,19 @@ def main():
         print(f"  - Mode: {mode.value}")
         print(f"  - Static files served at: http://{args.host}:{args.port}/")
         if mode != DeploymentMode.WASM:
-            print(f"  - Marimo notebook editor at: http://{args.host}:{args.port}/notebook/")
+            print(
+                f"  - Marimo notebook editor at: http://{args.host}:{args.port}/notebook/"
+            )
         if mode == DeploymentMode.LAN:
             print(f"  - User notebooks directory: {NOTEBOOKS_DIR}")
-        
+
         # Create uvicorn server object (needed for marimo signal handler)
         server = uvicorn.Server(
             uvicorn.Config(
                 app,
                 port=args.port,
                 host=args.host,
-                reload_dirs=(
-                    None if not args.reload else []
-                ),
+                reload_dirs=(None if not args.reload else []),
                 # Marimo-specific uvicorn settings (from start.py)
                 timeout_keep_alive=int(1e9),  # Large timeout for edit mode
                 ws_ping_interval=1,
@@ -693,16 +689,16 @@ def main():
                 loop="asyncio",  # Force asyncio for edit mode
             )
         )
-        
+
         # Set server on app state (required by marimo signal handler)
         app.state.server = server
         app.state.host = args.host
         app.state.port = args.port
-        
+
         # Initialize asyncio last, then start server (marimo pattern)
         initialize_asyncio()
         server.run()
-        
+
     except Exception as e:
         print(f"Error starting server: {e}", file=sys.stderr)
         sys.exit(1)

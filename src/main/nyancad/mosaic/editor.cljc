@@ -49,7 +49,11 @@
 (s/def ::tool #{::cursor ::eraser ::wire ::pan ::device ::probe})
 (s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view ::box}))
-(s/def ::staging (s/nilable :nyancad.mosaic.common/device))
+;; Staging is a partial device: commit-staged assigns :name on commit.
+(s/def ::staging (s/nilable (s/keys :req-un [::cm/type ::cm/x ::cm/y]
+                                    :opt-un [::cm/name ::cm/transform ::cm/model
+                                             ::cm/nets ::cm/template
+                                             ::cm/rx ::cm/ry ::cm/variant ::cm/net])))
 (s/def ::notebook-state #{::embedded ::collapsed ::popped-out})
 (s/def ::x number?)
 (s/def ::y number?)
@@ -262,12 +266,12 @@
               [0 0.7]
               [0.3 0.7]
               [0.5 0.5]]]])
-   [:text {:text-anchor (case (math/round (first (:transform label)))
+   [:text {:text-anchor (case (math/round (first (:transform label cm/IV)))
                           1 "end"
                           -1 "start"
                           "middle")
            :dominant-baseline "middle"
-           :transform (-> (:transform label)
+           :transform (-> (:transform label cm/IV)
                           transform
                           (.translate (/ grid-size (if (= (:variant label) "text") -4 4)) (/ grid-size -2))
                           .inverse
@@ -606,7 +610,7 @@
 (defn counter-rotate [v x y]
   (.toString (-> (js/DOMMatrix.)
                  (.translate x y)
-                 (.multiply (.inverse (transform (:transform v))))
+                 (.multiply (.inverse (transform (:transform v cm/IV))))
                  (.translate (- x) (- y)))))
 
 ;; Helper: render designator at screen-space top-right corner
@@ -616,7 +620,7 @@
                  [(- 1 half-size) (- 1 half-size)]                       ; top-left
                  [(- 1 half-size) (- (+ 1 height) half-size)]            ; bottom-left
                  [(- (+ 1 width) half-size) (- (+ 1 height) half-size)]] ; bottom-right
-        mat (transform (:transform v))
+        mat (transform (:transform v cm/IV))
         rotated (map (fn [[x y]]
                        (let [pt (.transformPoint mat (js/DOMPoint. x y))]
                          [(.-x pt) (.-y pt)]))
@@ -631,7 +635,7 @@
                         (get-in models [(:type v) ::template])
                         "{self.name}")]
       [:text.identifier
-       {:transform (-> (:transform v) transform
+       {:transform (-> (:transform v cm/IV) transform
                        (.translate (* grid-size (/ size -2)) (* grid-size (/ size -2)))
                        .inverse
                        (.translate (* grid-size desig-offset-x) (* grid-size desig-offset-y))
@@ -1086,7 +1090,8 @@
          :else []))]))
 
 (defn builtin-locations [{:keys [:x :y :type :transform]}]
-  (let [mod (get models type)
+  (let [transform (or transform cm/IV)
+        mod (get models type)
         conn (::conn mod)
         bg (::bg mod)
         [w h] (when (vector? bg) bg)
@@ -1099,7 +1104,8 @@
                                       size transform x y))]))
 
 (defn circuit-locations [{:keys [:x :y :model :transform :type]}]
-  (let [mod (get @modeldb (cm/model-key model))
+  (let [transform (or transform cm/IV)
+        mod (get @modeldb (cm/model-key model))
         ports (:ports mod)
         shape (when (= type "amp") :amp)
         conn (if ports (cm/port-locations ports shape) [])
@@ -1523,9 +1529,6 @@
                     (+ y (/ h 2)))))
 
 (defn commit-staged [dev]
-  ;; Assign :name before validating so the component spec (which now
-  ;; requires :name) sees a fully-named device. For wires the :name is
-  ;; still effectively advisory — the wire spec keeps :name as :opt-un.
   (let [named (update dev :name (fnil identity (make-name (:type dev))))
         id (str group sep (:name named))]
     (when (s/valid? :nyancad.mosaic.common/device named)
@@ -1533,12 +1536,13 @@
       (post-action!))))
 
 (defn transform-selected [tf]
-  (let [f (comp transform-vec tf transform)]
+  (let [f (comp transform-vec tf transform)
+        g #(f (or % cm/IV))]
     (if @staging
       (swap! staging
-             update :transform f)
+             update :transform g)
       (do (swap! schematic update-keys @selected
-                 update :transform f)
+                 update :transform g)
           (post-action!)))))
 
 (defn delete-selected []

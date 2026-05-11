@@ -21,7 +21,7 @@ import kfactory as kf
 
 ihp.PDK.activate()
 
-from nyancad_kfactory import convert_schematic
+from nyancad_kfactory import convert_schematic  # noqa: E402
 
 
 IHP_DIR = Path("/Users/pepijndevos/code/IHP")
@@ -66,6 +66,7 @@ def register_placeholders(kcl: kf.KCLayout) -> None:
 
         def _factory(_name: str = name) -> kf.DKCell:
             return kcl.dkcell(_name)
+
         _factory.__name__ = name
         kcl.cell(_factory)
 
@@ -91,7 +92,8 @@ def main() -> int:
     # SPICE-style expressions that the kfactory cell doesn't understand.
     inverter = all_docs["inverter"]
     inverter = {
-        k: v for k, v in inverter.items()
+        k: v
+        for k, v in inverter.items()
         if not (isinstance(v, dict) and v.get("type") in {"vsource", "capacitor"})
     }
     # IHP kfactory mos cells only expose S/D/G (bulk is implicit). Mosaic's
@@ -106,7 +108,7 @@ def main() -> int:
             nets = dev.get("nets") or {}
             dev["nets"] = {p: n for p, n in nets.items() if p in MOS_PORTS}
     # Scrub dead nets from remaining devices (connections to V1/V2/C1 ports)
-    dropped_nets_present = True  # harmless; the converter ignores nets with <2 endpoints
+    # harmless; the converter ignores nets with <2 endpoints
     all_docs["inverter"] = inverter
 
     # IHP transistors are ~1 µm — at the default 50 µm/unit the cells look
@@ -120,7 +122,7 @@ def main() -> int:
         component_map=component_map,
     )
 
-    print(f"Built DSchematic with:")
+    print("Built DSchematic with:")
     print(f"  {len(schem.instances)} instances: {sorted(schem.instances)}")
     print(f"  {len(schem.connections)} connections")
     print(f"  {len(schem.routes)} routes")

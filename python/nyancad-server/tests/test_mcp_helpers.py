@@ -1,7 +1,10 @@
 """Tests for pure helper functions in nyancad_server.mcp_server."""
 
-import pytest
-from nyancad_server.mcp_server import str_to_hex, normalize_to_bare_id, normalize_to_model_key
+from nyancad_server.mcp_server import (
+    str_to_hex,
+    normalize_to_bare_id,
+    normalize_to_model_key,
+)
 
 
 class TestStrToHex:

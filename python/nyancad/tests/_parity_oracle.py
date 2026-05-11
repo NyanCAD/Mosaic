@@ -13,6 +13,7 @@ One output line per input line:
 
 Runs until stdin closes. Safe to kill at any point.
 """
+
 from __future__ import annotations
 
 import json

@@ -21,7 +21,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 # Conditional imports based on environment
-if sys.platform == 'emscripten':  # Pyodide/WASM
+if sys.platform == "emscripten":  # Pyodide/WASM
     from pyodide.http import pyfetch
 
     async def download_file(url, dest_path):
@@ -38,9 +38,11 @@ else:  # Native Python
         """Download using urllib"""
         urllib.request.urlretrieve(url, dest_path)
 
+
 try:
     import py7zr
-    shutil.register_unpack_format('7zip', ['.7z'], py7zr.unpack_7zarchive)
+
+    shutil.register_unpack_format("7zip", [".7z"], py7zr.unpack_7zarchive)
 except ImportError:
     pass
 
@@ -52,10 +54,11 @@ def model_key(bare_id):
     """
     if bare_id is None:
         return None
-    
-    assert not bare_id.startswith("models:"), \
+
+    assert not bare_id.startswith("models:"), (
         f"model_key expects bare ID, got prefixed: {bare_id}"
-    
+    )
+
     return f"models:{bare_id}"
 
 
@@ -66,16 +69,18 @@ def bare_id(model_key_str):
     """
     if model_key_str is None:
         return None
-    
-    assert model_key_str.startswith("models:"), \
+
+    assert model_key_str.startswith("models:"), (
         f"bare_id expects prefixed model key, got bare ID: {model_key_str}"
-    
+    )
+
     return model_key_str[7:]  # Remove 'models:' prefix (7 characters)
+
 
 class SchemId(namedtuple("SchemId", ["schem", "device"])):
     @classmethod
     def from_string(cls, id):
-        schem, dev, *_= id.split(':') + [None]
+        schem, dev, *_ = id.split(":") + [None]
         return cls(schem, dev)
 
 
@@ -87,7 +92,7 @@ def default_port_order(ports):
     the user arranges ports around the device perimeter in the editor, and
     applies symmetrically to both the SUBCKT definition and its X call.
     """
-    return [p['name'] for p in sorted(ports, key=lambda p: p['name'])]
+    return [p["name"] for p in sorted(ports, key=lambda p: p["name"])]
 
 
 def _select_corner(sections, corners):
@@ -109,7 +114,7 @@ def _select_corner(sections, corners):
     return sections[0]
 
 
-_IDENTIFIER_RE = re.compile(r'\b[a-zA-Z_]\w*')
+_IDENTIFIER_RE = re.compile(r"\b[a-zA-Z_]\w*")
 
 
 def _eval_params(entry_params, device_props):
@@ -139,8 +144,12 @@ def _eval_params(entry_params, device_props):
             continue
         # Arithmetic expression: substitute and wrap for SPICE evaluation
         substituted = _IDENTIFIER_RE.sub(
-            lambda m: str(device_props[m.group(0)]) if m.group(0) in device_props else m.group(0),
-            expr
+            lambda m: (
+                str(device_props[m.group(0)])
+                if m.group(0) in device_props
+                else m.group(0)
+            ),
+            expr,
         )
         result[param_name] = "{" + substituted + "}"
     return result
@@ -148,7 +157,7 @@ def _eval_params(entry_params, device_props):
 
 class NyanCADMixin:
     """Mixin providing NyanCAD integration for InSpice netlist objects."""
-    
+
     def _select_model_entry(self, model_def, sim):
         """Select a SPICE model entry from the flat models list.
 
@@ -158,19 +167,19 @@ class NyanCADMixin:
         Returns:
             dict: selected model entry or None if no SPICE entries
         """
-        entries = model_def.get('models', [])
-        spice_entries = [e for e in entries if e.get('language') == 'spice']
+        entries = model_def.get("models", [])
+        spice_entries = [e for e in entries if e.get("language") == "spice"]
         if not spice_entries:
             return None
 
         # Look for implementation matching sim parameter, fallback to first spice entry
         for entry in spice_entries:
-            if entry.get('implementation', '').lower() == sim.lower():
+            if entry.get("implementation", "").lower() == sim.lower():
                 return entry
 
         return spice_entries[0]  # Use first as default
-    
-    def populate_from_nyancad(self, docs, models, corners=None, sim='NgSpice'):
+
+    def populate_from_nyancad(self, docs, models, corners=None, sim="NgSpice"):
         """Populate this netlist with elements from NyanCAD docs.
 
         Each device doc carries its net assignments in ``dev['nets']`` (written
@@ -179,20 +188,22 @@ class NyanCADMixin:
         """
         self.used_models = set()
         for dev_id, dev in docs.items():
-            if dev.get('type') in ('wire', 'text', 'port'):
+            if dev.get("type") in ("wire", "text", "port"):
                 continue
-            ports = dev.get('nets')
+            ports = dev.get("nets")
             if not ports:
                 continue
             self._add_nyancad_element(dev_id, dev, ports, models, corners, sim)
-    
+
     def _add_nyancad_element(self, dev_id, dev, ports, models, corners, sim):
         """Add a single NyanCAD element to this netlist."""
-        device_type = dev['type']
-        name = dev.get('name') or dev_id.replace(':', '_')  # InSpice names can't have colons
-        props = dev.get('props', {}).copy()
+        device_type = dev["type"]
+        name = dev.get("name") or dev_id.replace(
+            ":", "_"
+        )  # InSpice names can't have colons
+        props = dev.get("props", {}).copy()
 
-        model_id = model_key(dev.get('model'))
+        model_id = model_key(dev.get("model"))
         model_use_x = False
         model_name = None
 
@@ -202,29 +213,31 @@ class NyanCADMixin:
         if model_id and model_id in models:
             self.used_models.add(model_id)
             model_def = models[model_id]
-            model_name = model_def['name']
-            props['model'] = model_name
+            model_name = model_def["name"]
+            props["model"] = model_name
 
             # Select the best SPICE model entry for this simulator
             selected_entry = self._select_model_entry(model_def, sim)
             if selected_entry:
-                spice_type = selected_entry.get('spice-type', '')
+                spice_type = selected_entry.get("spice-type", "")
                 model_use_x = bool(spice_type)
                 # If the entry has its own name, use it as the model reference
-                if selected_entry.get('name'):
-                    model_name = selected_entry['name']
-                    props['model'] = model_name
+                if selected_entry.get("name"):
+                    model_name = selected_entry["name"]
+                    props["model"] = model_name
                 # If the entry specifies a port order, use it
-                if selected_entry.get('port-order'):
-                    port_order = selected_entry['port-order']
+                if selected_entry.get("port-order"):
+                    port_order = selected_entry["port-order"]
                 # Apply params mapping (replaces device props with evaluated model params)
-                if selected_entry.get('params'):
+                if selected_entry.get("params"):
                     # Merge model default props under device instance props
-                    defaults = {p['name']: p['default']
-                                for p in model_def.get('props', [])
-                                if p.get('name') and p.get('default') is not None}
-                    merged = {**defaults, **dev.get('props', {})}
-                    props = _eval_params(selected_entry['params'], merged)
+                    defaults = {
+                        p["name"]: p["default"]
+                        for p in model_def.get("props", [])
+                        if p.get("name") and p.get("default") is not None
+                    }
+                    merged = {**defaults, **dev.get("props", {})}
+                    props = _eval_params(selected_entry["params"], merged)
 
         # Helper to get port by name. The editor annotates every port with
         # a net — disconnected pins get their own generated netN — so the
@@ -234,27 +247,36 @@ class NyanCADMixin:
 
         # Map SPICE element type letters to InSpice methods
         _spice_type_map = {
-            'R': self.R, 'C': self.C, 'L': self.L, 'D': self.D,
-            'V': self.V, 'I': self.I, 'M': self.M, 'Q': self.Q,
-            'X': self.X, 'SUBCKT': self.X,
+            "R": self.R,
+            "C": self.C,
+            "L": self.L,
+            "D": self.D,
+            "V": self.V,
+            "I": self.I,
+            "M": self.M,
+            "Q": self.Q,
+            "X": self.X,
+            "SUBCKT": self.X,
         }
 
         # If the model entry specifies a spice-type, use it to pick the element method
         if model_use_x and selected_entry:
-            spice_type = selected_entry.get('spice-type', '')
-            subcircuit_model = props.pop('model', model_name)
+            spice_type = selected_entry.get("spice-type", "")
+            subcircuit_model = props.pop("model", model_name)
             element_fn = _spice_type_map.get(spice_type.upper(), self.X)
 
             # Build positional port list from port-order or default (sorted by name)
             if port_order:
                 port_list = [p(pn) for pn in port_order]
             elif model_id and model_id in models:
-                port_list = [p(pn) for pn in default_port_order(models[model_id]['ports'])]
+                port_list = [
+                    p(pn) for pn in default_port_order(models[model_id]["ports"])
+                ]
             else:
                 # Fallback for built-in types: use known default port orders
                 port_list = self._default_port_list(device_type, ports, p)
 
-            if spice_type.upper() in ('X', 'SUBCKT'):
+            if spice_type.upper() in ("X", "SUBCKT"):
                 element_fn(name, subcircuit_model, *port_list, **props)
             else:
                 element_fn(name, *port_list, **props)
@@ -262,65 +284,73 @@ class NyanCADMixin:
 
         # Default handling for built-in device types (no spice-type override)
         if device_type == "resistor":
-            resistance = props.get('resistance')
-            self.R(name, p('P'), p('N'), resistance)
+            resistance = props.get("resistance")
+            self.R(name, p("P"), p("N"), resistance)
 
         elif device_type == "capacitor":
-            capacitance = props.get('capacitance')
-            self.C(name, p('P'), p('N'), capacitance)
+            capacitance = props.get("capacitance")
+            self.C(name, p("P"), p("N"), capacitance)
 
         elif device_type == "inductor":
-            inductance = props.get('inductance')
-            self.L(name, p('P'), p('N'), inductance)
+            inductance = props.get("inductance")
+            self.L(name, p("P"), p("N"), inductance)
 
         elif device_type == "diode":
-            self.D(name, p('P'), p('N'), **props)
+            self.D(name, p("P"), p("N"), **props)
 
         elif device_type == "vsource":
-            dc = props.get('dc')
-            ac = props.get('ac')
-            tran = props.get('tran')
-            self.V(name, p('P'), p('N'), dc, ac, tran)
+            dc = props.get("dc")
+            ac = props.get("ac")
+            tran = props.get("tran")
+            self.V(name, p("P"), p("N"), dc, ac, tran)
 
         elif device_type == "isource":
-            dc = props.get('dc')
-            ac = props.get('ac')
-            tran = props.get('tran')
-            self.I(name, p('P'), p('N'), dc, ac, tran)
+            dc = props.get("dc")
+            ac = props.get("ac")
+            tran = props.get("tran")
+            self.I(name, p("P"), p("N"), dc, ac, tran)
 
         elif device_type in {"pmos", "nmos"}:
-            bulk_node = p('B') if 'B' in ports else self.gnd
-            self.M(name, p('D'), p('G'), p('S'), bulk_node, **props)
+            bulk_node = p("B") if "B" in ports else self.gnd
+            self.M(name, p("D"), p("G"), p("S"), bulk_node, **props)
 
         elif device_type in {"npn", "pnp"}:
-            self.Q(name, p('C'), p('B'), p('E'), **props)
+            self.Q(name, p("C"), p("B"), p("E"), **props)
 
         else:  # subcircuit
             if model_id in models:
-                port_list = [p(pn) for pn in default_port_order(models[model_id]['ports'])]
+                port_list = [
+                    p(pn) for pn in default_port_order(models[model_id]["ports"])
+                ]
                 params = props.copy()
-                model_name = params.pop('model', model_id)
+                model_name = params.pop("model", model_id)
                 self.X(name, model_name, *port_list, **params)
 
     @staticmethod
     def _default_port_list(device_type, ports, p):
         """Return default positional port list for built-in device types."""
-        if device_type in {'resistor', 'capacitor', 'inductor', 'vsource', 'isource', 'diode'}:
-            return [p('P'), p('N')]
-        elif device_type in {'pmos', 'nmos'}:
-            bulk = p('B') if 'B' in ports else None
-            return [p('D'), p('G'), p('S')] + ([bulk] if bulk else [])
-        elif device_type in {'npn', 'pnp'}:
-            return [p('C'), p('B'), p('E')]
+        if device_type in {
+            "resistor",
+            "capacitor",
+            "inductor",
+            "vsource",
+            "isource",
+            "diode",
+        }:
+            return [p("P"), p("N")]
+        elif device_type in {"pmos", "nmos"}:
+            bulk = p("B") if "B" in ports else None
+            return [p("D"), p("G"), p("S")] + ([bulk] if bulk else [])
+        elif device_type in {"npn", "pnp"}:
+            return [p("C"), p("B"), p("E")]
         else:
             return []
-        
 
 
 class NyanCircuit(NyanCADMixin, Circuit):
     """InSpice Circuit populated from NyanCAD schematic data."""
 
-    def __init__(self, name, schem, corners=None, sim='NgSpice', **kwargs):
+    def __init__(self, name, schem, corners=None, sim="NgSpice", **kwargs):
         """
         Create InSpice Circuit from full NyanCAD schematic data.
 
@@ -351,26 +381,36 @@ class NyanCircuit(NyanCADMixin, Circuit):
                 if model_id in schem:
                     # Create subcircuit for models with schematic implementations
                     docs = schem[model_id]
-                    nodes = default_port_order(model_def['ports'])
+                    nodes = default_port_order(model_def["ports"])
                     # Pass model parameter definitions as subcircuit parameters (default to 0)
-                    model_params = {p['name']: p.get('default', '0')
-                                    for p in model_def.get('props', [])
-                                    if p.get('name')}
-                    subcircuit = NyanSubCircuit(model_def['name'], nodes, docs, models, corners, sim, **model_params)
+                    model_params = {
+                        p["name"]: p.get("default", "0")
+                        for p in model_def.get("props", [])
+                        if p.get("name")
+                    }
+                    subcircuit = NyanSubCircuit(
+                        model_def["name"],
+                        nodes,
+                        docs,
+                        models,
+                        corners,
+                        sim,
+                        **model_params,
+                    )
                     self.subcircuit(subcircuit)
                 else:
                     # Add SPICE code / library includes for model entries
                     entry = self._select_model_entry(model_def, sim)
                     if entry:
                         # Handle library includes
-                        if entry.get('library'):
-                            section = _select_corner(entry.get('sections'), corners)
+                        if entry.get("library"):
+                            section = _select_corner(entry.get("sections"), corners)
                             if section:
-                                self.lib(entry['library'], section)
+                                self.lib(entry["library"], section)
                             else:
-                                self.include(entry['library'])
+                                self.include(entry["library"])
                         # Handle inline SPICE code
-                        code = entry.get('code', '').strip()
+                        code = entry.get("code", "").strip()
                         if code:
                             self.add_spice_code(code)
 
@@ -404,7 +444,7 @@ class NyanCircuit(NyanCADMixin, Circuit):
 
             # Resolve URL includes in the SpiceSource before building
             self.resolve_url_includes(spice_source)
-            
+
             builder = Builder()
             parsed_circuit = builder.translate(spice_source)
             # Copy all content to self (models, subcircuits, elements)
@@ -419,12 +459,13 @@ class NyanCircuit(NyanCADMixin, Circuit):
 
         except Exception as e:
             import traceback
+
             print(f"SPICE parsing failed: {type(e).__name__}: {e}")
             print(f"Traceback:\n{traceback.format_exc()}")
             print("Falling back to raw SPICE injection")
             # Append to raw_spice
-            self.raw_spice += '\n' + spice_code.strip() + '\n'
-    
+            self.raw_spice += "\n" + spice_code.strip() + "\n"
+
     def _resolve_url_path(self, path_obj):
         """Helper to resolve a single URL path to a local file path."""
         cache_dir = Path(tempfile.gettempdir()) / "nyancad_archive_cache"
@@ -436,7 +477,7 @@ class NyanCircuit(NyanCADMixin, Circuit):
 
         parsed = urlparse(path_str)
 
-        if parsed.scheme in ('http', 'https'):
+        if parsed.scheme in ("http", "https"):
             archive_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
             entrypoint = parsed.fragment
 
@@ -468,15 +509,17 @@ class NyanCircuit(NyanCADMixin, Circuit):
             self._resolve_url_path(include)
 
         # Also process libs if they exist
-        if hasattr(spice_source, '_libs'):
+        if hasattr(spice_source, "_libs"):
             for lib in spice_source._libs:
                 self._resolve_url_path(lib)
 
 
 class NyanSubCircuit(NyanCADMixin, SubCircuit):
     """InSpice SubCircuit populated from NyanCAD docs."""
-    
-    def __init__(self, name, nodes, docs, models, corners=None, sim='NgSpice', **kwargs):
+
+    def __init__(
+        self, name, nodes, docs, models, corners=None, sim="NgSpice", **kwargs
+    ):
         """
         Create InSpice SubCircuit from NyanCAD docs.
 
@@ -492,7 +535,9 @@ class NyanSubCircuit(NyanCADMixin, SubCircuit):
         self.populate_from_nyancad(docs, models, corners, sim)
 
 
-async def inspice_netlist(name, schem, corners=None, sim='NgSpice', *, corner=None, **kwargs):
+async def inspice_netlist(
+    name, schem, corners=None, sim="NgSpice", *, corner=None, **kwargs
+):
     """
     Convenience function to create InSpice Circuit from NyanCAD schematic.
 
@@ -522,7 +567,9 @@ async def inspice_netlist(name, schem, corners=None, sim='NgSpice', *, corner=No
     return circuit
 
 
-async def inspice_netlist_from_api(api, name, corners=None, sim='NgSpice', *, corner=None, **kwargs):
+async def inspice_netlist_from_api(
+    api, name, corners=None, sim="NgSpice", *, corner=None, **kwargs
+):
     """
     Create InSpice Circuit from any SchematicAPI source (Bridge or Server).
 
