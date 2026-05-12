@@ -69,114 +69,18 @@
   nil)
 
 (defn secondary-menu-items
-  "VSCode secondary menu: simulate and open library manager."
-  [_notebook-state]
+  "VSCode secondary menu: simulate, switch to Livewire."
+  [_ui]
   [:<>
    [:a {:title "Simulate"
         :on-click #(.postMessage vscode
                      #js{:type "start-simulation"})}
     [cm/simulate]]
-   [:a {:title "Open library manager"
+   [:a {:title "Open in Livewire layout editor"
         :on-click #(.postMessage vscode
-                     #js{:type "open-file"
-                         :filename "models.nyanlib"})}
-    [cm/library]]])
-
-(defn menu-toolbar
-  "VS Code: flat toolbar, no groups."
-  [{:keys [tool cancel add-device ui transform-selected delete-selected
-           copy cut paste button-zoom undo-schematic redo-schematic]}]
-  [:<>
-   [cm/radiobuttons tool
-    [[[cm/cursor] :nyancad.mosaic.editor/cursor "Cursor [esc]"]
-     [[cm/wire] :nyancad.mosaic.editor/wire "Wire [w]"]
-     [[cm/move] :nyancad.mosaic.editor/pan "Pan [space]"]
-     [[cm/pin-angle] :nyancad.mosaic.editor/port "Port marker [p]"]]
-    nil nil
-    (fn [new-tool]
-      (if (= new-tool :nyancad.mosaic.editor/port)
-        (add-device "port" (:nyancad.mosaic.editor/mouse @ui))
-        (cancel new-tool)))]
-   [:a.disabled {:title "Eraser" :style {:opacity 0.3 :pointer-events "none"}} [cm/eraser]]
-   [:a.disabled {:title "Probe"  :style {:opacity 0.3 :pointer-events "none"}} [cm/probe]]
-   [:a {:title "Rotate selected clockwise [s]"
-        :on-click (fn [_] (transform-selected #(.rotate % 90)))}
-    [cm/rotatecw]]
-   [:a {:title "Rotate selected counter-clockwise [shift+s]"
-        :on-click (fn [_] (transform-selected #(.rotate % -90)))}
-    [cm/rotateccw]]
-   [:a {:title "Mirror selected horizontal [shift+f]"
-        :on-click (fn [_] (transform-selected #(.flipY %)))}
-    [cm/mirror-horizontal]]
-   [:a {:title "Mirror selected vertical [f]"
-        :on-click (fn [_] (transform-selected #(.flipX %)))}
-    [cm/mirror-vertical]]
-   [:a {:title "Delete selected [del]"
-        :on-click (fn [_] (delete-selected))}
-    [cm/delete]]
-   [:a {:title "Copy selected [ctrl+c]"
-        :on-click (fn [_] (copy))}
-    [cm/copyi]]
-   [:a {:title "Cut selected [ctrl+x]"
-        :on-click (fn [_] (cut))}
-    [cm/cuti]]
-   [:a {:title "Paste [ctrl+v]"
-        :on-click (fn [_] (paste))}
-    [cm/pastei]]
-   [:a {:title "zoom in [scroll wheel/pinch]"
-        :on-click #(button-zoom -1)}
-    [cm/zoom-in]]
-   [:a {:title "zoom out [scroll wheel/pinch]"
-        :on-click #(button-zoom 1)}
-    [cm/zoom-out]]
-   [:a {:title "undo [ctrl+z]"
-        :on-click undo-schematic}
-    [cm/undoi]]
-   [:a {:title "redo [ctrl+shift+z]"
-        :on-click redo-schematic}
-    [cm/redoi]]])
-
-(defn menu-extras
-  "VS Code: switch-editor button, right-aligned."
-  [_ctx]
-  [:a {:title "Open in Livewire layout editor"
-       :on-click #(.postMessage vscode
-                    #js{:type "switchEditor"
-                        :viewType "gdsfactoryplus.livewireNyancirEditor"})}
-   [cm/sync-active]])
-
-(defn device-tray-items
-  "VS Code: flat top-level buttons, no expandable groups."
-  [{:keys [add-device add-gnd add-supply add-label device-active]}]
-  [:<>
-   [:button {:title "Add port [p]"
-             :class (device-active "port")
-             :on-pointer-up #(add-device "port" (cm/viewbox-coord %))}
-    [cm/device-icon "port"]]
-   [:button {:title "Add wire label [t]"
-             :class (device-active "port")
-             :on-pointer-up #(add-label (cm/viewbox-coord %))}
-    [cm/namei]]
-   [:button {:title "Add ground [g]"
-             :class (device-active "port")
-             :on-pointer-up #(add-gnd (cm/viewbox-coord %))}
-    [cm/device-icon "ground"]]
-   [:button {:title "Add power supply [shift+p]"
-             :class (device-active "port")
-             :on-pointer-up #(add-supply (cm/viewbox-coord %))}
-    [cm/device-icon "supply"]]
-   [:button {:title "Add text area [shift+t]"
-             :class (device-active "port")
-             :on-pointer-up #(add-device "text" (cm/viewbox-coord %))}
-    [cm/text]]
-   [:button {:title "Add voltage source [v]"
-             :class (device-active "vsource")
-             :on-pointer-up #(add-device "vsource" (cm/viewbox-coord %))}
-    [cm/device-icon "vsource"]]
-   [:button {:title "Add current source [i]"
-             :class (device-active "isource")
-             :on-pointer-up #(add-device "isource" (cm/viewbox-coord %))}
-    [cm/device-icon "isource"]]])
+                     #js{:type "switchEditor"
+                         :viewType "gdsfactoryplus.livewireNyancirEditor"})}
+    [cm/sync-active]]])
 
 (defn- make-name [device-type]
   (let [prefix (cm/initial device-type)]

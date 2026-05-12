@@ -11,8 +11,7 @@
                 :test   nyancad.mosaic.editor.platform-test)
              :refer [group schematic modeldb snapshots simulations local
                      done? syncactive notebook-panel secondary-menu-items
-                     open-schematic resolve-symbol-url init-extra! root
-                     menu-toolbar menu-extras device-tray-items]]
+                     open-schematic resolve-symbol-url init-extra! root]]
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go go-loop <!]]
             [clojure.math :as math]
@@ -47,7 +46,7 @@
 
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme (s/nilable #{"light" "dark" "eyesore"}))
-(s/def ::tool #{::cursor ::eraser ::wire ::pan ::device ::probe ::port})
+(s/def ::tool #{::cursor ::eraser ::wire ::pan ::device ::probe})
 (s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view ::box}))
 ;; Staging is a partial device: commit-staged assigns :name on commit.
@@ -2221,31 +2220,14 @@
              ::selected (set (keys devmap)))
       (post-action!))))
 
-(defonce ^:private theme-clicks (atom []))
-
-(defn- dark-mode?
-  ([] (dark-mode? @theme))
-  ([t]
-   (cond
-     (= t "dark") true
-     (= t "light") false
-     (= t "eyesore") false
-     (.. js/document -body -classList (contains "vscode-dark")) true
-     (.. js/document -body -classList (contains "vscode-light")) false
-     :else (.-matches (js/window.matchMedia "(prefers-color-scheme: dark)")))))
-
-(defn toggle-theme! []
-  (let [now (.now js/Date)
-        clicks (swap! theme-clicks #(conj (filterv (fn [t] (> t (- now 2000))) %) now))
-        eyesore? (>= (count clicks) 5)]
-    (when eyesore? (reset! theme-clicks []))
-    (swap! ui update ::theme
-           #(if eyesore? "eyesore"
-                (if (dark-mode? %) "light" "dark")))))
-
-(defn device-active [cell]
-  (when (= cell (:type @staging))
-    "active"))
+(defn device-active
+  ([cell]
+   (when (= cell (:type @staging))
+     "active"))
+  ([cell variant]
+   (when (and (= cell (:type @staging))
+              (= variant (:variant @staging)))
+     "active")))
 
 (defn variant-tray [& _variants]
   (let [active (r/atom 0)
@@ -2291,231 +2273,191 @@
               :variant "text"
               :transform (cm/transform-vec (.rotate cm/I 90))))
 
-(defn- testbench-tray []
-  [:<>
-   [:button {:title "Add port [p]"
-             :class (device-active "port")
-             :on-pointer-up #(add-device "port" (cm/viewbox-coord %))}
-    [cm/device-icon "port"]]
-   [:button {:title "Add wire label [t]"
-             :class (device-active "port")
-             :on-pointer-up #(add-label (cm/viewbox-coord %))}
-    [cm/namei]]
-   [:button {:title "Add ground [g]"
-             :class (device-active "port")
-             :on-pointer-up #(add-gnd (cm/viewbox-coord %))}
-    [cm/device-icon "ground"]]
-   [:button {:title "Add power supply [shift+p]"
-             :class (device-active "port")
-             :on-pointer-up #(add-supply (cm/viewbox-coord %))}
-    [cm/device-icon "supply"]]
-   [:button {:title "Add text area [shift+t]"
-             :class (device-active "port")
-             :on-pointer-up #(add-device "text" (cm/viewbox-coord %))}
-    [cm/text]]
-   [:button {:title "Add voltage source [v]"
-             :class (device-active "vsource")
-             :on-pointer-up #(add-device "vsource" (cm/viewbox-coord %))}
-    [cm/device-icon "vsource"]]
-   [:button {:title "Add current source [i]"
-             :class (device-active "isource")
-             :on-pointer-up #(add-device "isource" (cm/viewbox-coord %))}
-    [cm/device-icon "isource"]]])
-
-(defn- full-tray []
-  [:<>
-   [variant-tray
-    [:button {:title "Add port [p]"
-              :class (device-active "port")
-              :on-pointer-up #(add-device "port" (cm/viewbox-coord %))}
-     [cm/device-icon "port"]]
-    [:button {:title "Add wire label [t]"
-              :class (device-active "port")
-              :on-pointer-up #(add-label (cm/viewbox-coord %))}
-     [cm/namei]]
-    [:button {:title "Add ground [g]"
-              :class (device-active "port")
-              :on-pointer-up #(add-gnd (cm/viewbox-coord %))}
-     [cm/device-icon "ground"]]
-    [:button {:title "Add power supply [shift+p]"
-              :class (device-active "port")
-              :on-pointer-up #(add-supply (cm/viewbox-coord %))}
-     [cm/device-icon "supply"]]
-    [:button {:title "Add text area [shift+t]"
-              :class (device-active "port")
-              :on-pointer-up #(add-device "text" (cm/viewbox-coord %))}
-     [cm/text]]]
-   [:button {:title "Add resistor [r]"
-             :class (device-active "resistor")
-             :on-pointer-up #(add-device "resistor" (cm/viewbox-coord %))}
-    [cm/device-icon "resistor"]]
-   [:button {:title "Add inductor [l]"
-             :class (device-active "inductor")
-             :on-pointer-up #(add-device "inductor" (cm/viewbox-coord %))}
-    [cm/device-icon "inductor"]]
-   [:button {:title "Add capacitor [c]"
-             :class (device-active "capacitor")
-             :on-pointer-up #(add-device "capacitor" (cm/viewbox-coord %))}
-    [cm/device-icon "capacitor"]]
-   [:button {:title "Add diode [d]"
-             :class (device-active "diode")
-             :on-pointer-up #(add-device "diode" (cm/viewbox-coord %))}
-    [cm/device-icon "diode"]]
-   [variant-tray
-    [:button {:title "Add voltage source [v]"
-              :class (device-active "vsource")
-              :on-pointer-up #(add-device "vsource" (cm/viewbox-coord %))}
-     [cm/device-icon "vsource"]]
-    [:button {:title "Add current source [i]"
-              :class (device-active "isource")
-              :on-pointer-up #(add-device "isource" (cm/viewbox-coord %))}
-     [cm/device-icon "isource"]]]
-   [variant-tray
-    [:button {:title "Add N-channel mosfet [m]"
-              :class (device-active "nmos")
-              :on-pointer-up #(add-device "nmos" (cm/viewbox-coord %))}
-     [cm/device-icon "nmos"]]
-    [:button {:title "Add P-channel mosfet [shift+m]"
-              :class (device-active "pmos")
-              :on-pointer-up #(add-device "pmos" (cm/viewbox-coord %))}
-     [cm/device-icon "pmos"]]
-    [:button {:title "Add NPN BJT [b]"
-              :class (device-active "npn")
-              :on-pointer-up #(add-device "npn" (cm/viewbox-coord %))}
-     [cm/device-icon "npn"]]
-    [:button {:title "Add PNP BJT [shift+b]"
-              :class (device-active "pnp")
-              :on-pointer-up #(add-device "pnp" (cm/viewbox-coord %))}
-     [cm/device-icon "pnp"]]]
-   [variant-tray
-    [:button {:title "Add subcircuit [x]"
-              :class (device-active "ckt")
-              :on-pointer-up #(add-device "ckt" (cm/viewbox-coord %))}
-     [cm/chip]]
-    [:button {:title "Add amplifier [a]"
-              :class (device-active "amp")
-              :on-pointer-up #(add-device "amp" (cm/viewbox-coord %))}
-     [cm/amp-icon]]]
-   [variant-tray
-    [:button {:title "Add ring resonator"
-              :class (device-active "ring-single")
-              :on-pointer-up #(add-device "ring-single" (cm/viewbox-coord %))}
-     [cm/device-icon "ring-single"]]
-    [:button {:title "Add straight waveguide"
-              :class (device-active "straight")
-              :on-pointer-up #(add-device "straight" (cm/viewbox-coord %))}
-     [cm/device-icon "straight"]]
-    [:button {:title "Add bend"
-              :class (device-active "bend")
-              :on-pointer-up #(add-device "bend" (cm/viewbox-coord %))}
-     [cm/device-icon "bend"]]
-    [:button {:title "Add S-bend"
-              :class (device-active "sbend")
-              :on-pointer-up #(add-device "sbend" (cm/viewbox-coord %))}
-     [cm/device-icon "sbend"]]
-    [:button {:title "Add taper"
-              :class (device-active "taper")
-              :on-pointer-up #(add-device "taper" (cm/viewbox-coord %))}
-     [cm/device-icon "taper"]]
-    [:button {:title "Add transition"
-              :class (device-active "transition")
-              :on-pointer-up #(add-device "transition" (cm/viewbox-coord %))}
-     [cm/device-icon "transition"]]
-    [:button {:title "Add terminator"
-              :class (device-active "terminator")
-              :on-pointer-up #(add-device "terminator" (cm/viewbox-coord %))}
-     [cm/device-icon "terminator"]]
-    [:button {:title "Add crossing"
-              :class (device-active "crossing")
-              :on-pointer-up #(add-device "crossing" (cm/viewbox-coord %))}
-     [cm/device-icon "crossing"]]
-    [:button {:title "Add double ring resonator"
-              :class (device-active "ring-double")
-              :on-pointer-up #(add-device "ring-double" (cm/viewbox-coord %))}
-     [cm/device-icon "ring-double"]]
-    [:button {:title "Add spiral"
-              :class (device-active "spiral")
-              :on-pointer-up #(add-device "spiral" (cm/viewbox-coord %))}
-     [cm/device-icon "spiral"]]
-    [:button {:title "Add 1x2 splitter"
-              :class (device-active "splitter-1x2")
-              :on-pointer-up #(add-device "splitter-1x2" (cm/viewbox-coord %))}
-     [cm/device-icon "splitter-1x2"]]
-    [:button {:title "Add directional coupler"
-              :class (device-active "coupler")
-              :on-pointer-up #(add-device "coupler" (cm/viewbox-coord %))}
-     [cm/device-icon "coupler"]]
-    [:button {:title "Add ring coupler"
-              :class (device-active "coupler-ring")
-              :on-pointer-up #(add-device "coupler-ring" (cm/viewbox-coord %))}
-     [cm/device-icon "coupler-ring"]]
-    [:button {:title "Add MMI 1x2"
-              :class (device-active "mmi-1x2")
-              :on-pointer-up #(add-device "mmi-1x2" (cm/viewbox-coord %))}
-     [cm/device-icon "mmi-1x2"]]
-    [:button {:title "Add MMI 2x2"
-              :class (device-active "mmi-2x2")
-              :on-pointer-up #(add-device "mmi-2x2" (cm/viewbox-coord %))}
-     [cm/device-icon "mmi-2x2"]]
-    [:button {:title "Add MZI 1x2"
-              :class (device-active "mzi-1x2")
-              :on-pointer-up #(add-device "mzi-1x2" (cm/viewbox-coord %))}
-     [cm/device-icon "mzi-1x2"]]
-    [:button {:title "Add MZI 2x2"
-              :class (device-active "mzi-2x2")
-              :on-pointer-up #(add-device "mzi-2x2" (cm/viewbox-coord %))}
-     [cm/device-icon "mzi-2x2"]]
-    [:button {:title "Add LED/laser diode"
-              :class (device-active "led")
-              :on-pointer-up #(add-device "led" (cm/viewbox-coord %))}
-     [cm/device-icon "led"]]
-    [:button {:title "Add photodiode"
-              :class (device-active "photodiode")
-              :on-pointer-up #(add-device "photodiode" (cm/viewbox-coord %))}
-     [cm/device-icon "photodiode"]]
-    [:button {:title "Add PN modulator"
-              :class (device-active "modulator")
-              :on-pointer-up #(add-device "modulator" (cm/viewbox-coord %))}
-     [cm/device-icon "modulator"]]
-    [:button {:title "Add grating coupler"
-              :class (device-active "grating-coupler")
-              :on-pointer-up #(add-device "grating-coupler" (cm/viewbox-coord %))}
-     [cm/device-icon "grating-coupler"]]]])
-
-(def ^:private editor-ctx
-  {:tool            tool
-   :cancel          cancel
-   :add-device      add-device
-   :ui              ui
-   :transform-selected transform-selected
-   :delete-selected delete-selected
-   :copy            copy
-   :cut             cut
-   :paste           paste
-   :button-zoom     button-zoom
-   :undo-schematic  undo-schematic
-   :redo-schematic  redo-schematic
-   :modeldb         modeldb
-   :group           group
-   :syncactive      syncactive
-   :toggle-theme!   toggle-theme!
-   :dark-mode?      dark-mode?
-   :notebook-state  notebook-state
-   :show-history-panel show-history-panel
-   :device-active   device-active
-   :add-gnd         add-gnd
-   :add-supply      add-supply
-   :add-label       add-label
-   :full-tray       full-tray})
-
 (defn menu-items []
   [:<>
    [:div.primary
-    [menu-toolbar editor-ctx]]
-   [menu-extras editor-ctx]])
+    [:div.toolbar-group.tools-group
+     [cm/radiobuttons tool
+    ; label, key, title
+      [[[cm/cursor] ::cursor "Cursor [esc]"]
+       [[cm/wire] ::wire "Wire [w]"]
+       [[cm/eraser] ::eraser "Eraser [e]"]
+       [[cm/move] ::pan "Pan [space]"]
+       [[cm/probe] ::probe "Probe nodes in a connected simulator"]]
+      nil nil cancel]]
+    [:div.toolbar-group
+     [:a {:title "Rotate selected clockwise [s]"
+          :on-click (fn [_] (transform-selected #(.rotate % 90)))}
+      [cm/rotatecw]]
+     [:a {:title "Rotate selected counter-clockwise [shift+s]"
+          :on-click (fn [_] (transform-selected #(.rotate % -90)))}
+      [cm/rotateccw]]
+     [:a {:title "Mirror selected horizontal [shift+f]"
+          :on-click (fn [_] (transform-selected #(.flipY %)))}
+      [cm/mirror-horizontal]]
+     [:a {:title "Mirror selected vertical [f]"
+          :on-click (fn [_] (transform-selected #(.flipX %)))}
+      [cm/mirror-vertical]]
+     [:a {:title "Delete selected [del]"
+          :on-click (fn [_] (delete-selected))}
+      [cm/delete]]
+     [:a {:title "Copy selected [ctrl+c]"
+          :on-click (fn [_] (copy))}
+      [cm/copyi]]
+     [:a {:title "Cut selected [ctrl+x]"
+          :on-click (fn [_] (cut))}
+      [cm/cuti]]
+     [:a {:title "Paste [ctrl+v]"
+          :on-click (fn [_] (paste))}
+      [cm/pastei]]]
+    [:div.toolbar-group
+     [:a {:title "zoom in [scroll wheel/pinch]"
+          :on-click #(button-zoom -1)}
+      [cm/zoom-in]]
+     [:a {:title "zoom out [scroll wheel/pinch]"
+          :on-click #(button-zoom 1)}
+      [cm/zoom-out]]
+     [:a {:title "undo [ctrl+z]"
+          :on-click undo-schematic}
+      [cm/undoi]]
+     [:a {:title "redo [ctrl+shift+z]"
+          :on-click redo-schematic}
+      [cm/redoi]]]]
+   [:div.status
+    [cm/renamable (r/cursor modeldb [(cm/model-key group) :name]) "Untitled"]
+    (if @syncactive
+      [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
+      [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
+
+   [:div.secondary
+    [secondary-menu-items ui]
+    [:a {:title "Keyboard shortcuts & help"
+         :on-click cm/show-onboarding!}
+     [cm/help]]
+    [:a {:title "Snapshot History"
+         :on-click show-history-panel}
+     [cm/history]]]])
 
 (defn device-tray []
-  [device-tray-items editor-ctx])
+  #?(:vscode
+     [:<>
+      [:button {:title "Add port [p]"
+                :class (device-active "port" nil)
+                :on-pointer-up #(add-device "port" (cm/viewbox-coord %))}
+       [cm/device-icon "port"]]
+      [:button {:title "Add wire label [t]"
+                :class (device-active "port" "text")
+                :on-pointer-up #(add-label (cm/viewbox-coord %))}
+       [cm/namei]]
+      [:button {:title "Add text area [shift+t]"
+                :class (device-active "text")
+                :on-pointer-up #(add-device "text" (cm/viewbox-coord %))}
+       [cm/text]]
+      [:button {:title "Add ground [g]"
+                :class (device-active "port" "ground")
+                :on-pointer-up #(add-gnd (cm/viewbox-coord %))}
+       [cm/device-icon "ground"]]
+      [:button {:title "Add power supply [shift+p]"
+                :class (device-active "port" "supply")
+                :on-pointer-up #(add-supply (cm/viewbox-coord %))}
+       [cm/device-icon "supply"]]
+      [variant-tray
+       [:button {:title "Add voltage source [v]"
+                 :class (device-active "vsource")
+                 :on-pointer-up #(add-device "vsource" (cm/viewbox-coord %))}
+        [cm/device-icon "vsource"]]
+       [:button {:title "Add current source [i]"
+                 :class (device-active "isource")
+                 :on-pointer-up #(add-device "isource" (cm/viewbox-coord %))}
+        [cm/device-icon "isource"]]]
+      [variant-tray
+       [:button {:title "Add resistor [r]"
+                 :class (device-active "resistor")
+                 :on-pointer-up #(add-device "resistor" (cm/viewbox-coord %))}
+        [cm/device-icon "resistor"]]
+       [:button {:title "Add inductor [l]"
+                 :class (device-active "inductor")
+                 :on-pointer-up #(add-device "inductor" (cm/viewbox-coord %))}
+        [cm/device-icon "inductor"]]
+       [:button {:title "Add capacitor [c]"
+                 :class (device-active "capacitor")
+                 :on-pointer-up #(add-device "capacitor" (cm/viewbox-coord %))}
+        [cm/device-icon "capacitor"]]]]
+
+     :web
+     [:<>
+      [variant-tray
+       [:button {:title "Add port [p]"
+                 :class (device-active "port" nil)
+                 :on-pointer-up #(add-device "port" (cm/viewbox-coord %))}
+        [cm/device-icon "port"]]
+       [:button {:title "Add wire label [t]"
+                 :class (device-active "port" "text")
+                 :on-pointer-up #(add-label (cm/viewbox-coord %))}
+        [cm/namei]]
+       [:button {:title "Add ground [g]"
+                 :class (device-active "port" "ground")
+                 :on-pointer-up #(add-gnd (cm/viewbox-coord %))}
+        [cm/device-icon "ground"]]
+       [:button {:title "Add power supply [shift+p]"
+                 :class (device-active "port" "supply")
+                 :on-pointer-up #(add-supply (cm/viewbox-coord %))}
+        [cm/device-icon "supply"]]
+       [:button {:title "Add text area [shift+t]"
+                 :class (device-active "text")
+                 :on-pointer-up #(add-device "text" (cm/viewbox-coord %))}
+        [cm/text]]]
+      [:button {:title "Add resistor [r]"
+                :class (device-active "resistor")
+                :on-pointer-up #(add-device "resistor" (cm/viewbox-coord %))}
+       [cm/device-icon "resistor"]]
+      [:button {:title "Add inductor [l]"
+                :class (device-active "inductor")
+                :on-pointer-up #(add-device "inductor" (cm/viewbox-coord %))}
+       [cm/device-icon "inductor"]]
+      [:button {:title "Add capacitor [c]"
+                :class (device-active "capacitor")
+                :on-pointer-up #(add-device "capacitor" (cm/viewbox-coord %))}
+       [cm/device-icon "capacitor"]]
+      [:button {:title "Add diode [d]"
+                :class (device-active "diode")
+                :on-pointer-up #(add-device "diode" (cm/viewbox-coord %))}
+       [cm/device-icon "diode"]]
+      [variant-tray
+       [:button {:title "Add voltage source [v]"
+                 :class (device-active "vsource")
+                 :on-pointer-up #(add-device "vsource" (cm/viewbox-coord %))}
+        [cm/device-icon "vsource"]]
+       [:button {:title "Add current source [i]"
+                 :class (device-active "isource")
+                 :on-pointer-up #(add-device "isource" (cm/viewbox-coord %))}
+        [cm/device-icon "isource"]]]
+      [variant-tray
+       [:button {:title "Add N-channel mosfet [m]"
+                 :class (device-active "nmos")
+                 :on-pointer-up #(add-device "nmos" (cm/viewbox-coord %))}
+        [cm/device-icon "nmos"]]
+       [:button {:title "Add P-channel mosfet [shift+m]"
+                 :class (device-active "pmos")
+                 :on-pointer-up #(add-device "pmos" (cm/viewbox-coord %))}
+        [cm/device-icon "pmos"]]
+       [:button {:title "Add NPN BJT [b]"
+                 :class (device-active "npn")
+                 :on-pointer-up #(add-device "npn" (cm/viewbox-coord %))}
+        [cm/device-icon "npn"]]
+       [:button {:title "Add PNP BJT [shift+b]"
+                 :class (device-active "pnp")
+                 :on-pointer-up #(add-device "pnp" (cm/viewbox-coord %))}
+        [cm/device-icon "pnp"]]]
+      [variant-tray
+       [:button {:title "Add subcircuit [x]"
+                 :class (device-active "ckt")
+                 :on-pointer-up #(add-device "ckt" (cm/viewbox-coord %))}
+        [cm/chip]]
+       [:button {:title "Add amplifier [a]"
+                 :class (device-active "amp")
+                 :on-pointer-up #(add-device "amp" (cm/viewbox-coord %))}
+        [cm/amp-icon]]]]))
 
 (defn schematic-elements [schem]
   [:<>

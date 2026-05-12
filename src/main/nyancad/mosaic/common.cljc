@@ -289,7 +289,7 @@
 
 (s/def ::type (clojure.set/union device-types schematic-only-types))
 
-(s/def ::variant #{"hv" "vh" "d"})
+(s/def ::variant #{"hv" "vh" "d" "ground" "supply" "text"})
 ;; Port-name keys are keywords in the in-memory representation (round-trip
 ;; through json->clj keywordizes object keys); net-name values are strings.
 (s/def ::nets (s/map-of keyword? string?))
@@ -547,7 +547,6 @@
 (def library (r/adapt-react-class icons/Collection))
 (def login (r/adapt-react-class icons/PersonCircle))
 (def probe (r/adapt-react-class icons/Search))
-(def pin-angle (r/adapt-react-class icons/PinAngle))
 (def codemodel (r/adapt-react-class icons/FileCode))
 (def schemmodel (r/adapt-react-class icons/FileDiff))
 (def add-model (r/adapt-react-class icons/FilePlus))

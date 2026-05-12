@@ -37,7 +37,7 @@ html {
     --canvas-wire-photonic: var(--vscode-editor-foreground, light-dark(black, #d4d4d4));
     --canvas-text: var(--vscode-editor-foreground, light-dark(#444, #d4d4d4));
     --canvas-text-muted: var(--vscode-descriptionForeground, light-dark(#666, #717171));
-    --canvas-select: var(--vscode-focusBorder, light-dark(rgb(229, 216, 243), #007fd4));
+    --canvas-select: color-mix(in srgb, var(--vscode-focusBorder, light-dark(#6688cc, #007fd4)) 25%, var(--canvas-bg));
     --canvas-nc: light-dark(red, #f38ba8);
     --canvas-error: light-dark(red, #f38ba8);
     --canvas-warning: light-dark(orange, #fab387);
@@ -767,11 +767,6 @@ html {
     -webkit-user-select: none;
 }
 
-.mosaic-container .devicetray.devicetray-right {
-    left: auto;
-    right: 25px;
-}
-
 .mosaic-container .sidebar {
     position: absolute;
     top: 25px;
@@ -1143,39 +1138,9 @@ rect.select {
 .vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.eraser .wire:hover,
 .vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.eraser .device { cursor: url(icons/eraser-light.svg) 6 14, crosshair; }
 
-/* VS Code: no logo, no status bar, no responsive collapse */
-body[class*="vscode"] .mosaic-container .menu {
-    background-image: none;
-    padding-left: 0;
-}
-
-body[class*="vscode"] .mosaic-container .menu .status,
-body[class*="vscode"] .mosaic-container .menu .secondary {
+body.vscode-dark .mosaic-container .menu .status,
+body.vscode-light .mosaic-container .menu .status {
     display: none;
-}
-
-body[class*="vscode"] .mosaic-container .menu .toolbar-group {
-    display: contents !important;
-    max-height: none !important;
-    overflow: visible !important;
-}
-
-body[class*="vscode"] .mosaic-container .menu .primary {
-    height: auto !important;
-    overflow: visible !important;
-}
-
-body[class*="vscode"] .mosaic-container .menu .toolbar-group + .toolbar-group > :first-child {
-    margin-left: 0 !important;
-}
-
-body[class*="vscode"] .mosaic-container .menu .toolbar-group + .toolbar-group > :first-child::before {
-    display: none !important;
-}
-
-body[class*="vscode"] .mosaic-container .devicetray {
-    left: auto;
-    right: 25px;
 }
 
 line.grid {
