@@ -11,7 +11,8 @@
                 :test   nyancad.mosaic.editor.platform-test)
              :refer [group schematic modeldb snapshots simulations local
                      done? syncactive notebook-panel secondary-menu-items
-                     open-schematic resolve-symbol-url init-extra! root]]
+                     open-schematic resolve-symbol-url init-extra! root
+                     menu-toolbar menu-extras device-tray-items]]
             [clojure.spec.alpha :as s]
             [cljs.core.async :refer [go go-loop <!]]
             [clojure.math :as math]
@@ -46,7 +47,7 @@
 
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme (s/nilable #{"light" "dark" "eyesore"}))
-(s/def ::tool #{::cursor ::eraser ::wire ::pan ::device ::probe})
+(s/def ::tool #{::cursor ::eraser ::wire ::pan ::device ::probe ::port})
 (s/def ::selected (s/and set? (s/coll-of string?)))
 (s/def ::dragging (s/nilable #{::wire ::device ::view ::box}))
 ;; Staging is a partial device: commit-staged assigns :name on commit.
@@ -2242,74 +2243,6 @@
            #(if eyesore? "eyesore"
                 (if (dark-mode? %) "light" "dark")))))
 
-(defn menu-items []
-  [:<>
-   [:div.primary
-    [:div.toolbar-group.tools-group
-     [cm/radiobuttons tool
-    ; label, key, title
-      [[[cm/cursor] ::cursor "Cursor [esc]"]
-       [[cm/wire] ::wire "Wire [w]"]
-       [[cm/eraser] ::eraser "Eraser [e]"]
-       [[cm/move] ::pan "Pan [space]"]
-       [[cm/probe] ::probe "Probe nodes in a connected simulator"]]
-      nil nil cancel]]
-    [:div.toolbar-group
-     [:a {:title "Rotate selected clockwise [s]"
-          :on-click (fn [_] (transform-selected #(.rotate % 90)))}
-      [cm/rotatecw]]
-     [:a {:title "Rotate selected counter-clockwise [shift+s]"
-          :on-click (fn [_] (transform-selected #(.rotate % -90)))}
-      [cm/rotateccw]]
-     [:a {:title "Mirror selected horizontal [shift+f]"
-          :on-click (fn [_] (transform-selected #(.flipY %)))}
-      [cm/mirror-horizontal]]
-     [:a {:title "Mirror selected vertical [f]"
-          :on-click (fn [_] (transform-selected #(.flipX %)))}
-      [cm/mirror-vertical]]
-     [:a {:title "Delete selected [del]"
-          :on-click (fn [_] (delete-selected))}
-      [cm/delete]]
-     [:a {:title "Copy selected [ctrl+c]"
-          :on-click (fn [_] (copy))}
-      [cm/copyi]]
-     [:a {:title "Cut selected [ctrl+x]"
-          :on-click (fn [_] (cut))}
-      [cm/cuti]]
-     [:a {:title "Paste [ctrl+v]"
-          :on-click (fn [_] (paste))}
-      [cm/pastei]]]
-    [:div.toolbar-group
-     [:a {:title "zoom in [scroll wheel/pinch]"
-          :on-click #(button-zoom -1)}
-      [cm/zoom-in]]
-     [:a {:title "zoom out [scroll wheel/pinch]"
-          :on-click #(button-zoom 1)}
-      [cm/zoom-out]]
-     [:a {:title "undo [ctrl+z]"
-          :on-click undo-schematic}
-      [cm/undoi]]
-     [:a {:title "redo [ctrl+shift+z]"
-          :on-click redo-schematic}
-      [cm/redoi]]]]
-   [:div.status
-    [cm/renamable (r/cursor modeldb [(cm/model-key group) :name]) "Untitled"]
-    (if @syncactive
-      [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
-      [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
-
-   [:div.secondary
-    [secondary-menu-items notebook-state]
-    [:a {:title "Toggle light/dark theme"
-         :on-click #(toggle-theme!)}
-     (if (dark-mode?) [cm/sun-icon] [cm/moon-icon])]
-    [:a {:title "Keyboard shortcuts & help"
-         :on-click cm/show-onboarding!}
-     [cm/help]]
-    [:a {:title "Snapshot History"
-         :on-click show-history-panel}
-     [cm/history]]]])
-
 (defn device-active [cell]
   (when (= cell (:type @staging))
     "active"))
@@ -2358,7 +2291,38 @@
               :variant "text"
               :transform (cm/transform-vec (.rotate cm/I 90))))
 
-(defn device-tray []
+(defn- testbench-tray []
+  [:<>
+   [:button {:title "Add port [p]"
+             :class (device-active "port")
+             :on-pointer-up #(add-device "port" (cm/viewbox-coord %))}
+    [cm/device-icon "port"]]
+   [:button {:title "Add wire label [t]"
+             :class (device-active "port")
+             :on-pointer-up #(add-label (cm/viewbox-coord %))}
+    [cm/namei]]
+   [:button {:title "Add ground [g]"
+             :class (device-active "port")
+             :on-pointer-up #(add-gnd (cm/viewbox-coord %))}
+    [cm/device-icon "ground"]]
+   [:button {:title "Add power supply [shift+p]"
+             :class (device-active "port")
+             :on-pointer-up #(add-supply (cm/viewbox-coord %))}
+    [cm/device-icon "supply"]]
+   [:button {:title "Add text area [shift+t]"
+             :class (device-active "port")
+             :on-pointer-up #(add-device "text" (cm/viewbox-coord %))}
+    [cm/text]]
+   [:button {:title "Add voltage source [v]"
+             :class (device-active "vsource")
+             :on-pointer-up #(add-device "vsource" (cm/viewbox-coord %))}
+    [cm/device-icon "vsource"]]
+   [:button {:title "Add current source [i]"
+             :class (device-active "isource")
+             :on-pointer-up #(add-device "isource" (cm/viewbox-coord %))}
+    [cm/device-icon "isource"]]])
+
+(defn- full-tray []
   [:<>
    [variant-tray
     [:button {:title "Add port [p]"
@@ -2517,6 +2481,41 @@
               :class (device-active "grating-coupler")
               :on-pointer-up #(add-device "grating-coupler" (cm/viewbox-coord %))}
      [cm/device-icon "grating-coupler"]]]])
+
+(def ^:private editor-ctx
+  {:tool            tool
+   :cancel          cancel
+   :add-device      add-device
+   :ui              ui
+   :transform-selected transform-selected
+   :delete-selected delete-selected
+   :copy            copy
+   :cut             cut
+   :paste           paste
+   :button-zoom     button-zoom
+   :undo-schematic  undo-schematic
+   :redo-schematic  redo-schematic
+   :modeldb         modeldb
+   :group           group
+   :syncactive      syncactive
+   :toggle-theme!   toggle-theme!
+   :dark-mode?      dark-mode?
+   :notebook-state  notebook-state
+   :show-history-panel show-history-panel
+   :device-active   device-active
+   :add-gnd         add-gnd
+   :add-supply      add-supply
+   :add-label       add-label
+   :full-tray       full-tray})
+
+(defn menu-items []
+  [:<>
+   [:div.primary
+    [menu-toolbar editor-ctx]]
+   [menu-extras editor-ctx]])
+
+(defn device-tray []
+  [device-tray-items editor-ctx])
 
 (defn schematic-elements [schem]
   [:<>

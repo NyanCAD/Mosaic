@@ -547,6 +547,7 @@
 (def library (r/adapt-react-class icons/Collection))
 (def login (r/adapt-react-class icons/PersonCircle))
 (def probe (r/adapt-react-class icons/Search))
+(def pin-angle (r/adapt-react-class icons/PinAngle))
 (def codemodel (r/adapt-react-class icons/FileCode))
 (def schemmodel (r/adapt-react-class icons/FileDiff))
 (def add-model (r/adapt-react-class icons/FilePlus))

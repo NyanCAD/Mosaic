@@ -217,6 +217,12 @@
                                 :else "default")]
                 (<p! (.. vscode/commands (executeCommand "vscode.openWith" file-uri editor-id)))))))
 
+        ;; Switch to another custom editor for the same document
+        "switchEditor"
+        (when doc-file-uri
+          (let [view-type (or (.-viewType message) "gdsfactoryplus.livewireNyancirEditor")]
+            (.. vscode/commands (executeCommand "vscode.openWith" doc-file-uri view-type))))
+
         ;; State response from webview (for get-state requests)
         "state-response"
         (deliver-response! message)

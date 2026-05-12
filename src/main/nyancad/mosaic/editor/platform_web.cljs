@@ -167,6 +167,87 @@
   (let [url (str "?" (.toString (js/URLSearchParams. #js{:schem model-id})))]
     (js/window.open url model-id)))
 
+;; --- Toolbar & tray ---
+
+(defn menu-toolbar
+  "Web: grouped toolbar with separators."
+  [{:keys [tool cancel transform-selected delete-selected
+           copy cut paste button-zoom undo-schematic redo-schematic]}]
+  [:<>
+   [:div.toolbar-group.tools-group
+    [cm/radiobuttons tool
+     [[[cm/cursor] :nyancad.mosaic.editor/cursor "Cursor [esc]"]
+      [[cm/wire] :nyancad.mosaic.editor/wire "Wire [w]"]
+      [[cm/eraser] :nyancad.mosaic.editor/eraser "Eraser [e]"]
+      [[cm/move] :nyancad.mosaic.editor/pan "Pan [space]"]
+      [[cm/probe] :nyancad.mosaic.editor/probe "Probe nodes in a connected simulator"]]
+     nil nil cancel]]
+   [:div.toolbar-group
+    [:a {:title "Rotate selected clockwise [s]"
+         :on-click (fn [_] (transform-selected #(.rotate % 90)))}
+     [cm/rotatecw]]
+    [:a {:title "Rotate selected counter-clockwise [shift+s]"
+         :on-click (fn [_] (transform-selected #(.rotate % -90)))}
+     [cm/rotateccw]]
+    [:a {:title "Mirror selected horizontal [shift+f]"
+         :on-click (fn [_] (transform-selected #(.flipY %)))}
+     [cm/mirror-horizontal]]
+    [:a {:title "Mirror selected vertical [f]"
+         :on-click (fn [_] (transform-selected #(.flipX %)))}
+     [cm/mirror-vertical]]
+    [:a {:title "Delete selected [del]"
+         :on-click (fn [_] (delete-selected))}
+     [cm/delete]]
+    [:a {:title "Copy selected [ctrl+c]"
+         :on-click (fn [_] (copy))}
+     [cm/copyi]]
+    [:a {:title "Cut selected [ctrl+x]"
+         :on-click (fn [_] (cut))}
+     [cm/cuti]]
+    [:a {:title "Paste [ctrl+v]"
+         :on-click (fn [_] (paste))}
+     [cm/pastei]]]
+   [:div.toolbar-group
+    [:a {:title "zoom in [scroll wheel/pinch]"
+         :on-click #(button-zoom -1)}
+     [cm/zoom-in]]
+    [:a {:title "zoom out [scroll wheel/pinch]"
+         :on-click #(button-zoom 1)}
+     [cm/zoom-out]]
+    [:a {:title "undo [ctrl+z]"
+         :on-click undo-schematic}
+     [cm/undoi]]
+    [:a {:title "redo [ctrl+shift+z]"
+         :on-click redo-schematic}
+     [cm/redoi]]]])
+
+(defn menu-extras
+  "Web: status bar with document name and sync indicator."
+  [{:keys [modeldb group syncactive toggle-theme! dark-mode?
+           notebook-state show-history-panel]}]
+  [:<>
+   [:div.status
+    [cm/renamable (r/cursor modeldb [(cm/model-key group) :name]) "Untitled"]
+    (if @syncactive
+      [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
+      [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
+   [:div.secondary
+    [secondary-menu-items notebook-state]
+    [:a {:title "Toggle light/dark theme"
+         :on-click #(toggle-theme!)}
+     (if (dark-mode?) [cm/sun-icon] [cm/moon-icon])]
+    [:a {:title "Keyboard shortcuts & help"
+         :on-click cm/show-onboarding!}
+     [cm/help]]
+    [:a {:title "Snapshot History"
+         :on-click show-history-panel}
+     [cm/history]]]])
+
+(defn device-tray-items
+  "Web: delegate to the full-tray component passed via context."
+  [{:keys [full-tray]}]
+  [full-tray])
+
 ;; --- Init ---
 
 (defn init-extra! []
