@@ -1285,6 +1285,18 @@ circle.nc.photonic {
     color: var(--canvas-warning);
 }
 
+g.airwire {
+    pointer-events: none;
+}
+
+g.airwire path {
+    fill: none;
+    stroke: #dc2626;
+    stroke-width: 1.5;
+    stroke-dasharray: 4 4;
+    opacity: 0.7;
+}
+
 /* Subcircuit (ckt) and amplifier (amp) styling */
 g.device.ckt rect.tetris,
 g.device.amp rect.tetris {

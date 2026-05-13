@@ -79,7 +79,7 @@
 (defonce undotree (cm/newundotree))
 
 (declare build-wire-split-index build-point-index split-wire point-index wire-type-index
-         build-wire-networks build-netlist build-net-annotations)
+         build-wire-networks build-netlist build-net-annotations polyline-sym)
 
 (defn post-action!
   "Record undo checkpoint, split wires, and annotate :nets/:net after a user
@@ -1042,6 +1042,10 @@
                      ::conn []
                      ::sym wire-sym
                      ::props []}
+             "polyline" {::bg []
+                         ::conn []
+                         ::sym #'polyline-sym
+                         ::props []}
              "port" {::bg []
                      ::conn [{:name "P" :x 0 :y 0}]
                      ::sym port-sym
@@ -1121,6 +1125,9 @@
     (cond
       (= cell "wire") (wire-locations dev)
       (= cell "text") []
+      ;; Polylines reference other devices' pins; they contribute no
+      ;; connection points of their own to the schematic point-index.
+      (= cell "polyline") [[] []]
       (contains? models cell) (builtin-locations dev)
       :else (circuit-locations dev))))
 
@@ -1132,6 +1139,7 @@
     (cond
       (= cell "wire") nil
       (= cell "text") nil
+      (= cell "polyline") nil
       (contains? models cell)
       (let [mod (get models cell)
             conn (::conn mod)
@@ -1153,6 +1161,55 @@
             [w h] (if ports (cm/port-perimeter ports shape) [1 1])
             size (+ 2 (max w h))]
         (rotate-shape conn size transform x y)))))
+
+(defn- find-port-world-pos
+  "Absolute grid coords of [dev-id port-name] in sch, or nil if either the
+   device or the port is missing. Used by polyline-sym to anchor the
+   airwire arc at the actual Mosaic device pins (the polyline's own
+   vertices live in Livewire's µm/y-down frame and don't apply here)."
+  [sch dev-id port-name]
+  (when-let [dev (get sch dev-id)]
+    (let [target (name port-name)]
+      (some (fn [p]
+              (when (= (name (:name p)) target)
+                [(:x p) (:y p)]))
+            (device-port-types dev)))))
+
+(defn polyline-sym
+  "Render an 'airwire' ratsnest arc for Livewire-authored polylines whose
+   endpoints don't agree on a net.
+
+   Match rule: silent only when both endpoint pins carry a non-nil :nets
+   entry and the two nets are equal. Any missing or differing annotation
+   triggers a subtle dashed red arc between the two referenced device pins
+   — surfacing both LVS-style mismatches and in-progress unbound ports.
+
+   Polylines themselves are non-interactive here; the arc is a hint that
+   sits above the schematic with pointer-events:none."
+  [_key polyline]
+  (let [sch @schematic
+        {:keys [start finish]} (:terminals polyline)
+        s-net (get-in sch [(:component_id start) :nets (keyword (:port_name start))])
+        f-net (get-in sch [(:component_id finish) :nets (keyword (:port_name finish))])]
+    (when-not (and s-net f-net (= s-net f-net))
+      (when-let [p1 (find-port-world-pos sch (:component_id start) (:port_name start))]
+        (when-let [p2 (find-port-world-pos sch (:component_id finish) (:port_name finish))]
+          (let [x1 (* (+ (first p1) 0.5) grid-size)
+                y1 (* (+ (second p1) 0.5) grid-size)
+                x2 (* (+ (first p2) 0.5) grid-size)
+                y2 (* (+ (second p2) 0.5) grid-size)
+                dx (- x2 x1)
+                dy (- y2 y1)
+                len (math/sqrt (+ (* dx dx) (* dy dy)))]
+            (when (pos? len)
+              (let [mx (/ (+ x1 x2) 2)
+                    my (/ (+ y1 y2) 2)
+                    sag (* 0.15 len)
+                    cx (+ mx (* (- (/ dy len)) sag))
+                    cy (+ my (* (/ dx len) sag))]
+                [:g.airwire
+                 [:title "Ratsnest: polyline endpoints are on different nets"]
+                 [:path {:d (str "M" x1 "," y1 " Q" cx "," cy " " x2 "," y2)}]]))))))))
 
 ;; --- point-index: unified per-point fold ---------------------------------
 ;; Replaces location-index (:ids/:body-ids), point-type-index (:types/:*-count),
