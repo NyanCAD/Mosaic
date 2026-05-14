@@ -2391,12 +2391,14 @@
     [:a {:title "Keyboard shortcuts & help"
          :on-click cm/show-onboarding!}
      [cm/help]]
-    [:a {:title "Snapshot History"
-         :on-click show-history-panel}
-     [cm/history]]]])
+    #?(:gfp nil
+       :default
+       [:a {:title "Snapshot History"
+            :on-click show-history-panel}
+        [cm/history]])]])
 
 (defn device-tray []
-  #?(:vscode
+  #?(:gfp
      [:<>
       [:button {:title "Add port [p]"
                 :class (device-active "port" nil)
@@ -2441,7 +2443,7 @@
                  :on-pointer-up #(add-device "capacitor" (cm/viewbox-coord %))}
         [cm/device-icon "capacitor"]]]]
 
-     :web
+     :default
      [:<>
       [variant-tray
        [:button {:title "Add port [p]"

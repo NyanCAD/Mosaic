@@ -69,18 +69,26 @@
   nil)
 
 (defn secondary-menu-items
-  "VSCode secondary menu: simulate, switch to Livewire."
+  "VSCode secondary menu: simulate, open library manager (upstream), switch to Livewire (gfp)."
   [_ui]
   [:<>
    [:a {:title "Simulate"
         :on-click #(.postMessage vscode
                      #js{:type "start-simulation"})}
     [cm/simulate]]
-   [:a {:title "Open in Livewire layout editor"
-        :on-click #(.postMessage vscode
-                     #js{:type "switchEditor"
-                         :viewType "gdsfactoryplus.livewireNyancirEditor"})}
-    [cm/sync-active]]])
+   #?(:gfp nil
+      :default
+      [:a {:title "Open library manager"
+           :on-click #(.postMessage vscode
+                        #js{:type "open-file"
+                            :filename "models.nyanlib"})}
+       [cm/library]])
+   #?(:gfp
+      [:a {:title "Open in Livewire layout editor"
+           :on-click #(.postMessage vscode
+                        #js{:type "switchEditor"
+                            :viewType "gdsfactoryplus.livewireNyancirEditor"})}
+       [cm/sync-active]])])
 
 (defn- make-name [device-type]
   (let [prefix (cm/initial device-type)]
