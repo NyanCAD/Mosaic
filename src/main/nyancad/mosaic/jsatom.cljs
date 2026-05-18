@@ -27,7 +27,7 @@
                 (let [update (jsonc/modify @(.-document ja)
                                            (clj->js path)
                                            (or (clj->js value) js/undefined)
-                                           #js{})]
+                                           #js{:formattingOptions #js{:tabSize 2 :insertSpaces true}})]
                   (doseq [up update]
                     (set! (.-oldcontent ^js up)
                           (subs @(.-document ja)
