@@ -1,0 +1,45 @@
+language: 'javascript'
+stack: 'frontend'
+layer: 'application'
+
+tasks:
+  install-deps:
+    command: 'npm'
+    args: ['install', '--workspaces=false']
+    inputs:
+      - 'package.json'
+      - 'package-lock.json'
+    options:
+      cache: false
+
+  stage-assets:
+    command: 'node'
+    args: ['../../scripts/build/build-mosaic.mjs', 'assets']
+    inputs:
+      - 'public/**/*'
+    options:
+      cache: false
+
+  watch-assets:
+    command: 'node'
+    args: ['../../scripts/build/build-mosaic.mjs', 'watch-assets']
+    preset: 'server'
+
+  compile-vscode:
+    command: 'node'
+    args: ['../../scripts/build/build-mosaic.mjs', 'release']
+    deps: ['install-deps']
+    inputs:
+      - 'shadow-cljs.edn'
+      - 'package.json'
+      - 'src/**/*'
+      - 'public/**/*'
+      - 'vscode-ext/**/*'
+    options:
+      cache: false
+
+  watch-vscode:
+    command: 'node'
+    args: ['../../scripts/build/build-mosaic.mjs', 'watch']
+    deps: ['install-deps']
+    preset: 'server'

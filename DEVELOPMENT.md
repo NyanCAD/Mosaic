@@ -64,6 +64,18 @@ export COUCHDB_ADMIN_PASS=your_password
 
 ### VS Code Extension
 
+Install the Mosaic JS dependencies locally first:
+```bash
+cd frontend/mosaic
+npm install --workspaces=false
+```
+
+Inside GDSFactory+, the canonical build entrypoints are:
+```bash
+npx moon run mosaic:compile-vscode
+npx moon run mosaic:watch-vscode
+```
+
 **Build the extension (compiles ClojureScript + copies CSS/icons):**
 ```bash
 npx shadow-cljs clj-run nyancad.mosaic.build/release-vscode
