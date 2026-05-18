@@ -407,9 +407,13 @@
   (resolveCustomTextEditor [^js _this ^js document ^js webviewpanel _token]
     (let [^js webview (.-webview webviewpanel)
           doc-uri (uri-parent (.-uri document))
+          ws-root (some-> (first (.-workspaceFolders vscode/workspace)) .-uri)
           basename (uri-basename (.-uri document) ".nyancir")
           disposables #js[]
-          nyanlib-uri (uri-join doc-uri "models.nyanlib")]
+          nyanlib-uri (if ws-root
+                        #?(:gfp (uri-join ws-root "build" "models.nyanlib")
+                           :default (uri-join ws-root "models.nyanlib"))
+                        (uri-join doc-uri "models.nyanlib"))]
       (js/Promise.
         (fn [resolve reject]
           (go
@@ -436,7 +440,7 @@
                   (.push disposables (:disposable models-ch))
 
                   ;; Message router — pass document URI for marimo (local file:// only)
-                  (setup-message-router! webview atom-channels doc-uri (.-uri document))
+                  (setup-message-router! webview atom-channels (or ws-root doc-uri) (.-uri document))
 
                   ;; Save SVG sidecar on document save
                   (let [save-disposable
