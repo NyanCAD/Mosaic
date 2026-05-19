@@ -426,8 +426,14 @@ def _(mo, schem_data, schem_name):
 @app.cell(hide_code=True)
 def _(mo):
     simname = mo.ui.dropdown(
-        ["ngspice-shared", "ngspice-subprocess", "xyce-serial", "xyce-parallel"],
-        value="ngspice-shared",
+        [
+            "vacask",
+            "ngspice-shared",
+            "ngspice-subprocess",
+            "xyce-serial",
+            "xyce-parallel",
+        ],
+        value="vacask",
         label="Simulation engine",
     )
     simname
