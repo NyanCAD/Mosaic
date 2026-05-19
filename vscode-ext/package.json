@@ -2,7 +2,7 @@
   "name": "mosaic-schematic",
   "displayName": "Mosaic Schematic Editor",
   "description": "Visual schematic editor for analog IC design",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "publisher": "nyancad",
   "license": "MPL-2.0",
   "repository": {
