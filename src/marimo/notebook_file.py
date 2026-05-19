@@ -5,7 +5,7 @@
 
 import marimo
 
-__generated_with = "0.23.1"
+__generated_with = "0.23.6"
 app = marimo.App()
 
 
@@ -509,12 +509,13 @@ async def _(file_schematic, mo, project, schem_file):
     else:
         schem_name = schem_file.path(index=0).stem
     schem_data = await file_schematic(project, schem_name)
-    return (schem_data, schem_name)
+    return schem_data, schem_name
 
 
 @app.cell
-async def _(inspice_netlist, schem_data, schem_name):
-    spice = await inspice_netlist(schem_name, schem_data)
+async def _(inspice_netlist, schem_data, schem_name, simname):
+    _sim = "Spectre" if simname.value == "vacask" else "NgSpice"
+    spice = await inspice_netlist(schem_name, schem_data, sim=_sim)
     print(spice)
     return (spice,)
 

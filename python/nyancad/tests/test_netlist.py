@@ -331,6 +331,19 @@ class TestEvalParams:
         """Expressions with no variables still go through the arithmetic path."""
         assert _eval_params({"x": "1 + 2"}, {}) == {"x": "{1 + 2}"}
 
+    # --- Spectre / VACASK: no braces ---
+
+    def test_spectre_omits_braces(self):
+        """Spectre-family simulators use bare expressions, no braces."""
+        assert _eval_params({"w": "width * 1e-6"}, {"width": "10u"}, sim="Spectre") == {
+            "w": "10u * 1e-6"
+        }
+
+    def test_vacask_omits_braces(self):
+        assert _eval_params({"w": "width * 1e-6"}, {"width": "10u"}, sim="VACASK") == {
+            "w": "10u * 1e-6"
+        }
+
     # --- Mixed ---
 
     def test_mixed_rename_and_arithmetic(self):
@@ -339,6 +352,83 @@ class TestEvalParams:
             {"model": "name", "w": "width * 1e-6"}, {"name": "nmos_3p3", "width": "10u"}
         )
         assert result == {"model": "nmos_3p3", "w": "{10u * 1e-6}"}
+
+
+# ---------------------------------------------------------------------------
+# model prop defaults fallback — no SPICE entry but has default props
+# ---------------------------------------------------------------------------
+
+
+class TestModelPropDefaultsFallback:
+    """When a model exists but has no SPICE model entries, model default props
+    (like the SPICE model name) are applied as a fallback."""
+
+    def test_nmos_gets_model_name_from_defaults(self):
+        """NMOS with a model that has no SPICE entries but has a 'model'
+        default prop should use that prop value as the SPICE model name."""
+        schem = {
+            "top": {
+                "top:M1": {
+                    "_id": "top:M1",
+                    "type": "nmos",
+                    "name": "M1",
+                    "model": "my.pdk.nmos",
+                    "nets": {"D": "vdd", "G": "inp", "S": "gnd", "B": "gnd"},
+                }
+            },
+            "models": {
+                "models:my.pdk.nmos": {
+                    "name": "nmos",
+                    "type": "nmos",
+                    "ports": [
+                        {"name": "D", "side": "top"},
+                        {"name": "G", "side": "left"},
+                        {"name": "S", "side": "bottom"},
+                        {"name": "B", "side": "right"},
+                    ],
+                    "props": [
+                        {"name": "width", "default": "0.15"},
+                        {"name": "length", "default": "0.13"},
+                        {"name": "model", "default": "sg13_lv_nmos"},
+                    ],
+                }
+            },
+        }
+        spice = str(NyanCircuit("top", schem))
+        assert "sg13_lv_nmos" in spice
+
+    def test_device_props_override_model_defaults(self):
+        """Device instance props take precedence over model defaults."""
+        schem = {
+            "top": {
+                "top:M1": {
+                    "_id": "top:M1",
+                    "type": "nmos",
+                    "name": "M1",
+                    "model": "my.pdk.nmos",
+                    "nets": {"D": "vdd", "G": "inp", "S": "gnd", "B": "gnd"},
+                    "props": {"model": "sg13_hv_nmos"},
+                }
+            },
+            "models": {
+                "models:my.pdk.nmos": {
+                    "name": "nmos",
+                    "type": "nmos",
+                    "ports": [
+                        {"name": "D", "side": "top"},
+                        {"name": "G", "side": "left"},
+                        {"name": "S", "side": "bottom"},
+                        {"name": "B", "side": "right"},
+                    ],
+                    "props": [
+                        {"name": "model", "default": "sg13_lv_nmos"},
+                    ],
+                }
+            },
+        }
+        spice = str(NyanCircuit("top", schem))
+        assert "sg13_hv_nmos" in spice
+        assert "sg13_lv_nmos" not in spice
 
 
 # ---------------------------------------------------------------------------

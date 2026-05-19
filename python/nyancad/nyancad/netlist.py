@@ -117,32 +117,25 @@ def _select_corner(sections, corners):
 _IDENTIFIER_RE = re.compile(r"\b[a-zA-Z_]\w*")
 
 
-def _eval_params(entry_params, device_props):
+def _eval_params(entry_params, device_props, sim="NgSpice"):
     """Substitute device props into SPICE param expressions.
 
     - Bare identifier ("rename"): pass the raw prop value through unchanged.
-      Preserves type (string model names stay strings, numbers stay numbers)
-      and avoids wrapping non-numeric values in braces (which SPICE would try
-      to evaluate as an expression).
     - Missing rename target: skip the param so SPICE uses its model default.
-    - Arithmetic expression: substitute identifiers, wrap in braces, and let
-      SPICE evaluate — this preserves SPICE suffix notation (10u, 1k) in
-      prop values so "width * 1e-6" with width="10u" becomes "{10u * 1e-6}".
-
-    Identifiers not in device_props pass through untouched (e.g. SPICE math
-    functions like sqrt, or model-level parameters).
+    - Arithmetic expression: substitute identifiers and let the simulator
+      evaluate. NgSpice requires braces around expressions; Spectre-family
+      simulators (VACASK, etc.) use bare expressions.
     """
     if not entry_params:
         return device_props
+    use_braces = sim.lower() == "ngspice"
     result = {}
     for param_name, expr in entry_params.items():
         stripped = expr.strip()
         if stripped.isidentifier():
-            # Rename: passthrough if the prop exists, otherwise skip
             if stripped in device_props:
                 result[param_name] = device_props[stripped]
             continue
-        # Arithmetic expression: substitute and wrap for SPICE evaluation
         substituted = _IDENTIFIER_RE.sub(
             lambda m: (
                 str(device_props[m.group(0)])
@@ -151,7 +144,10 @@ def _eval_params(entry_params, device_props):
             ),
             expr,
         )
-        result[param_name] = "{" + substituted + "}"
+        if use_braces:
+            result[param_name] = "{" + substituted + "}"
+        else:
+            result[param_name] = substituted
     return result
 
 
@@ -215,11 +211,11 @@ class NyanCADMixin:
             self.used_models.add(model_id)
             model_def = models[model_id]
             model_name = model_def["name"]
-            props["model"] = model_name
 
             # Select the best SPICE model entry for this simulator
             selected_entry = self._select_model_entry(model_def, sim)
             if selected_entry:
+                props["model"] = model_name
                 spice_type = selected_entry.get("spice-type", "")
                 model_use_x = bool(spice_type)
                 # If the entry has its own name, use it as the model reference
@@ -238,7 +234,12 @@ class NyanCADMixin:
                         if p.get("name") and p.get("default") is not None
                     }
                     merged = {**defaults, **dev.get("props", {})}
-                    props = _eval_params(selected_entry["params"], merged)
+                    props = _eval_params(selected_entry["params"], merged, sim)
+            else:
+                for mp in model_def.get("props", []):
+                    if mp.get("name") and mp.get("default") is not None:
+                        props.setdefault(mp["name"], mp["default"])
+                props.setdefault("model", model_name)
 
         # Helper to get port by name. The editor annotates every port with
         # a net — disconnected pins get their own generated netN — so the

@@ -438,7 +438,11 @@ class FileAPI(SchematicAPI):
             Tuple of (None, {document_id: document_data})
         """
         if name == "models":
-            return (None, self._read_file(self.project_dir / "models.nyanlib"))
+            # GDSFactory+ writes to build/; fall back to root for standalone projects
+            build_path = self.project_dir / "build" / "models.nyanlib"
+            root_path = self.project_dir / "models.nyanlib"
+            path = build_path if build_path.exists() else root_path
+            return (None, self._read_file(path))
 
         flat = self._read_file(self.project_dir / f"{name}.nyancir")
         prefix = name + ":"
