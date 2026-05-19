@@ -335,61 +335,43 @@
                            (get "pythonCommand" "uv run --with nyancad-server"))
             output-ch (.. vscode/window (createOutputChannel (str "Mosaic: " basename)))]
         (.show output-ch true)
-        (.appendLine output-ch (str "Discovering notebook path..."))
-        ;; Step 1: discover the notebook path via shell command
-        (let [discover-cmd (str python-cmd " python -c \"from nyancad_server import get_notebook_path; print(get_notebook_path())\"")]
-          (let [discover-proc (.spawn cp discover-cmd
-                                #js{:cwd doc-dir
-                                    :shell true})]
-            (let [stdout-buf (atom "")]
-              (.. discover-proc -stdout (on "data" #(swap! stdout-buf str %)))
-              (.. discover-proc -stderr (on "data" #(.appendLine output-ch (str "discover: " %))))
-              (.on discover-proc "exit"
-                (fn [code]
-                  (if (not= code 0)
-                    (do
-                      (.appendLine output-ch (str "Failed to discover notebook path (exit code " code ")"))
-                      (.. vscode/window (showErrorMessage "Failed to find Mosaic notebook. Is nyancad-server installed?")))
-                    ;; Step 2: spawn marimo run
-                    (let [notebook-path (.trim @stdout-buf)
-                          cmd-str (str python-cmd " marimo run " (js/JSON.stringify notebook-path)
-                                       " --host 127.0.0.1 --headless"
-                                       " -- --schem " basename
-                                       " --project " (js/JSON.stringify doc-dir))
-                          _ (.appendLine output-ch (str "Running: " cmd-str))
-                          proc (.spawn cp cmd-str
-                                 #js{:cwd doc-dir
-                                     :shell true})]
-                      ;; Watch stdout for the URL marimo prints on startup
-                      (let [url-found (atom false)]
-                        (.. proc -stdout
-                            (on "data"
-                              (fn [data]
-                                (let [line (str data)]
-                                  (.appendLine output-ch line)
-                                  (when-not @url-found
-                                    (when-let [match (.match line #"https?://[\w\.\-]+:\d+")]
-                                      (let [url (aget match 0)]
-                                        (reset! url-found true)
-                                        (swap! marimo-processes assoc doc-path {:process proc :url url})
-                                        (.appendLine output-ch (str "Opening " url))
-                                        (.. vscode/commands (executeCommand "simpleBrowser.show" url)))))))))
-                        (.. proc -stderr
-                            (on "data"
-                              (fn [data]
-                                (let [line (str data)]
-                                  (.appendLine output-ch line)
-                                  (when-not @url-found
-                                    (when-let [match (.match line #"https?://[\w\.\-]+:\d+")]
-                                      (let [url (aget match 0)]
-                                        (reset! url-found true)
-                                        (swap! marimo-processes assoc doc-path {:process proc :url url})
-                                        (.appendLine output-ch (str "Opening " url))
-                                        (.. vscode/commands (executeCommand "simpleBrowser.show" url))))))))))
-                      (.on proc "exit"
-                        (fn [code]
-                          (.appendLine output-ch (str "marimo exited with code " code))
-                          (swap! marimo-processes dissoc doc-path))))))))))))))
+        (let [cmd-str (str python-cmd " python -m nyancad_server.run"
+                           " --host 127.0.0.1 --headless"
+                           " -- --schem " basename
+                           " --project " (js/JSON.stringify doc-dir))
+              _ (.appendLine output-ch (str "Running: " cmd-str))
+              proc (.spawn cp cmd-str
+                     #js{:cwd doc-dir
+                         :shell true})]
+          (let [url-found (atom false)]
+            (.. proc -stdout
+                (on "data"
+                  (fn [data]
+                    (let [line (str data)]
+                      (.appendLine output-ch line)
+                      (when-not @url-found
+                        (when-let [match (.match line #"https?://[\w\.\-]+:\d+")]
+                          (let [url (aget match 0)]
+                            (reset! url-found true)
+                            (swap! marimo-processes assoc doc-path {:process proc :url url})
+                            (.appendLine output-ch (str "Opening " url))
+                            (.. vscode/commands (executeCommand "simpleBrowser.show" url)))))))))
+            (.. proc -stderr
+                (on "data"
+                  (fn [data]
+                    (let [line (str data)]
+                      (.appendLine output-ch line)
+                      (when-not @url-found
+                        (when-let [match (.match line #"https?://[\w\.\-]+:\d+")]
+                          (let [url (aget match 0)]
+                            (reset! url-found true)
+                            (swap! marimo-processes assoc doc-path {:process proc :url url})
+                            (.appendLine output-ch (str "Opening " url))
+                            (.. vscode/commands (executeCommand "simpleBrowser.show" url))))))))))
+          (.on proc "exit"
+            (fn [code]
+              (.appendLine output-ch (str "marimo exited with code " code))
+              (swap! marimo-processes dissoc doc-path))))))))
 
 (defn- kill-marimo!
   "Kill a running marimo process for the given document path."
