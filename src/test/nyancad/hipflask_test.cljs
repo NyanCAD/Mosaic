@@ -23,6 +23,10 @@
   []
   (PouchDB. (str "testdb-" (random-uuid)) #js {:adapter "memory"}))
 
+(defn- total-rows [^js res] (.-total_rows res))
+
+(defn- set-patom-validator! [^js pa f] (set! (.-validator pa) f))
+
 ;; ---------------------------------------------------------------------------
 ;; Low-level PouchDB helpers
 ;; ---------------------------------------------------------------------------
@@ -95,10 +99,10 @@
           (is (not (contains? @pa "grp:x")))
           ;; verify the doc is gone from the DB too (alldocs without
           ;; {keys: [...]} skips tombstones).
-          (let [^js res (<p! (hf/alldocs db #js {:include_docs true
-                                                 :startkey "grp:"
-                                                 :endkey "grp:\ufff0"}))]
-            (is (zero? (.-total_rows res))
+          (let [res (<p! (hf/alldocs db #js {:include_docs true
+                                            :startkey "grp:"
+                                            :endkey "grp:\ufff0"}))]
+            (is (zero? (total-rows res))
                 "deleted doc should not appear in alldocs result")))
         (done)))))
 
@@ -202,7 +206,7 @@
         (let [db (mem-db)
               pa (hf/pouch-atom db "grp")]
           (<! (hf/done? pa))
-          (set! (.-validator ^js pa) (constantly true))
+          (set-patom-validator! pa (constantly true))
           (<! (swap! pa assoc "grp:x" {:n 7}))
           (is (= 7 (get-in @pa ["grp:x" :n]))))
         (done)))))
