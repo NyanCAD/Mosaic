@@ -13,41 +13,41 @@ html {
 :root {
     color-scheme: light dark;
 
-    /* Chrome — dark values from Catppuccin Mocha palette */
-    --color-bg: light-dark(#f9f9f9, #1e1e2e);
-    --color-surface: light-dark(white, #313244);
-    --color-surface-alt: light-dark(#f8f8f8, #45475a);
-    --color-text: light-dark(#222222a5, #cdd6f4a5);
-    --color-text-strong: light-dark(#222222, #cdd6f4);
-    --color-text-muted: light-dark(#666, #a6adc8);
-    --color-border: light-dark(lightgray, #585b70);
-    --color-border-light: light-dark(#e7e7e7, #313244);
+    /* Chrome — derived from VS Code theme variables */
+    --color-bg: var(--vscode-editor-background, light-dark(#f9f9f9, #1e1e2e));
+    --color-surface: var(--vscode-sideBar-background, light-dark(white, #252526));
+    --color-surface-alt: var(--vscode-sideBarSectionHeader-background, light-dark(#f8f8f8, #37373d));
+    --color-text: var(--vscode-foreground, light-dark(#222222a5, #cccccc));
+    --color-text-strong: var(--vscode-editor-foreground, light-dark(#222222, #d4d4d4));
+    --color-text-muted: var(--vscode-descriptionForeground, light-dark(#666, #717171));
+    --color-border: var(--vscode-sideBarSectionHeader-border, light-dark(lightgray, #3c3c3c));
+    --color-border-light: var(--vscode-sideBar-border, light-dark(#e7e7e7, #1e1e1e));
     --color-shadow: light-dark(#00000033, #00000066);
-    --color-accent: light-dark(#0e1a32, #89b4fa);
-    --color-accent-text: light-dark(white, #1e1e2e);
-    --color-input-bg: light-dark(#00000008, #1e1e2e);
-    --color-input-border: light-dark(#2222220d, #585b70);
-    --color-hover: light-dark(#00000007, #45475a);
+    --color-accent: var(--vscode-button-background, light-dark(#0e1a32, #0078d4));
+    --color-accent-text: var(--vscode-button-foreground, light-dark(white, #ffffff));
+    --color-input-bg: var(--vscode-input-background, light-dark(#00000008, #1e1e1e));
+    --color-input-border: var(--vscode-input-border, light-dark(#2222220d, #3c3c3c));
+    --color-hover: var(--vscode-list-hoverBackground, light-dark(#00000007, #2a2d2e));
 
-    /* Canvas */
-    --canvas-bg: light-dark(#f9f9f9, #1e1e2e);
-    --canvas-grid: light-dark(lightgray, #313244);
-    --canvas-stroke: light-dark(black, #cdd6f4);
-    --canvas-wire-stroke: light-dark(black, #89b4fa);
-    --canvas-wire-photonic: light-dark(black, #94e2d5);
-    --canvas-text: light-dark(#444, #cdd6f4);
-    --canvas-text-muted: light-dark(#666, #a6adc8);
-    --canvas-select: light-dark(rgb(229, 216, 243), #45365e);
+    /* Canvas — mirrors Livewire's VS Code theme derivation */
+    --canvas-bg: var(--vscode-editor-background, light-dark(#f9f9f9, #1e1e1e));
+    --canvas-grid: var(--vscode-panel-border, light-dark(lightgray, #555555));
+    --canvas-stroke: var(--vscode-editor-foreground, light-dark(black, #d4d4d4));
+    --canvas-wire-stroke: var(--vscode-editor-foreground, light-dark(black, #d4d4d4));
+    --canvas-wire-photonic: var(--vscode-editor-foreground, light-dark(black, #d4d4d4));
+    --canvas-text: var(--vscode-editor-foreground, light-dark(#444, #d4d4d4));
+    --canvas-text-muted: var(--vscode-descriptionForeground, light-dark(#666, #717171));
+    --canvas-select: color-mix(in srgb, var(--vscode-focusBorder, light-dark(#6688cc, #007fd4)) 25%, var(--canvas-bg));
     --canvas-nc: light-dark(red, #f38ba8);
     --canvas-error: light-dark(red, #f38ba8);
     --canvas-warning: light-dark(orange, #fab387);
-    --canvas-placeholder: light-dark(#888, #6c7086);
+    --canvas-placeholder: var(--vscode-descriptionForeground, light-dark(#888, #717171));
     --canvas-port-electric-fill: light-dark(rgb(145, 0, 0), #f38ba8);
     --canvas-port-electric-stroke: light-dark(rgb(53, 0, 0), #f38ba8);
     --canvas-port-photonic-fill: light-dark(rgb(0, 80, 160), #89b4fa);
     --canvas-port-photonic-stroke: light-dark(rgb(0, 20, 60), #89b4fa);
 
-    /* Device backgrounds */
+    /* Device backgrounds — single neutral tone matching Livewire bbox style */
     --device-bg: light-dark(rgb(238, 238, 238), #313244);
     --device-bg-nchan: light-dark(rgb(216, 236, 243), #18304a);
     --device-bg-pchan: light-dark(rgb(243, 231, 216), #4a3018);
@@ -822,7 +822,7 @@ html {
 
 .mosaic-container .chrome a:hover,
 .mosaic-container .chrome button:hover {
-    background-color: var(--color-border);
+    background-color: var(--color-hover);
 }
 
 .mosaic-container .chrome a:active,
@@ -1138,6 +1138,10 @@ rect.select {
 .vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.eraser .wire:hover,
 .vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.eraser .device { cursor: url(icons/eraser-light.svg) 6 14, crosshair; }
 
+body.vscode-dark .mosaic-container .menu .status,
+body.vscode-light .mosaic-container .menu .status {
+    display: none;
+}
 
 line.grid {
     stroke: var(--canvas-grid);
@@ -1279,6 +1283,18 @@ circle.nc.photonic {
 
 .wire-error.fork-error {
     color: var(--canvas-warning);
+}
+
+g.airwire {
+    pointer-events: none;
+}
+
+g.airwire path {
+    fill: none;
+    stroke: #dc2626;
+    stroke-width: 1.5;
+    stroke-dasharray: 4 4;
+    opacity: 0.7;
 }
 
 /* Subcircuit (ckt) and amplifier (amp) styling */

@@ -285,11 +285,11 @@
                     "mmi-1x2" "mmi-2x2" "mzi-1x2" "mzi-2x2"
                     "grating-coupler"})
 
-(def schematic-only-types #{"wire" "port" "text"})
+(def schematic-only-types #{"wire" "port" "text" "polyline"})
 
 (s/def ::type (clojure.set/union device-types schematic-only-types))
 
-(s/def ::variant #{"hv" "vh" "d"})
+(s/def ::variant #{"hv" "vh" "d" "ground" "supply" "text"})
 ;; Port-name keys are keywords in the in-memory representation (round-trip
 ;; through json->clj keywordizes object keys); net-name values are strings.
 (s/def ::nets (s/map-of keyword? string?))

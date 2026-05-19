@@ -122,34 +122,57 @@
 
 ;; --- Secondary menu items ---
 
+(defonce ^:private theme-clicks (atom []))
+
+(defn- dark-mode? [ui]
+  (let [t (:nyancad.mosaic.editor/theme @ui)]
+    (cond
+      (= t "dark") true
+      (= t "light") false
+      (= t "eyesore") false
+      :else (.-matches (js/window.matchMedia "(prefers-color-scheme: dark)")))))
+
+(defn- toggle-theme! [ui]
+  (let [now (.now js/Date)
+        clicks (swap! theme-clicks #(conj (filterv (fn [t] (> t (- now 2000))) %) now))
+        eyesore? (>= (count clicks) 5)]
+    (when eyesore? (reset! theme-clicks []))
+    (swap! ui update :nyancad.mosaic.editor/theme
+           #(if eyesore? "eyesore"
+                (if (dark-mode? ui) "light" "dark")))))
+
 (defn secondary-menu-items
-  "Web-specific secondary menu items: library, pop-out notebook, login."
-  [notebook-state]
-  [:<>
-   [:a {:href (if cm/current-workspace
-                (str "library?ws=" cm/current-workspace)
-                "library")
-        :target "libman"
-        :title "Open library manager"}
-    [cm/library]]
-   [:a {:title "Pop out notebook"
-        :on-click (fn []
-                    (let [nb-url (str js/window.location.origin "/" (notebook-url))
-                          popup (.open js/window nb-url "mosaic_notebook" "width=1200,height=800")]
-                      (reset! notebook-state :nyancad.mosaic.editor/popped-out)
-                      (when popup
-                        (let [check (atom nil)]
-                          (reset! check
-                            (js/setInterval
-                              (fn []
-                                (when (.-closed popup)
-                                  (js/clearInterval @check)
-                                  (reset! notebook-state :nyancad.mosaic.editor/embedded)))
-                              500))))))}
-    [cm/external-link]]
-   [:a {:href "/auth/"
-        :title "Login / Account"}
-    [cm/login]]])
+  "Web-specific secondary menu items: library, pop-out notebook, login, theme toggle."
+  [ui]
+  (let [notebook-state (r/cursor ui [:nyancad.mosaic.editor/notebook-state])]
+    [:<>
+     [:a {:href (if cm/current-workspace
+                  (str "library?ws=" cm/current-workspace)
+                  "library")
+          :target "libman"
+          :title "Open library manager"}
+      [cm/library]]
+     [:a {:title "Pop out notebook"
+          :on-click (fn []
+                      (let [nb-url (str js/window.location.origin "/" (notebook-url))
+                            popup (.open js/window nb-url "mosaic_notebook" "width=1200,height=800")]
+                        (reset! notebook-state :nyancad.mosaic.editor/popped-out)
+                        (when popup
+                          (let [check (atom nil)]
+                            (reset! check
+                              (js/setInterval
+                                (fn []
+                                  (when (.-closed popup)
+                                    (js/clearInterval @check)
+                                    (reset! notebook-state :nyancad.mosaic.editor/embedded)))
+                                500))))))}
+      [cm/external-link]]
+     [:a {:href "/auth/"
+          :title "Login / Account"}
+      [cm/login]]
+     [:a {:title "Toggle light/dark theme"
+          :on-click #(toggle-theme! ui)}
+      (if (dark-mode? ui) [cm/sun-icon] [cm/moon-icon])]]))
 
 ;; --- Symbol URL resolution ---
 

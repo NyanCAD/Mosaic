@@ -35,7 +35,7 @@
 
 ;; UI hooks — no-ops in tests.
 (defn notebook-panel [_state] nil)
-(defn secondary-menu-items [_state] nil)
+(defn secondary-menu-items [_ui] nil)
 (defn open-schematic [_model-id] nil)
 (defn resolve-symbol-url [_path] nil)
 (defn init-extra! [] nil)

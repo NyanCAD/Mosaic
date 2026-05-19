@@ -39,19 +39,25 @@ On macOS: `brew install node openjdk`
 
 ## Setup
 
-From the repository root:
+From `frontend/mosaic/`:
 
 ```sh
-npm install
+npm install --workspaces=false
 ```
 
-This installs shadow-cljs, the JS dependencies used by the ClojureScript code,
-and `@vscode/vsce` for packaging. The extension's own `jsonc-parser` dependency
-is resolved from the root `node_modules` during compilation.
+This installs shadow-cljs and the JS dependencies used by the ClojureScript
+code into a real project-local `node_modules/`, which Shadow needs to resolve
+`react`, `react-dom`, and the other npm packages imported by the CLJS code.
+
+Inside GDSFactory+, Moon wraps this as:
+
+```sh
+npx moon run mosaic:compile-vscode
+```
 
 ## Build Commands
 
-All commands run from the **repository root** via shadow-cljs.
+All commands below run from **`frontend/mosaic/`**.
 
 ### Development (watch mode)
 

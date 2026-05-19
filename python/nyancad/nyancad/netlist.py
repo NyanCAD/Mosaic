@@ -193,6 +193,7 @@ class NyanCADMixin:
             ports = dev.get("nets")
             if not ports:
                 continue
+            ports = {k: (self.gnd if v == "GND" else v) for k, v in ports.items()}
             self._add_nyancad_element(dev_id, dev, ports, models, corners, sim)
 
     def _add_nyancad_element(self, dev_id, dev, ports, models, corners, sim):
