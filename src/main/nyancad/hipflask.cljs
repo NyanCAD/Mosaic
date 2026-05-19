@@ -70,14 +70,16 @@
                                    :limit limit})]
      (go (docs-into {} (<p! result) :value)))))
 
+(defn- find-docs [^js response]
+  (json->clj (.-docs response)))
+
 (defn get-mango-group
   ([db selector] (get-mango-group db selector nil))
   ([db selector limit]
    (go
      (let [result (find db #js{:selector (clj->js selector)
                                :limit limit})
-           response (<p! result)
-           docs (json->clj (.-docs response))]
+           docs (find-docs (<p! result))]
        (into {} (map (juxt :_id identity)) docs)))))
 
 (defn- init-cache [db group cache]

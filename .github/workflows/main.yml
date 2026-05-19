@@ -191,6 +191,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+          attestations: false
 
   publish-nyancad-server-to-pypi:
     name: Publish nyancad-server 🐍 distribution 📦 to PyPI
@@ -207,6 +208,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+          attestations: false
 
   deploy:
     name: Deploy to server 🚀
@@ -251,6 +253,11 @@ jobs:
     needs: [test-python-unit, test-cljs-unit, build]
     runs-on: ubuntu-latest
     steps:
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
       - name: Download VSCode extension
         uses: actions/download-artifact@v8
         with:
@@ -262,17 +269,10 @@ jobs:
         run: echo "path=$(ls artifacts/*.vsix)" >> "$GITHUB_OUTPUT"
 
       - name: Publish to Open VSX Registry
-        uses: HaaLeo/publish-vscode-extension@v2
-        with:
-          pat: ${{ secrets.OPEN_VSX_TOKEN }}
-          extensionFile: ${{ steps.vsix.outputs.path }}
+        run: npx ovsx publish "${{ steps.vsix.outputs.path }}" -p "${{ secrets.OPEN_VSX_TOKEN }}"
 
       - name: Publish to VS Code Marketplace
-        uses: HaaLeo/publish-vscode-extension@v2
-        with:
-          pat: ${{ secrets.VSCE_PAT }}
-          registryUrl: https://marketplace.visualstudio.com
-          extensionFile: ${{ steps.vsix.outputs.path }}
+        run: npx @vscode/vsce publish --packagePath "${{ steps.vsix.outputs.path }}" -p "${{ secrets.VSCE_PAT }}"
 
   create-github-release:
     name: Create GitHub Release
