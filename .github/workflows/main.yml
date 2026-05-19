@@ -181,9 +181,6 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [test-python-unit, test-cljs-unit, build]
     runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
     steps:
       - name: Download nyancad distributions
         uses: actions/download-artifact@v8
@@ -192,15 +189,15 @@ jobs:
           path: dist/
       - name: Publish nyancad distribution 📦 to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          attestations: false
 
   publish-nyancad-server-to-pypi:
     name: Publish nyancad-server 🐍 distribution 📦 to PyPI
     if: startsWith(github.ref, 'refs/tags/')
     needs: [test-python-unit, test-cljs-unit, build]
     runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
     steps:
       - name: Download nyancad-server distributions
         uses: actions/download-artifact@v8
@@ -209,6 +206,9 @@ jobs:
           path: dist/
       - name: Publish nyancad-server distribution 📦 to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          attestations: false
 
   deploy:
     name: Deploy to server 🚀
