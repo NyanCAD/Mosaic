@@ -1587,9 +1587,17 @@
 
 (defn commit-staged [dev]
   (let [named (update dev :name (fnil identity (make-name (:type dev))))
-        id (str group sep (:name named))]
-    (when (s/valid? :nyancad.mosaic.common/device named)
-      (swap! schematic assoc id named)
+        id (str group sep (:name named))
+        model-def (when (:model named)
+                    (get @modeldb (cm/model-key (:model named))))
+        defaults (when model-def
+                   (into {} (for [p (:props model-def) :when (:name p)]
+                              [(:name p) (or (:default p) "")])))
+        with-props (if defaults
+                     (update named :props #(merge defaults %))
+                     named)]
+    (when (s/valid? :nyancad.mosaic.common/device with-props)
+      (swap! schematic assoc id (assoc with-props :texture_key nil))
       (post-action!))))
 
 (defn transform-selected [tf]
@@ -2208,6 +2216,12 @@
                                           [model-selector-popup @device-type
                                            (fn [model-id]
                                              (reset! model (if model-id (cm/bare-id model-id) ""))
+                                             (when model-id
+                                               (when-let [mdef (get @modeldb (cm/model-key model-id))]
+                                                 (let [defaults (into {} (for [p (:props mdef) :when (:name p)]
+                                                                          [(:name p) (or (:default p) "")]))]
+                                                   (swap! props (fn [m] (merge defaults m))))))
+                                             (swap! schematic update key assoc :texture_key nil)
                                              (post-action!))]))}
             [cm/search]]]
           ; Get properties from built-in device and model
@@ -2228,7 +2242,8 @@
                                       (let [base (or current effective-default)]
                                         (str base "\n" label ": {self.props." path-str "}"))))
                                   (post-action!))))]
-            [cm/recursive-editor all-props props post-action!
+            [cm/recursive-editor all-props props
+             (fn [] (swap! schematic update key assoc :texture_key nil) (post-action!))
              (when @show-prop-insert
                (fn [path]
                  (let [already? (prop-in-template? path)]

@@ -110,12 +110,16 @@
                 raw-type (or (:type model-def) "ckt")
                 device-type (if (contains? cm/device-types raw-type) raw-type "ckt")
                 name (make-name device-type)
-                dev {:type device-type
-                     :model fqn
-                     :name name
-                     :transform cm/IV
-                     :x (Math/round x)
-                     :y (Math/round y)}]
+                defaults (into {} (for [p (:props model-def) :when (:name p)]
+                                    [(:name p) (or (:default p) "")]))
+                dev (cond-> {:type device-type
+                             :model fqn
+                             :name name
+                             :transform cm/IV
+                             :x (Math/round x)
+                             :y (Math/round y)
+                             :texture_key nil}
+                      (seq defaults) (assoc :props defaults))]
             (if (s/valid? :nyancad.mosaic.common/device dev)
               (swap! schematic assoc (str group ":" name) dev)
               (js/console.warn "Invalid device from drop:" (s/explain-str :nyancad.mosaic.common/device dev)))))))))
