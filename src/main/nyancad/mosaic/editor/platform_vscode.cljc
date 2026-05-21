@@ -90,11 +90,31 @@
                             :viewType "gdsfactoryplus.livewireNyancirEditor"})}
        [cm/sync-active]])])
 
+;; §§§
+;; @semantic Generates unique instance name for dropped device (e.g. C1, R2)
+;; @callgraph
+;;   - reads: @schematic (checks for name collisions)
+;;   - called-by: on-drop (names the placed device)
+;; @tags factory card dragging
+;; §§§
 (defn- make-name [device-type]
   (let [prefix (cm/initial device-type)]
     (first (remove #(contains? @schematic (str group ":" %))
                    (map #(str prefix %) (next (range)))))))
 
+;; §§§
+;; @semantic Mosaic drop handler for sidebar factory cards. Reads text/x-gfp-factory,
+;;   looks up model in PouchDB-backed modeldb, places device at SVG drop coordinates.
+;;   Requires model to be pre-loaded in modeldb (unlike Livewire which resolves on demand).
+;; @callgraph
+;;   - reads: text/x-gfp-factory JSON payload from FactoryCard.onDragStart
+;;   - reads: @modeldb (PouchDB-backed model definitions)
+;;   - calls: make-name (generates unique instance name)
+;;   - calls: cm/model-key (converts FQN to "models:" prefixed key)
+;;   - calls: cm/viewbox-coord (converts drop event to SVG coordinates)
+;;   - writes: @schematic (inserts new device document)
+;; @tags factory card dragging
+;; §§§
 (defn- on-drop [e]
   (.preventDefault e)
   (.stopPropagation e)
