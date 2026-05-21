@@ -1,20 +1,19 @@
 # SPDX-FileCopyrightText: 2024 Pepijn de Vos
 #
 # SPDX-License-Identifier: MPL-2.0
-"""
-Marimo-reactive file watcher for NyanCAD project directories.
+"""Marimo-reactive file watcher for NyanCAD project directories.
 
 Provides a ProjectState that watches .nyancir/.nyanlib files for content
 changes, triggering Marimo cell re-execution when schematics are edited.
 """
 
 import sys
-import time
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
-from marimo._runtime.watch._path import PathState, WATCHER_SLEEP_INTERVAL
+from marimo._runtime.watch._path import WATCHER_SLEEP_INTERVAL, PathState
 
 from .api import FileAPI
 

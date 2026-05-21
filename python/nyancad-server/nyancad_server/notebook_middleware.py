@@ -14,21 +14,19 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import httpx
-from starlette.responses import JSONResponse, RedirectResponse
-
-from starlette.types import ASGIApp, Receive, Scope, Send
-
 from marimo._config.manager import get_default_config_manager
+from marimo._server.api import lifespans
 from marimo._server.file_router import AppFileRouter
 from marimo._server.lsp import NoopLspServer
 from marimo._server.main import create_starlette_app
-from marimo._session.model import SessionMode
+from marimo._server.registry import LIFESPAN_REGISTRY
 from marimo._server.session_manager import SessionManager
 from marimo._server.tokens import AuthToken
-from marimo._utils.marimo_path import MarimoPath
-import marimo._server.api.lifespans as lifespans
-from marimo._server.registry import LIFESPAN_REGISTRY
+from marimo._session.model import SessionMode
 from marimo._utils.lifespans import Lifespans
+from marimo._utils.marimo_path import MarimoPath
+from starlette.responses import JSONResponse, RedirectResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .config import COUCHDB_URL
 
@@ -269,10 +267,9 @@ class UserNotebookMiddleware:
                     )
                     await response(scope, receive, send)
                     return
-                else:
-                    # WebSocket - close with error
-                    await send({"type": "websocket.close", "code": 4001})
-                    return
+                # WebSocket - close with error
+                await send({"type": "websocket.close", "code": 4001})
+                return
         else:
             username = "local"
 
@@ -299,9 +296,8 @@ class UserNotebookMiddleware:
                     response = JSONResponse({"error": "Access denied"}, status_code=403)
                     await response(scope, receive, send)
                     return
-                else:
-                    await send({"type": "websocket.close", "code": 4003})
-                    return
+                await send({"type": "websocket.close", "code": 4003})
+                return
 
             # Get or create notebook and marimo app
             notebook_path = self._get_notebook_path(url_username, schematic)

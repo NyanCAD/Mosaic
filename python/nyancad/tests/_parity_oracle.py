@@ -19,10 +19,8 @@ from __future__ import annotations
 import json
 import sys
 
+from nyancad.schemas import Component, Device, ModelMetadata, Wire
 from pydantic import TypeAdapter, ValidationError
-
-from nyancad.schemas import Device, Component, Wire, ModelMetadata
-
 
 ADAPTERS = {
     "device": TypeAdapter(Device),

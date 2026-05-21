@@ -1,24 +1,22 @@
 # SPDX-FileCopyrightText: 2022 Pepijn de Vos
 #
 # SPDX-License-Identifier: MPL-2.0
-"""
-This module communicates with CouchDB to fetch schematics, and generate SPICE netlists out of them.
+"""This module communicates with CouchDB to fetch schematics, and generate SPICE netlists out of them."""
 
-"""
-
+import hashlib
 import re
-from collections import namedtuple
-from InSpice.Spice.Netlist import Circuit, SubCircuit
-from InSpice.Spice.Parser.HighLevelParser import SpiceSource
-from InSpice.Spice.Parser.Translator import Builder
+import shutil
 
 # package download dependencies
 import sys
-import shutil
 import tempfile
-import hashlib
+from collections import namedtuple
 from pathlib import Path
 from urllib.parse import urlparse
+
+from InSpice.Spice.Netlist import Circuit, SubCircuit
+from InSpice.Spice.Parser.HighLevelParser import SpiceSource
+from InSpice.Spice.Parser.Translator import Builder
 
 # Conditional imports based on environment
 if sys.platform == "emscripten":  # Pyodide/WASM
@@ -48,8 +46,7 @@ except ImportError:
 
 
 def model_key(bare_id):
-    """
-    Convert a bare model ID to a database key with 'models:' prefix.
+    """Convert a bare model ID to a database key with 'models:' prefix.
     Returns None if input is None. Asserts that non-None input is not already prefixed.
     """
     if bare_id is None:
@@ -63,8 +60,7 @@ def model_key(bare_id):
 
 
 def bare_id(model_key_str):
-    """
-    Extract bare ID from a model database key, removing 'models:' prefix.
+    """Extract bare ID from a model database key, removing 'models:' prefix.
     Returns None if input is None. Asserts that non-None input is prefixed.
     """
     if model_key_str is None:
@@ -319,14 +315,11 @@ class NyanCADMixin:
         elif device_type in {"npn", "pnp"}:
             self.Q(name, p("C"), p("B"), p("E"), **props)
 
-        else:  # subcircuit
-            if model_id in models:
-                port_list = [
-                    p(pn) for pn in default_port_order(models[model_id]["ports"])
-                ]
-                params = props.copy()
-                model_name = params.pop("model", model_id)
-                self.X(name, model_name, *port_list, **params)
+        elif model_id in models:
+            port_list = [p(pn) for pn in default_port_order(models[model_id]["ports"])]
+            params = props.copy()
+            model_name = params.pop("model", model_id)
+            self.X(name, model_name, *port_list, **params)
 
     @staticmethod
     def _default_port_list(device_type, ports, p):
@@ -340,21 +333,19 @@ class NyanCADMixin:
             "diode",
         }:
             return [p("P"), p("N")]
-        elif device_type in {"pmos", "nmos"}:
+        if device_type in {"pmos", "nmos"}:
             bulk = p("B") if "B" in ports else None
             return [p("D"), p("G"), p("S")] + ([bulk] if bulk else [])
-        elif device_type in {"npn", "pnp"}:
+        if device_type in {"npn", "pnp"}:
             return [p("C"), p("B"), p("E")]
-        else:
-            return []
+        return []
 
 
 class NyanCircuit(NyanCADMixin, Circuit):
     """InSpice Circuit populated from NyanCAD schematic data."""
 
     def __init__(self, name, schem, corners=None, sim="NgSpice", **kwargs):
-        """
-        Create InSpice Circuit from full NyanCAD schematic data.
+        """Create InSpice Circuit from full NyanCAD schematic data.
 
         Parameters:
         - name: Top-level schematic name (key in schem)
@@ -522,8 +513,7 @@ class NyanSubCircuit(NyanCADMixin, SubCircuit):
     def __init__(
         self, name, nodes, docs, models, corners=None, sim="NgSpice", **kwargs
     ):
-        """
-        Create InSpice SubCircuit from NyanCAD docs.
+        """Create InSpice SubCircuit from NyanCAD docs.
 
         Parameters:
         - name: Subcircuit name
@@ -540,8 +530,7 @@ class NyanSubCircuit(NyanCADMixin, SubCircuit):
 async def inspice_netlist(
     name, schem, corners=None, sim="NgSpice", *, corner=None, **kwargs
 ):
-    """
-    Convenience function to create InSpice Circuit from NyanCAD schematic.
+    """Convenience function to create InSpice Circuit from NyanCAD schematic.
 
     Parameters:
     - name: Top-level schematic name
@@ -559,7 +548,9 @@ async def inspice_netlist(
     Usage:
     ```
     circuit = await inspice_netlist("top$top", schem_data)
-    circuit = await inspice_netlist("top$top", schem_data, corners=["mos_ff", "cap_bcs"])
+    circuit = await inspice_netlist(
+        "top$top", schem_data, corners=["mos_ff", "cap_bcs"]
+    )
     ```
     """
     if corner is not None and corners is None:
@@ -572,8 +563,7 @@ async def inspice_netlist(
 async def inspice_netlist_from_api(
     api, name, corners=None, sim="NgSpice", *, corner=None, **kwargs
 ):
-    """
-    Create InSpice Circuit from any SchematicAPI source (Bridge or Server).
+    """Create InSpice Circuit from any SchematicAPI source (Bridge or Server).
 
     Parameters:
     - api: SchematicAPI instance (BridgeAPI or ServerAPI)
@@ -589,6 +579,7 @@ async def inspice_netlist_from_api(
     Usage with BridgeAPI:
     ```
     from nyancad.api import BridgeAPI
+
     bridge = schematic_bridge()
     api = BridgeAPI(bridge)
     circuit = await inspice_netlist_from_api(api, "my_circuit")
@@ -597,10 +588,9 @@ async def inspice_netlist_from_api(
     Usage with ServerAPI:
     ```
     from nyancad.api import ServerAPI
+
     async with ServerAPI(
-        "https://api.nyancad.com/userdb-alice",
-        username="alice",
-        password="secret"
+        "https://api.nyancad.com/userdb-alice", username="alice", password="secret"
     ) as api:
         circuit = await inspice_netlist_from_api(api, "my_circuit")
     ```

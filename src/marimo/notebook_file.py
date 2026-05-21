@@ -23,7 +23,6 @@ def _(bodeplot, df, hv, simtabs, sweepplot, timeplot):
         plot = df
 
     plot
-    return
 
 
 @app.cell(hide_code=True)
@@ -420,7 +419,6 @@ def _(mo, schem_data, schem_name):
         )
     )
     ground_warning
-    return
 
 
 @app.cell(hide_code=True)
@@ -453,14 +451,14 @@ def _():
             "DYLD_LIBRARY_PATH", ""
         )
 
-    import marimo as mo
-    import pandas as pd
-    import numpy as np
     import holoviews as hv
-    from nyancad.watch import watch_project_dir, file_schematic
-    from nyancad.netlist import inspice_netlist
-    from nyancad.plot import timeplot, sweepplot, bodeplot
+    import marimo as mo
+    import numpy as np
+    import pandas as pd
     from InSpice import Simulator
+    from nyancad.netlist import inspice_netlist
+    from nyancad.plot import bodeplot, sweepplot, timeplot
+    from nyancad.watch import file_schematic, watch_project_dir
 
     return (
         Simulator,
@@ -841,7 +839,6 @@ def _(
     widget_state["ac_sens_points"] = ac_sens_points.value
     widget_state["ac_sens_start_freq"] = ac_sens_start_freq.value
     widget_state["ac_sens_stop_freq"] = ac_sens_stop_freq.value
-    return
 
 
 if __name__ == "__main__":

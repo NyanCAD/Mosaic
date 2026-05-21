@@ -17,9 +17,7 @@ import shutil
 from pathlib import Path
 
 import pytest
-
 from nyancad.api import FileAPI, ServerAPI
-
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

@@ -5,15 +5,15 @@ and reject invalid input. Focus is on the data contract, not Pydantic internals.
 """
 
 import pytest
-from pydantic import ValidationError, TypeAdapter
 from nyancad.schemas import (
-    Wire,
     Component,
-    ModelEntry,
-    PortEntry,
-    ModelMetadata,
     Device,
+    ModelEntry,
+    ModelMetadata,
+    PortEntry,
+    Wire,
 )
+from pydantic import TypeAdapter, ValidationError
 
 DeviceAdapter = TypeAdapter(Device)
 

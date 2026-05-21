@@ -8,16 +8,15 @@ implementation (which is the source of truth for editor display).
 
 import pytest
 from nyancad.netlist import (
-    model_key,
-    bare_id,
-    SchemId,
-    default_port_order,
-    _select_corner,
-    _eval_params,
     NyanCADMixin,
     NyanCircuit,
+    SchemId,
+    _eval_params,
+    _select_corner,
+    bare_id,
+    default_port_order,
+    model_key,
 )
-
 
 # ---------------------------------------------------------------------------
 # model_key / bare_id — ID prefix conversion
@@ -100,7 +99,8 @@ class TestDefaultPortOrder:
 
     This is the fallback when a model entry doesn't declare ``port-order``.
     The SUBCKT definition and every X call use the same function, so the
-    specific ordering is arbitrary as long as it's deterministic."""
+    specific ordering is arbitrary as long as it's deterministic.
+    """
 
     def test_sorts_by_name(self):
         ports = [
@@ -259,7 +259,8 @@ class TestEvalParams:
     through; arithmetic expressions are substituted and wrapped in braces so
     SPICE evaluates them. The rename passthrough preserves non-numeric values
     (model names) which would break if SPICE tried to evaluate them, and keeps
-    the original prop type."""
+    the original prop type.
+    """
 
     def test_empty_returns_device_props(self):
         props = {"resistance": "1k"}
@@ -274,7 +275,8 @@ class TestEvalParams:
 
     def test_rename_preserves_model_name(self):
         """Non-numeric values (like model names) must NOT be wrapped in braces,
-        since SPICE would try to evaluate them as parameter expressions."""
+        since SPICE would try to evaluate them as parameter expressions.
+        """
         assert _eval_params({"model": "name"}, {"name": "nmos_3p3"}) == {
             "model": "nmos_3p3"
         }
@@ -304,7 +306,8 @@ class TestEvalParams:
     def test_arithmetic_with_spice_suffix_notation(self):
         """SPICE suffix notation reaches SPICE intact — the main reason to let
         SPICE evaluate instead of Python. 'width * 1e-6' with width='10u'
-        becomes '{10u * 1e-6}' which ngspice evaluates to 1e-11."""
+        becomes '{10u * 1e-6}' which ngspice evaluates to 1e-11.
+        """
         result = _eval_params({"w": "width * 1e-6"}, {"width": "10u"})
         assert result["w"] == "{10u * 1e-6}"
 
@@ -317,14 +320,16 @@ class TestEvalParams:
 
     def test_unknown_identifier_preserved(self):
         """Identifiers not in device_props stay as-is so SPICE can resolve them
-        (e.g. SPICE math functions, model-level parameters)."""
+        (e.g. SPICE math functions, model-level parameters).
+        """
         assert _eval_params({"x": "sqrt(width)"}, {"width": "10u"}) == {
             "x": "{sqrt(10u)}"
         }
 
     def test_identifier_regex_skips_numeric_literals(self):
         """Identifier match uses word boundary, so 'e' in '2e-3' is not
-        mistaken for a variable — even if 'e' exists in device_props."""
+        mistaken for a variable — even if 'e' exists in device_props.
+        """
         assert _eval_params({"x": "2e-3"}, {"e": "wrong"}) == {"x": "{2e-3}"}
 
     def test_constant_expression_wrapped(self):
@@ -438,7 +443,8 @@ class TestModelPropDefaultsFallback:
 
 class TestPopulateFromNyancad:
     """populate_from_nyancad reads pre-annotated `:nets` from each device doc
-    and emits SPICE with those net names — no flood-fill, no geometry."""
+    and emits SPICE with those net names — no flood-fill, no geometry.
+    """
 
     def _schem(self, devices):
         """Minimal full schem dict with a single top-level schematic."""
@@ -446,7 +452,8 @@ class TestPopulateFromNyancad:
 
     def test_emits_nets_directly(self):
         """Resistor with :nets {'P': 'vdd', 'N': 'gnd'} produces
-        a SPICE line referencing 'vdd' and 'gnd'."""
+        a SPICE line referencing 'vdd' and 'gnd'.
+        """
         schem = self._schem(
             {
                 "top:R1": {
@@ -468,7 +475,8 @@ class TestPopulateFromNyancad:
 
     def test_skips_devices_without_nets(self):
         """A device without :nets is treated as disconnected — no SPICE element
-        is emitted for it. Legacy data degrades gracefully."""
+        is emitted for it. Legacy data degrades gracefully.
+        """
         schem = self._schem(
             {
                 "top:R_disconnected": {
@@ -488,7 +496,8 @@ class TestPopulateFromNyancad:
 
     def test_skips_structural_types(self):
         """Wires, text, and port docs never produce SPICE elements even if
-        they accidentally carry a :nets field."""
+        they accidentally carry a :nets field.
+        """
         schem = self._schem(
             {
                 "top:W1": {
@@ -525,7 +534,8 @@ class TestPopulateFromNyancad:
 
     def test_distinct_nets_for_distinct_devices(self):
         """Two resistors with different :nets produce two independent
-        SPICE elements referencing the declared nets."""
+        SPICE elements referencing the declared nets.
+        """
         schem = self._schem(
             {
                 "top:R1": {

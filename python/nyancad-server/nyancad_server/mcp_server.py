@@ -4,19 +4,18 @@ This module provides an MCP server that exposes tools and resources
 for interacting with NyanCAD projects, schematics, and simulations.
 """
 
-from typing import Annotated, Any, Dict, Optional
+from typing import Annotated, Any
 
 import httpx
 import jwt
-from mcp.server.fastmcp import FastMCP, Context
 from mcp.server.auth.settings import AuthSettings
-from pydantic import AnyHttpUrl, BaseModel, Field, TypeAdapter
-
+from mcp.server.fastmcp import Context, FastMCP
 from nyancad.api import ServerAPI
 from nyancad.netlist import NyanCircuit
 from nyancad.schemas import Device, ModelMetadata
+from pydantic import AnyHttpUrl, BaseModel, Field, TypeAdapter
 
-from .config import SERVER_URL, COUCHDB_URL
+from .config import COUCHDB_URL, SERVER_URL
 from .oauth import JWTTokenVerifier
 
 # Create TypeAdapter for discriminated union validation
@@ -29,7 +28,7 @@ class SchematicResponse(BaseModel):
     Contains validated devices with computed port locations and a generated SPICE netlist.
     """
 
-    schematic: Dict[str, Device] = Field(
+    schematic: dict[str, Device] = Field(
         ...,
         description="Devices keyed by full document ID (format: 'schematic_id:device_name')",
     )
@@ -154,8 +153,8 @@ async def hello(ctx: Context) -> dict[str, Any]:
 @mcp.tool()
 async def get_schematic(
     ctx: Context,
-    id: Annotated[Optional[str], "Schematic ID (UUID format)"] = None,
-    name: Annotated[Optional[str], "Schematic name to search for"] = None,
+    id: Annotated[str | None, "Schematic ID (UUID format)"] = None,
+    name: Annotated[str | None, "Schematic name to search for"] = None,
 ) -> SchematicResponse:
     """Get schematic with computed port locations and SPICE netlist.
 
@@ -196,7 +195,7 @@ async def get_schematic(
                         # Exact match - use immediately
                         schematic_id = normalize_to_bare_id(model_id)
                         break
-                    elif first_partial is None:
+                    if first_partial is None:
                         first_partial = model_id
             else:
                 # No exact match found, use first partial match if available
@@ -236,10 +235,8 @@ async def get_schematic(
 @mcp.tool()
 async def list_library(
     ctx: Context,
-    filter: Annotated[Optional[str], "Filter by model name (substring match)"] = None,
-    tags: Annotated[
-        Optional[list[str]], "Filter by tags (e.g., ['IHP', 'bjt'])"
-    ] = None,
+    filter: Annotated[str | None, "Filter by model name (substring match)"] = None,
+    tags: Annotated[list[str] | None, "Filter by tags (e.g., ['IHP', 'bjt'])"] = None,
     include_models: Annotated[bool, "Include full model entries in results"] = False,
 ) -> dict[str, ModelMetadata]:
     """List available component models with optional filtering.
@@ -312,7 +309,7 @@ async def bulk_update_schematic(
             doc = device.model_dump(by_alias=True, exclude_none=True)
 
             # Normalize model field to bare ID if present
-            if "model" in doc and doc["model"]:
+            if doc.get("model"):
                 doc["model"] = normalize_to_bare_id(doc["model"])
 
             # Strip editor-computed net info — the editor re-annotates on

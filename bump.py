@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Version bumping script for Mosaic packages.
+"""Version bumping script for Mosaic packages.
 
 Usage:
     ./bump.py <nyancad_bump> <server_bump> <tag_bump>

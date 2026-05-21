@@ -7,9 +7,9 @@ These schemas mirror the ClojureScript specs in common.cljs and provide
 validation and documentation for the Python API and MCP tools.
 """
 
-from typing import Annotated, Any, Dict, Literal, Optional, Union
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Annotated, Any, Literal
 
+from pydantic import BaseModel, ConfigDict, Field
 
 # Device type enum — the single source of truth is
 # nyancad.mosaic.common/device-types (common.cljc). Keep this Literal in
@@ -72,12 +72,12 @@ class DeviceBase(BaseModel):
     id: str = Field(
         alias="_id", description="Document ID (format: 'schematic_id:device_name')"
     )
-    rev: Optional[str] = Field(
+    rev: str | None = Field(
         None,
         alias="_rev",
         description="CouchDB revision. Required for updates to prevent conflicts.",
     )
-    deleted: Optional[bool] = Field(
+    deleted: bool | None = Field(
         None, alias="_deleted", description="Set to true to delete this document"
     )
 
@@ -89,7 +89,7 @@ class DeviceBase(BaseModel):
     )
 
     # Net assignments (read-only)
-    nets: Optional[Dict[str, str]] = Field(
+    nets: dict[str, str] | None = Field(
         None,
         description=(
             "Net assignments for this device: port_name → net_name. "
@@ -121,7 +121,7 @@ class Wire(DeviceBase):
     device_type: Literal["wire"] = Field(alias="type")
     rx: float = Field(description="Relative X delta (end_x - start_x)")
     ry: float = Field(description="Relative Y delta (end_y - start_y)")
-    net: Optional[str] = Field(
+    net: str | None = Field(
         None,
         description=(
             "Net name this wire carries. Computed and persisted by the editor. "
@@ -173,19 +173,19 @@ class Component(DeviceBase):
     )
 
     # Optional component fields
-    model: Optional[str] = Field(
+    model: str | None = Field(
         None,
         description="Model reference (bare ID without 'models:' prefix) for subcircuit components",
     )
-    props: Optional[dict[str, Any]] = Field(
+    props: dict[str, Any] | None = Field(
         None,
         description="Component properties dict. Names and values depend on component type. "
         "Values use SPICE notation (1k, 10u, 100m, etc).",
     )
-    variant: Optional[str] = Field(
+    variant: str | None = Field(
         None, description="Component variant (e.g., 'ground' for port type)"
     )
-    template: Optional[str] = Field(None, description="Custom SPICE template")
+    template: str | None = Field(None, description="Custom SPICE template")
 
 
 class ModelEntry(BaseModel):
@@ -200,34 +200,32 @@ class ModelEntry(BaseModel):
     language: str = Field(
         ..., description="Entry language: 'spice', 'spectre', 'verilog', 'vhdl'"
     )
-    implementation: Optional[str] = Field(
+    implementation: str | None = Field(
         None,
         description="Simulator/tool name this entry targets (e.g., 'NgSpice', 'Xyce')",
     )
-    name: Optional[str] = Field(
+    name: str | None = Field(
         None,
         description="Model reference name override (used instead of parent model name)",
     )
-    spice_type: Optional[str] = Field(
+    spice_type: str | None = Field(
         None,
         alias="spice-type",
         description="SPICE element type letter (R, C, M, X, SUBCKT, etc.)",
     )
-    library: Optional[str] = Field(
+    library: str | None = Field(
         None, description="Path or URL to external library file"
     )
-    sections: Optional[list[str]] = Field(
+    sections: list[str] | None = Field(
         None, description="Available corner/section names in the library"
     )
-    code: Optional[str] = Field(
-        None, description="Inline SPICE/HDL code for this model"
-    )
-    port_order: Optional[list[str]] = Field(
+    code: str | None = Field(None, description="Inline SPICE/HDL code for this model")
+    port_order: list[str] | None = Field(
         None,
         alias="port-order",
         description="Explicit port connection order for SPICE netlist generation",
     )
-    params: Optional[Dict[str, str]] = Field(
+    params: dict[str, str] | None = Field(
         None, description="Default parameter values for this model entry"
     )
 
@@ -255,11 +253,11 @@ class ModelMetadata(BaseModel):
 
     # CouchDB metadata
     id: str = Field(alias="_id", description="Full model ID with 'models:' prefix")
-    rev: Optional[str] = Field(None, alias="_rev", description="CouchDB revision")
+    rev: str | None = Field(None, alias="_rev", description="CouchDB revision")
 
     # Model metadata
     name: str = Field(..., description="Human-readable display name (NOT the ID)")
-    type: Optional[str] = Field(
+    type: str | None = Field(
         None, description="Component type (resistor, capacitor, ckt, etc.)"
     )
     tags: list[str] = Field(
@@ -272,31 +270,31 @@ class ModelMetadata(BaseModel):
     # returning a model to API consumers. Declared Optional here so validation
     # accepts either shape: dicts arriving from CouchDB (no has_models) and
     # dicts that have been through the MCP server (has_models injected).
-    has_models: Optional[bool] = Field(
+    has_models: bool | None = Field(
         None,
         description="Whether model entries exist for netlist generation (derived; set by mcp_server.py, not stored in DB)",
     )
-    models: Optional[list[ModelEntry]] = Field(
+    models: list[ModelEntry] | None = Field(
         None,
         description="Flat list of model/template entries by language and implementation",
     )
 
     # Port and parameter definitions
-    ports: Optional[list[PortEntry]] = Field(
+    ports: list[PortEntry] | None = Field(
         None, description="Port definitions as typed entries with side"
     )
-    props: Optional[list[Dict[str, str]]] = Field(
+    props: list[dict[str, str]] | None = Field(
         None, description="Parameter definitions"
     )
 
     # Symbol graphics
-    symbol: Optional[str] = Field(
+    symbol: str | None = Field(
         None, description="URL to image rendered inside the schematic symbol"
     )
 
 
 # Discriminated union - Pydantic routes to Wire or Component based on 'type' field
-Device = Annotated[Union[Wire, Component], Field(discriminator="device_type")]
+Device = Annotated[Wire | Component, Field(discriminator="device_type")]
 """Discriminated union of Wire and Component.
 
 Pydantic automatically selects the correct type based on the 'type' field:

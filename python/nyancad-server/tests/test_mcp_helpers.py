@@ -1,9 +1,9 @@
 """Tests for pure helper functions in nyancad_server.mcp_server."""
 
 from nyancad_server.mcp_server import (
-    str_to_hex,
     normalize_to_bare_id,
     normalize_to_model_key,
+    str_to_hex,
 )
 
 
@@ -13,7 +13,8 @@ class TestStrToHex:
     Used to build CouchDB userdb names: userdb-{str_to_hex(username)}.
     CouchDB's couch_peruser uses hex(utf8(username)) with zero-padded
     per-byte encoding. The ClojureScript str-to-hex in common.cljc uses
-    the same encoding — both must stay consistent."""
+    the same encoding — both must stay consistent.
+    """
 
     def test_lowercase_ascii(self):
         assert str_to_hex("alice") == "616c696365"
@@ -37,13 +38,15 @@ class TestStrToHex:
 
     def test_matches_python_encode_utf8_hex(self):
         """str_to_hex equals s.encode('utf-8').hex() — the canonical
-        Python expression for UTF-8 byte hex encoding."""
+        Python expression for UTF-8 byte hex encoding.
+        """
         for s in ["alice", "test@example.com", "", " ", "é", "日本語"]:
             assert str_to_hex(s) == s.encode("utf-8").hex(), f"Failed for {s!r}"
 
     def test_non_ascii_utf8_bytes(self):
         """Non-ASCII chars encode as UTF-8 bytes (not Unicode code points).
-        'é' = U+00E9 → UTF-8 bytes 0xc3 0xa9 → 'c3a9'."""
+        'é' = U+00E9 → UTF-8 bytes 0xc3 0xa9 → 'c3a9'.
+        """
         assert str_to_hex("é") == "c3a9"
 
     def test_multi_byte_unicode(self):
@@ -53,7 +56,8 @@ class TestStrToHex:
 
     def test_zero_padded_low_bytes(self):
         """Bytes < 16 produce 2 hex digits with leading zero so concatenation
-        is unambiguously decodable."""
+        is unambiguously decodable.
+        """
         assert str_to_hex("\t") == "09"  # tab = 0x09
         assert str_to_hex("\n") == "0a"  # newline = 0x0a
 

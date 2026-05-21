@@ -1,5 +1,4 @@
-"""
-NyanCAD Python Library
+"""NyanCAD Python Library
 
 A Python library for the NyanCAD schematic editor with anywidget integration.
 Provides live access to schematic data from marimo notebooks.

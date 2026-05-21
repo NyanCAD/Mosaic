@@ -1,17 +1,15 @@
-"""
-Anywidget integration for Mosaic schematic editor.
+"""Anywidget integration for Mosaic schematic editor.
 
 Provides a live bridge to schematic data from the Mosaic editor via PouchDB.
 """
 
 import anywidget
-import traitlets
 import marimo as mo
+import traitlets
 
 
 class SchematicBridge(anywidget.AnyWidget):
-    """
-    An anywidget that provides live bidirectional communication with the Mosaic editor.
+    """An anywidget that provides live bidirectional communication with the Mosaic editor.
 
     The widget displays a simple status indicator and automatically syncs schematic
     data from the Mosaic editor's PouchDB storage into the Python model, while also
@@ -44,8 +42,7 @@ export default { render };
 
 
 def schematic_bridge():
-    """
-    Create a SchematicBridge widget for use in Marimo notebooks.
+    """Create a SchematicBridge widget for use in Marimo notebooks.
 
     Returns:
         SchematicBridge: An instance of the SchematicBridge widget.

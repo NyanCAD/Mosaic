@@ -12,12 +12,6 @@ import uuid
 
 import httpx
 import jwt
-from pydantic import AnyHttpUrl, AnyUrl
-from starlette.exceptions import HTTPException
-from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
-from starlette.routing import Route
-
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
@@ -26,16 +20,21 @@ from mcp.server.auth.provider import (
     RefreshToken,
     construct_redirect_uri,
 )
-from mcp.server.auth.routes import create_auth_routes, cors_middleware
+from mcp.server.auth.routes import cors_middleware, create_auth_routes
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from pydantic import AnyHttpUrl, AnyUrl
+from starlette.exceptions import HTTPException
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
 
 from .config import (
+    COUCHDB_ADMIN_PASS,
+    COUCHDB_ADMIN_USER,
+    COUCHDB_URL,
     JWT_SECRET,
     SERVER_URL,
-    COUCHDB_URL,
-    COUCHDB_ADMIN_USER,
-    COUCHDB_ADMIN_PASS,
 )
 
 logger = logging.getLogger(__name__)
@@ -851,7 +850,6 @@ oauth_provider = CouchDBOAuthProvider()
 # Create OAuth routes using MCP SDK
 def create_oauth_routes() -> list[Route]:
     """Create all OAuth routes including standard OAuth endpoints and custom login endpoints."""
-
     # OAuth settings for MCP (standard OAuth paths at root level)
     auth_settings = AuthSettings(
         issuer_url=AnyHttpUrl(SERVER_URL),

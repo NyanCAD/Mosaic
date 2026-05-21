@@ -2,13 +2,14 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import functools
+
 import holoviews as hv
 import numpy as np
 import pandas as pd
-import functools
-from holoviews.streams import Stream
-from holoviews.operation.downsample import downsample1d
 from bokeh.models import WheelZoomTool
+from holoviews.operation.downsample import downsample1d
+from holoviews.streams import Stream
 
 try:
     import scipy.fft

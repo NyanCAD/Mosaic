@@ -1,47 +1,48 @@
 """Main ASGI server for NyanCAD with marimo integration."""
 
 import argparse
+import re
 import sys
 from importlib import resources
 from urllib.parse import quote
-import re
 
 import httpx
 import uvicorn
-from starlette.applications import Starlette
-from starlette.staticfiles import StaticFiles
-from starlette.routing import Route, Mount
-from starlette.responses import JSONResponse, Response, StreamingResponse
-from starlette.requests import Request
-from starlette.background import BackgroundTask
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-from .mcp_server import mcp
-from .oauth import create_oauth_routes
-from .config import (
-    COUCHDB_URL,
-    COUCHDB_ADMIN_USER,
-    COUCHDB_ADMIN_PASS,
-    NOTEBOOKS_DIR,
-    DeploymentMode,
-)
-from .notebook_middleware import UserNotebookMiddleware
+from marimo._config.manager import get_default_config_manager
 
 # Marimo server components (mirroring start.py)
-import marimo._server.api.lifespans as lifespans
-from marimo._config.manager import get_default_config_manager
+from marimo._server.api import lifespans
 from marimo._server.file_router import AppFileRouter
 from marimo._server.lsp import NoopLspServer
 from marimo._server.main import create_starlette_app
-from marimo._session.model import SessionMode
 from marimo._server.registry import LIFESPAN_REGISTRY
 from marimo._server.session_manager import SessionManager
 from marimo._server.tokens import AuthToken
 from marimo._server.utils import initialize_asyncio, initialize_fd_limit
 from marimo._server.uvicorn_utils import initialize_signals
+from marimo._session.model import SessionMode
 from marimo._utils.lifespans import Lifespans
 from marimo._utils.marimo_path import MarimoPath
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from starlette.applications import Starlette
+from starlette.background import BackgroundTask
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response, StreamingResponse
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
+
+from .config import (
+    COUCHDB_ADMIN_PASS,
+    COUCHDB_ADMIN_USER,
+    COUCHDB_URL,
+    NOTEBOOKS_DIR,
+    DeploymentMode,
+)
+from .mcp_server import mcp
+from .notebook_middleware import UserNotebookMiddleware
+from .oauth import create_oauth_routes
 
 # Rate limiting
 limiter = Limiter(key_func=get_remote_address)
@@ -303,7 +304,7 @@ async def workspace_endpoint(request: Request):
 
             return JSONResponse({"workspace": db_name, "members": members})
 
-        elif request.method == "PUT":
+        if request.method == "PUT":
             body = await request.json()
             new_members = body.get("members", {}).get("names", [])
 
@@ -332,11 +333,10 @@ async def workspace_endpoint(request: Request):
                     return JSONResponse(
                         {"error": "Not a member of this workspace"}, status_code=403
                     )
-            else:
-                # Creating new workspace - ensure creator is in members
-                if username not in new_members:
-                    new_members = [username] + new_members
-                    body["members"] = {"names": new_members}
+            # Creating new workspace - ensure creator is in members
+            elif username not in new_members:
+                new_members = [username] + new_members
+                body["members"] = {"names": new_members}
 
             # Calculate membership changes
             added = set(new_members) - set(old_members)
@@ -387,7 +387,7 @@ async def workspace_endpoint(request: Request):
                 {"ok": True, "workspace": db_name, "created": not db_exists}
             )
 
-        elif request.method == "DELETE":
+        if request.method == "DELETE":
             # Get current security to verify membership
             resp = await client.get(
                 f"{COUCHDB_URL}/{db_name}/_security",
@@ -475,7 +475,7 @@ async def github_proxy_endpoint(request: Request):
 
         print(f"Proxy error: {e}")
         print(traceback.format_exc())
-        return JSONResponse({"error": f"Proxy error: {str(e)}"}, status_code=500)
+        return JSONResponse({"error": f"Proxy error: {e!s}"}, status_code=500)
 
 
 def create_app(
@@ -609,7 +609,7 @@ def create_app(
         app.mount("/notebook", marimo_app)
         app.mount("/", StaticFiles(directory=static_path, html=True), name="static")
         return app
-    elif mode == DeploymentMode.LAN:
+    if mode == DeploymentMode.LAN:
         # LAN mode: mount static files first, then wrap with middleware
         # Middleware intercepts /notebook routes, passes through to app for others
         app.mount("/", StaticFiles(directory=static_path, html=True), name="static")
@@ -621,10 +621,9 @@ def create_app(
             host=host,
             port=port,
         )
-    else:
-        # WASM mode: no notebook mounted (client-side execution)
-        app.mount("/", StaticFiles(directory=static_path, html=True), name="static")
-        return app
+    # WASM mode: no notebook mounted (client-side execution)
+    app.mount("/", StaticFiles(directory=static_path, html=True), name="static")
+    return app
 
 
 def create_wasm_app() -> Starlette:

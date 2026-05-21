@@ -23,7 +23,6 @@ def _(bodeplot, df, hv, simtabs, sweepplot, timeplot):
         plot = df
 
     plot
-    return
 
 
 @app.cell(hide_code=True)
@@ -426,7 +425,6 @@ def _(mo, reader):
         )
     )
     ground_warning
-    return
 
 
 @app.cell(hide_code=True)
@@ -463,14 +461,15 @@ async def _():
         await response.unpack_archive(format="zip", extract_dir="/usr/lib")
 
     import os
-    import marimo as mo
-    import pandas as pd
-    import numpy as np
+
     import holoviews as hv
+    import marimo as mo
+    import numpy as np
+    import pandas as pd
+    from InSpice import Simulator
     from nyancad.anywidget import schematic_bridge
     from nyancad.netlist import inspice_netlist
-    from nyancad.plot import timeplot, sweepplot, bodeplot
-    from InSpice import Simulator
+    from nyancad.plot import bodeplot, sweepplot, timeplot
 
     return (
         Simulator,
@@ -843,7 +842,6 @@ def _(
     widget_state["ac_sens_points"] = ac_sens_points.value
     widget_state["ac_sens_start_freq"] = ac_sens_start_freq.value
     widget_state["ac_sens_stop_freq"] = ac_sens_stop_freq.value
-    return
 
 
 @app.cell
@@ -851,7 +849,6 @@ def _(analysis, op_back_annotate, reader, simtabs):
     if simtabs.value == "op" and op_back_annotate.value:
         data = {k: float(v[0]) for k, v in analysis.nodes.items()}
         reader.simulation_data = {"op": data}
-    return
 
 
 if __name__ == "__main__":

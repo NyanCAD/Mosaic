@@ -1,8 +1,7 @@
 # SPDX-FileCopyrightText: 2024 Pepijn de Vos
 #
 # SPDX-License-Identifier: MPL-2.0
-"""
-Unified API for accessing NyanCAD schematic data.
+"""Unified API for accessing NyanCAD schematic data.
 
 Provides abstract interface with three implementations:
 - BridgeAPI: Browser PouchDB via anywidget (no HTTP calls)
@@ -15,8 +14,10 @@ import re
 from abc import ABC, abstractmethod
 from collections import deque
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+
 import httpx
+
 from .netlist import model_key
 
 
@@ -34,7 +35,6 @@ class SchematicAPI(ABC):
             Tuple of (sequence_number, {document_id: document_data})
             Sequence number may be None for implementations without sequences.
         """
-        pass
 
     async def get_all_schem_docs(self, name: str) -> tuple[Any, dict[str, dict]]:
         """Get schematic with all subcircuits and models via BFS.
@@ -104,7 +104,7 @@ class SchematicAPI(ABC):
 
     @abstractmethod
     async def get_library(
-        self, filter: Optional[str] = None, tags: Optional[list[str]] = None
+        self, filter: str | None = None, tags: list[str] | None = None
     ) -> dict[str, dict]:
         """List available models and schematics with filtering.
 
@@ -115,7 +115,6 @@ class SchematicAPI(ABC):
         Returns:
             Dictionary of {model_id: model_data} with complete model definitions
         """
-        pass
 
 
 class BridgeAPI(SchematicAPI):
@@ -153,8 +152,8 @@ class BridgeAPI(SchematicAPI):
 
     async def get_library(
         self,
-        filter: Optional[str] = None,  # noqa: ARG002
-        tags: Optional[list[str]] = None,  # noqa: ARG002
+        filter: str | None = None,
+        tags: list[str] | None = None,
     ) -> dict[str, dict]:
         """Not implemented - adds complexity not needed for bridge mode.
 
@@ -174,9 +173,9 @@ class ServerAPI(SchematicAPI):
     def __init__(
         self,
         db_url: str,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-        auth_token: Optional[str] = None,
+        username: str | None = None,
+        password: str | None = None,
+        auth_token: str | None = None,
     ):
         """Create ServerAPI with CouchDB connection.
 
@@ -243,7 +242,7 @@ class ServerAPI(SchematicAPI):
 
         return seq, docs
 
-    def _build_selector(self, filter: Optional[str], tags: Optional[list[str]]) -> dict:
+    def _build_selector(self, filter: str | None, tags: list[str] | None) -> dict:
         """Build Mango selector for tag and name filtering.
 
         Args:
@@ -267,7 +266,7 @@ class ServerAPI(SchematicAPI):
         return selector
 
     async def get_library(
-        self, filter: Optional[str] = None, tags: Optional[list[str]] = None
+        self, filter: str | None = None, tags: list[str] | None = None
     ) -> dict[str, dict]:
         """List available models with filtering via CouchDB views/queries.
 
@@ -450,7 +449,7 @@ class FileAPI(SchematicAPI):
         return (None, docs)
 
     async def get_library(
-        self, filter: Optional[str] = None, tags: Optional[list[str]] = None
+        self, filter: str | None = None, tags: list[str] | None = None
     ) -> dict[str, dict]:
         """List models from models.nyanlib with optional filtering.
 
