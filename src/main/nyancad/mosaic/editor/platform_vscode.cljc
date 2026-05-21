@@ -125,7 +125,7 @@
       (let [model-key (cm/model-key fqn)
             model-def (get @modeldb model-key)]
         (if-not model-def
-          (js/console.warn "Dropped unknown model (no schematic?):" fqn)
+          (cm/alert (str "Unknown component: " fqn))
           (let [[x y] (cm/viewbox-coord e)
                 raw-type (or (:type model-def) "ckt")
                 device-type (if (contains? cm/device-types raw-type) raw-type "ckt")
