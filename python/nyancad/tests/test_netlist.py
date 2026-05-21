@@ -15,7 +15,9 @@ from nyancad.netlist import (
     _select_corner,
     bare_id,
     default_port_order,
+    kfnetlist_from_nyancad,
     model_key,
+    recursive_kfnetlist_from_nyancad,
 )
 
 # ---------------------------------------------------------------------------
@@ -295,6 +297,14 @@ class TestEvalParams:
         assert result == {"w": "10"}
         assert "vth" not in result
 
+    def test_unicode_identifier_not_treated_as_spice_param(self):
+        """SPICE params use the same ASCII identifier rule as generated names."""
+        result = _eval_params(
+            {"x": "λ + width", "raw": "λ"},
+            {"λ": "wrong", "width": "10u"},
+        )
+        assert result == {"x": "{λ + 10u}", "raw": "{λ}"}
+
     # --- Arithmetic path: substitute + wrap ---
 
     def test_arithmetic_substitutes_and_wraps(self):
@@ -495,9 +505,8 @@ class TestPopulateFromNyancad:
         assert "Rd" not in spice
 
     def test_skips_structural_types(self):
-        """Wires, text, and port docs never produce SPICE elements even if
-        they accidentally carry a :nets field.
-        """
+        """Structural docs never produce SPICE elements even if
+        they accidentally carry a :nets field."""
         schem = self._schem(
             {
                 "top:W1": {
@@ -525,12 +534,64 @@ class TestPopulateFromNyancad:
                     "transform": [1, 0, 0, 1, 0, 0],
                     "name": "inp",
                 },
+                "top:V1": {
+                    "_id": "top:V1",
+                    "type": "via",
+                    "name": "V1",
+                    "nets": {"P": "n"},
+                },
+                "top:TP1": {
+                    "_id": "top:TP1",
+                    "type": "taper",
+                    "name": "TP1",
+                    "nets": {"P": "n"},
+                },
+                "top:N1": {
+                    "_id": "top:N1",
+                    "type": "net",
+                    "name": "N1",
+                    "nets": {"P": "n"},
+                },
+                "top:PL1": {
+                    "_id": "top:PL1",
+                    "type": "polyline",
+                    "name": "PL1",
+                    "nets": {"P": "n"},
+                },
             }
         )
         # Should complete without error and emit no element lines.
         spice = str(NyanCircuit("top", schem))
         assert "W1" not in spice
         assert "T1" not in spice
+        assert "V1" not in spice
+        assert "TP1" not in spice
+        assert "N1" not in spice
+        assert "PL1" not in spice
+
+    def test_skips_structural_types_before_element_emit(self):
+        """Shared component classification filters newer photonic doc types."""
+        seen = []
+
+        class Recorder(NyanCADMixin):
+            gnd = "0"
+
+            def _add_nyancad_element(self, dev_id, dev, ports, models, corners, sim):
+                seen.append(dev["type"])
+
+        docs = {
+            f"top:{kind}": {
+                "_id": f"top:{kind}",
+                "type": kind,
+                "name": kind,
+                "nets": {"P": "n"},
+            }
+            for kind in ("wire", "text", "port", "polyline", "via", "taper", "net")
+        }
+
+        Recorder().populate_from_nyancad(docs, {})
+
+        assert seen == []
 
     def test_distinct_nets_for_distinct_devices(self):
         """Two resistors with different :nets produce two independent
@@ -566,3 +627,247 @@ class TestPopulateFromNyancad:
         assert "R2" in spice.replace(":", "_")
         for net in ("a", "b", "c"):
             assert net in spice
+
+
+# ---------------------------------------------------------------------------
+# kfnetlist_from_nyancad — direct Mosaic nets to kfnetlist wire format
+# ---------------------------------------------------------------------------
+
+
+def _kf_data(netlist):
+    """Assert the SAX path returns a kfnetlist object, then dump it."""
+    kfnetlist = pytest.importorskip("kfnetlist")
+    assert isinstance(netlist, kfnetlist.Netlist)
+    return netlist.to_dict()
+
+
+class TestKfNetlistFromNyancad:
+    """The SAX notebook path should use Mosaic `nets` directly and avoid
+    requiring layout fields or DSchematic conversion."""
+
+    def test_builds_kfnetlist_from_inline_nets(self):
+        schem = {
+            "top": {
+                "top:IN": {
+                    "_id": "top:IN",
+                    "type": "port",
+                    "name": "in",
+                    "nets": {"P": "n_in"},
+                },
+                "top:OUT": {
+                    "_id": "top:OUT",
+                    "type": "port",
+                    "name": "out",
+                    "nets": {"P": "n_out"},
+                },
+                "top:S1": {
+                    "_id": "ignored-id",
+                    "type": "straight",
+                    "name": "S1",
+                    "model": "straight",
+                    "nets": {"o1": "n_in", "o2": "n_mid"},
+                },
+                "top:S2": {
+                    "_id": "top:S2",
+                    "type": "straight",
+                    "name": "S2",
+                    "model": "straight",
+                    "nets": {"o1": "n_mid", "o2": "n_out"},
+                },
+            },
+            "models": {
+                "models:straight": {"name": "straight", "ports": []},
+            },
+        }
+
+        netlist = kfnetlist_from_nyancad("top", schem)
+        data = _kf_data(netlist)
+
+        assert data["instances"] == {
+            "top:S1": {
+                "kcl": "PDK",
+                "component": "straight",
+                "settings": {},
+                "array": {"na": 1, "nb": 1},
+            },
+            "top:S2": {
+                "kcl": "PDK",
+                "component": "straight",
+                "settings": {},
+                "array": {"na": 1, "nb": 1},
+            },
+        }
+        assert {"name": "in"} in data["nets"][0]
+        assert {"instance": "top:S1", "port": "o1"} in data["nets"][0]
+        assert [
+            {"instance": "top:S1", "port": "o2"},
+            {"instance": "top:S2", "port": "o1"},
+        ] in data["nets"]
+        assert [
+            {"name": "out"},
+            {"instance": "top:S2", "port": "o2"},
+        ] in data["nets"]
+
+    def test_builds_kfnetlist_ports_from_port_named_nets(self):
+        schem = {
+            "top": {
+                "top:S1": {
+                    "type": "straight",
+                    "model": "straight",
+                    "nets": {"o1": "P1", "o2": "P2"},
+                },
+                "top:P1": {
+                    "type": "port",
+                    "name": "P1",
+                },
+                "top:P2": {
+                    "type": "port",
+                    "name": "P2",
+                },
+            },
+            "models": {
+                "models:straight": {"name": "straight", "ports": []},
+            },
+        }
+
+        netlist = kfnetlist_from_nyancad("top", schem)
+        data = _kf_data(netlist)
+
+        assert [{"name": "P1"}, {"instance": "top:S1", "port": "o1"}] in data["nets"]
+        assert [{"name": "P2"}, {"instance": "top:S1", "port": "o2"}] in data["nets"]
+
+    def test_uses_model_name_without_needing_layout(self):
+        schem = {
+            "top": {
+                "uuid-a": {
+                    "type": "component",
+                    "model": "gf.components.straight",
+                    "nets": {"o1": "a"},
+                    "props": {"length": 10.0},
+                }
+            },
+            "models": {
+                "models:gf.components.straight": {
+                    "name": "straight",
+                    "ports": [{"name": "o1"}],
+                }
+            },
+        }
+
+        netlist = kfnetlist_from_nyancad("top", schem)
+        data = _kf_data(netlist)
+
+        assert data["instances"]["uuid-a"] == {
+            "kcl": "PDK",
+            "component": "straight",
+            "settings": {"length": 10.0},
+            "array": {"na": 1, "nb": 1},
+        }
+
+    def test_missing_model_metadata_is_an_error(self):
+        schem = {
+            "top": {
+                "uuid-a": {
+                    "type": "component",
+                    "model": "gf.components.straight",
+                    "nets": {"o1": "a"},
+                },
+            },
+            "models": {},
+        }
+
+        with pytest.raises(ValueError, match="Model metadata missing"):
+            kfnetlist_from_nyancad("top", schem)
+
+    def test_missing_model_name_is_an_error(self):
+        schem = {
+            "top": {
+                "uuid-a": {
+                    "type": "component",
+                    "model": "gf.components.straight",
+                    "nets": {"o1": "a"},
+                },
+            },
+            "models": {
+                "models:gf.components.straight": {"ports": []},
+            },
+        }
+
+        with pytest.raises(ValueError, match="has no name"):
+            kfnetlist_from_nyancad("top", schem)
+
+    def test_recursive_netlist_uses_subcircuit_component_name(self):
+        schem = {
+            "top": {
+                "top:U1": {
+                    "_id": "top:U1",
+                    "type": "ckt",
+                    "name": "U1",
+                    "model": "sub",
+                    "nets": {"in": "n_in", "out": "n_out"},
+                }
+            },
+            "sub": {
+                "sub:S1": {
+                    "_id": "sub:S1",
+                    "type": "straight",
+                    "name": "S1",
+                    "model": "straight",
+                    "nets": {"o1": "inner_in", "o2": "inner_out"},
+                },
+                "sub:IN": {
+                    "_id": "sub:IN",
+                    "type": "port",
+                    "name": "in",
+                    "nets": {"P": "inner_in"},
+                },
+                "sub:OUT": {
+                    "_id": "sub:OUT",
+                    "type": "port",
+                    "name": "out",
+                    "nets": {"P": "inner_out"},
+                },
+            },
+            "models": {
+                "models:sub": {"name": "sub_model", "ports": []},
+                "models:straight": {"name": "straight", "ports": []},
+            },
+        }
+
+        recnet = recursive_kfnetlist_from_nyancad("top", schem)
+
+        assert set(recnet) == {"top", "sub_model"}
+        assert (
+            _kf_data(recnet["top"])["instances"]["top:U1"]["component"] == "sub_model"
+        )
+        assert (
+            _kf_data(recnet["sub_model"])["instances"]["sub:S1"]["component"]
+            == "straight"
+        )
+
+    def test_recursive_netlist_returns_kfnetlist_objects(self):
+        schem = {
+            "top": {
+                "top:IN": {
+                    "_id": "top:IN",
+                    "type": "port",
+                    "name": "in",
+                    "nets": {"P": "n"},
+                },
+                "top:S1": {
+                    "_id": "top:S1",
+                    "type": "straight",
+                    "name": "S1",
+                    "model": "straight",
+                    "nets": {"o1": "n"},
+                },
+            },
+            "models": {
+                "models:straight": {"name": "straight", "ports": []},
+            },
+        }
+
+        recnet = recursive_kfnetlist_from_nyancad("top", schem)
+
+        assert list(recnet) == ["top"]
+        assert _kf_data(recnet["top"])["instances"]["top:S1"]["component"] == "straight"

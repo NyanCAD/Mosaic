@@ -76,12 +76,12 @@ class TestReadFile:
 
 
 # ---------------------------------------------------------------------------
-# FileAPI.get_docs — group dispatch + prefix filtering
+# FileAPI.get_docs — group dispatch
 # ---------------------------------------------------------------------------
 # Contract:
 #   - group "models" reads models.nyanlib wholesale
-#   - any other group "foo" reads foo.nyancir and filters to keys starting
-#     with "foo:", so stray docs from other groups can't leak in
+#   - any other group "foo" reads foo.nyancir wholesale; file-backed schematics
+#     are already grouped by file
 #   - missing file returns (None, {})
 
 
@@ -100,13 +100,6 @@ class TestGetDocs:
         api = FileAPI(project_dir)
         _, docs = run_async(api.get_docs("top"))
         assert set(docs.keys()) == {"top:R1", "top:R2", "top:C1", "top:W1", "top:W2"}
-
-    def test_circuit_group_filters_out_other_prefixes(self, project_dir):
-        # top.nyancir contains one stray doc with id "other:stray" — the
-        # prefix filter must drop it so the caller sees only top:* docs.
-        api = FileAPI(project_dir)
-        _, docs = run_async(api.get_docs("top"))
-        assert "other:stray" not in docs
 
     def test_missing_group_returns_empty(self, project_dir):
         api = FileAPI(project_dir)

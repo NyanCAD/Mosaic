@@ -72,10 +72,14 @@
   "VSCode secondary menu: simulate, open library manager (upstream), switch to Livewire (gfp)."
   [_ui]
   [:<>
-   [:a {:title "Simulate"
+   [:a {:title "Run SPICE simulation"
         :on-click #(.postMessage vscode
                      #js{:type "start-simulation"})}
     [cm/simulate]]
+   [:a {:title "Run SAX simulation"
+        :on-click #(.postMessage vscode
+                     #js{:type "start-sax-simulation"})}
+    [cm/photonic-icon]]
    #?(:gfp nil
       :default
       [:a {:title "Open library manager"

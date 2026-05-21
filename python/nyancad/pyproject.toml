@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=7.0"]
+test = ["pytest>=7.0", "kfnetlist>=0.1.4"]
 
 [project.urls]
 Homepage = "https://github.com/NyanCAD/Mosaic"

@@ -443,9 +443,7 @@ class FileAPI(SchematicAPI):
             path = build_path if build_path.exists() else root_path
             return (None, self._read_file(path))
 
-        flat = self._read_file(self.project_dir / f"{name}.nyancir")
-        prefix = name + ":"
-        docs = {k: v for k, v in flat.items() if k.startswith(prefix)}
+        docs = self._read_file(self.project_dir / f"{name}.nyancir")
         return (None, docs)
 
     async def get_library(

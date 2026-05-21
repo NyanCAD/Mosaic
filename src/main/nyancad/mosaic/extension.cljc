@@ -230,7 +230,12 @@
         ;; Start simulation — spawn marimo sidecar (local file:// only)
         "start-simulation"
         (when (and doc-file-uri (= "file" (.-scheme doc-file-uri)))
-          (start-marimo! (.-fsPath doc-file-uri)))
+          (start-marimo! (.-fsPath doc-file-uri) "spice"))
+
+        ;; Start SAX simulation — spawn marimo sidecar (local file:// only)
+        "start-sax-simulation"
+        (when (and doc-file-uri (= "file" (.-scheme doc-file-uri)))
+          (start-marimo! (.-fsPath doc-file-uri) "sax"))
 
         ;; Unknown — ignore
         nil))))
@@ -317,25 +322,31 @@
 ;; ---------------------------------------------------------------------------
 
 (defonce ^:private marimo-processes
-  ;; {doc-fsPath -> {:process ChildProcess, :url string}}
+  ;; {[kind doc-fsPath] -> {:process ChildProcess, :url string}}
   (atom {}))
 
 (defn- start-marimo!
   "Spawn marimo run as a sidecar process for the given .nyancir file.
    If already running, re-opens the Simple Browser."
-  [doc-path]
+  [doc-path kind]
   (let [doc-dir (path/dirname doc-path)
-        basename (path/basename doc-path ".nyancir")]
-    (if-let [{:keys [url]} (get @marimo-processes doc-path)]
+        basename (path/basename doc-path ".nyancir")
+        process-key [kind doc-path]]
+    (if-let [{:keys [url]} (get @marimo-processes process-key)]
       ;; Already running — just re-show the browser
       (.. vscode/commands (executeCommand "simpleBrowser.show" url))
       ;; Spawn a new marimo process
-      (let [python-cmd (.. vscode/workspace
+      (let [sax? (= kind "sax")
+            python-cmd (.. vscode/workspace
                            (getConfiguration "mosaic")
-                           (get "pythonCommand" "uv run --with nyancad-server"))
-            output-ch (.. vscode/window (createOutputChannel (str "Mosaic: " basename)))]
+                           (get (if sax? "saxPythonCommand" "pythonCommand")
+                                (if sax?
+                                  "uv run --with nyancad-server[sax]"
+                                  "uv run --with nyancad-server")))
+            module-name (if sax? "nyancad_server.run_sax" "nyancad_server.run")
+            output-ch (.. vscode/window (createOutputChannel (str "Mosaic " kind ": " basename)))]
         (.show output-ch true)
-        (let [cmd-str (str python-cmd " python -m nyancad_server.run"
+        (let [cmd-str (str python-cmd " python -m " module-name
                            " --host 127.0.0.1 --headless"
                            " -- --schem " basename
                            " --project " (js/JSON.stringify doc-dir))
@@ -353,7 +364,7 @@
                         (when-let [match (.match line #"https?://[\w\.\-]+:\d+")]
                           (let [url (aget match 0)]
                             (reset! url-found true)
-                            (swap! marimo-processes assoc doc-path {:process proc :url url})
+                            (swap! marimo-processes assoc process-key {:process proc :url url})
                             (.appendLine output-ch (str "Opening " url))
                             (.. vscode/commands (executeCommand "simpleBrowser.show" url)))))))))
             (.. proc -stderr
@@ -365,20 +376,23 @@
                         (when-let [match (.match line #"https?://[\w\.\-]+:\d+")]
                           (let [url (aget match 0)]
                             (reset! url-found true)
-                            (swap! marimo-processes assoc doc-path {:process proc :url url})
+                            (swap! marimo-processes assoc process-key {:process proc :url url})
                             (.appendLine output-ch (str "Opening " url))
                             (.. vscode/commands (executeCommand "simpleBrowser.show" url))))))))))
           (.on proc "exit"
             (fn [code]
               (.appendLine output-ch (str "marimo exited with code " code))
-              (swap! marimo-processes dissoc doc-path))))))))
+              (swap! marimo-processes dissoc process-key))))))))
 
 (defn- kill-marimo!
   "Kill a running marimo process for the given document path."
   [doc-path]
-  (when-let [{:keys [^js process]} (get @marimo-processes doc-path)]
-    (.kill process)
-    (swap! marimo-processes dissoc doc-path)))
+  (doseq [kind ["spice" "sax"]
+          :let [process-key [kind doc-path]]
+          :when (get @marimo-processes process-key)]
+    (when-let [{:keys [^js process]} (get @marimo-processes process-key)]
+      (.kill process)
+      (swap! marimo-processes dissoc process-key))))
 
 ;; ---------------------------------------------------------------------------
 ;; SchematicEditorProvider

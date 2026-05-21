@@ -110,7 +110,9 @@ def _select_corner(sections, corners):
     return sections[0]
 
 
-_IDENTIFIER_RE = re.compile(r"\b[a-zA-Z_]\w*")
+IDENTIFIER_RE = re.compile(r"\b[A-Za-z_]\w*", re.ASCII)
+VALID_IDENT_RE = re.compile(r"^[A-Za-z_]\w*$", re.ASCII)
+STRUCTURAL_TYPES = {"wire", "text", "port", "polyline", "via", "taper", "net"}
 
 
 def _eval_params(entry_params, device_props, sim="NgSpice"):
@@ -128,11 +130,11 @@ def _eval_params(entry_params, device_props, sim="NgSpice"):
     result = {}
     for param_name, expr in entry_params.items():
         stripped = expr.strip()
-        if stripped.isidentifier():
+        if VALID_IDENT_RE.fullmatch(stripped):
             if stripped in device_props:
                 result[param_name] = device_props[stripped]
             continue
-        substituted = _IDENTIFIER_RE.sub(
+        substituted = IDENTIFIER_RE.sub(
             lambda m: (
                 str(device_props[m.group(0)])
                 if m.group(0) in device_props
@@ -144,6 +146,121 @@ def _eval_params(entry_params, device_props, sim="NgSpice"):
             result[param_name] = "{" + substituted + "}"
         else:
             result[param_name] = substituted
+    return result
+
+
+def kf_component_name(dev_id, dev, models):
+    """Resolve a Mosaic device to the component name used in kfnetlist/SAX."""
+    model_id = dev.get("model")
+    model = models.get(model_key(model_id))
+    if not model_id:
+        raise ValueError(f"Device {dev_id} has no model")
+    if not model:
+        raise ValueError(f"Model metadata missing for {model_id!r}")
+    if not model.get("name"):
+        raise ValueError(f"Model metadata for {model_id!r} has no name")
+    return model["name"]
+
+
+def invert_kf_nets(components, port_devices):
+    """Build ``{net_name: {"inst": [...], "ports": [...]}}`` from Mosaic nets."""
+    out = {}
+    for inst, dev in components:
+        for port, net in (dev.get("nets") or {}).items():
+            if not net:
+                continue
+            bucket = out.setdefault(net, {"inst": [], "ports": []})
+            member = (str(inst), str(port))
+            if member not in bucket["inst"]:
+                bucket["inst"].append(member)
+
+    for port_name, dev in port_devices.items():
+        for _, net in (dev.get("nets") or {"P": port_name}).items():
+            if not net:
+                continue
+            bucket = out.setdefault(net, {"inst": [], "ports": []})
+            port_name = str(port_name)
+            if port_name not in bucket["ports"]:
+                bucket["ports"].append(port_name)
+
+    return out
+
+
+def kfnetlist_from_nyancad(name, schem, *, kcl="PDK"):
+    """Build a ``kfnetlist.Netlist`` directly from Mosaic ``nets``.
+
+    This is intentionally topology-only: it does not require layout placement,
+    DSchematic conversion, kfactory, or a PDK runtime.
+    """
+    from kfnetlist import Netlist, PortRef
+
+    docs = schem.get(name, {})
+    models = schem.get("models", {})
+
+    components = []
+    port_devices = {}
+    for dev_id, dev in docs.items():
+        if dev.get("type") == "port":
+            port_devices[str(dev.get("name") or dev_id)] = dev
+        elif dev.get("type") not in STRUCTURAL_TYPES:
+            components.append((dev_id, dev))
+
+    netlist = Netlist()
+    for dev_id, dev in components:
+        settings = dict(dev.get("props") or {})
+        netlist.create_inst(
+            dev_id,
+            kcl,
+            kf_component_name(dev_id, dev, models),
+            settings,
+        )
+
+    top_ports = {}
+    for port_name in sorted(port_devices):
+        top_ports[port_name] = netlist.create_port(str(port_name))
+
+    net_map = invert_kf_nets(components, port_devices)
+    for net_name in sorted(net_map):
+        members = [
+            *(top_ports[port] for port in net_map[net_name]["ports"]),
+            *(PortRef(inst, port) for inst, port in net_map[net_name]["inst"]),
+        ]
+        if members:
+            netlist.create_net(*members)
+
+    netlist.sort()
+    return netlist
+
+
+def recursive_kfnetlist_from_nyancad(name, schem, *, kcl="PDK"):
+    """Build recursive ``kfnetlist.Netlist`` objects from Mosaic subcircuits."""
+    models = schem.get("models", {})
+    result = {}
+    queue = [name]
+    seen = set()
+
+    while queue:
+        schem_name = queue.pop(0)
+        if schem_name in seen or schem_name not in schem:
+            continue
+        seen.add(schem_name)
+        if schem_name == name:
+            netlist_name = name
+        else:
+            netlist_name = kf_component_name(schem_name, {"model": schem_name}, models)
+        result[netlist_name] = kfnetlist_from_nyancad(schem_name, schem, kcl=kcl)
+
+        for dev in schem.get(schem_name, {}).values():
+            model_id = dev.get("model")
+            model = models.get(model_key(model_id))
+            if (
+                model_id
+                and model_id in schem
+                and model is not None
+                and not model.get("models")
+            ):
+                queue.append(model_id)
+
     return result
 
 
@@ -180,7 +297,7 @@ class NyanCADMixin:
         """
         self.used_models = set()
         for dev_id, dev in docs.items():
-            if dev.get("type") in ("wire", "text", "port"):
+            if dev.get("type") in STRUCTURAL_TYPES:
                 continue
             ports = dev.get("nets")
             if not ports:

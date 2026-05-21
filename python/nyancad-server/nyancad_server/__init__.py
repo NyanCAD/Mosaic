@@ -8,3 +8,10 @@ def get_notebook_path() -> str:
     from importlib import resources
 
     return str(resources.files("nyancad_server") / "notebook_file.py")
+
+
+def get_sax_notebook_path() -> str:
+    """Return path to the bundled SAX simulation marimo notebook."""
+    from importlib import resources
+
+    return str(resources.files("nyancad_server") / "notebook_sax.py")
