@@ -94,65 +94,9 @@
                             :viewType "gdsfactoryplus.livewireNyancirEditor"})}
        [cm/sync-active]])])
 
-;; §§§
-;; @semantic Generates unique instance name for dropped device (e.g. C1, R2)
-;; @callgraph
-;;   - reads: @schematic (checks for name collisions)
-;;   - called-by: on-drop (names the placed device)
-;; @tags factory card dragging
-;; §§§
-(defn- make-name [device-type]
-  (let [prefix (cm/initial device-type)]
-    (first (remove #(contains? @schematic (str group ":" %))
-                   (map #(str prefix %) (next (range)))))))
-
-;; §§§
-;; @semantic Mosaic drop handler for sidebar factory cards. Reads text/x-gfp-factory,
-;;   looks up model in PouchDB-backed modeldb, places device at SVG drop coordinates.
-;;   Requires model to be pre-loaded in modeldb (unlike Livewire which resolves on demand).
-;; @callgraph
-;;   - reads: text/x-gfp-factory JSON payload from FactoryCard.onDragStart
-;;   - reads: @modeldb (PouchDB-backed model definitions)
-;;   - calls: make-name (generates unique instance name)
-;;   - calls: cm/model-key (converts FQN to "models:" prefixed key)
-;;   - calls: cm/viewbox-coord (converts drop event to SVG coordinates)
-;;   - writes: @schematic (inserts new device document)
-;; @tags factory card dragging
-;; §§§
-(defn- on-drop [e]
-  (.preventDefault e)
-  (.stopPropagation e)
-  (let [dt (.-dataTransfer e)
-        fqn (some-> (.getData dt "text/x-gfp-factory") js/JSON.parse js->clj (get "factory"))]
-    (js/console.log "Dropped FQN:" fqn)
-    (when (seq fqn)
-      (let [model-key (cm/model-key fqn)
-            model-def (get @modeldb model-key)]
-        (if-not model-def
-          (cm/alert (str "Unknown component: " fqn))
-          (let [[x y] (cm/viewbox-coord e)
-                raw-type (or (:type model-def) "ckt")
-                device-type (if (contains? cm/device-types raw-type) raw-type "ckt")
-                name (make-name device-type)
-                defaults (into {} (for [p (:props model-def) :when (:name p)]
-                                    [(:name p) (or (:default p) "")]))
-                dev (cond-> {:type device-type
-                             :model fqn
-                             :name name
-                             :transform cm/IV
-                             :x (Math/round x)
-                             :y (Math/round y)
-                             :texture_key nil}
-                      (seq defaults) (assoc :props defaults))]
-            (if (s/valid? :nyancad.mosaic.common/device dev)
-              (swap! schematic assoc (str group ":" name) dev)
-              (js/console.warn "Invalid device from drop:" (s/explain-str :nyancad.mosaic.common/device dev)))))))))
-
 (defn init-extra!
-  "Set up get-state handler and drop target for VS Code webview."
+  "Set up get-state handler for VS Code webview."
   []
-  (.addEventListener js/document "dragover" #(.preventDefault %))
-  (.addEventListener js/document "drop" on-drop)
   (.addEventListener js/window "message"
     (fn [^js event]
       (when (= (.. event -data -type) "get-state")

@@ -32,6 +32,13 @@
   (let [names (map #(str (cm/initial base) %) (next (range)))]
     (remove #(@schematic (str group sep %)) names)))
 
+;; §§§
+;; @semantic Generates unique instance name for dropped device (e.g. C1, R2)
+;; @callgraph
+;;   - reads: @schematic (checks for name collisions)
+;;   - called-by: on-drop, commit-staged (names the placed device)
+;; @tags factory card dragging
+;; §§§
 (defn make-name [base]
   (first (make-names base)))
 
@@ -1590,14 +1597,12 @@
         id (str group sep (:name named))
         model-def (when (:model named)
                     (get @modeldb (cm/model-key (:model named))))
-        defaults (when model-def
-                   (into {} (for [p (:props model-def) :when (:name p)]
-                              [(:name p) (or (:default p) "")])))
+        defaults (cm/model-prop-defaults model-def)
         with-props (if defaults
                      (update named :props #(merge defaults %))
                      named)]
     (when (s/valid? :nyancad.mosaic.common/device with-props)
-      (swap! schematic assoc id (assoc with-props :texture_key nil))
+      (swap! schematic assoc id with-props)
       (post-action!))))
 
 (defn transform-selected [tf]
@@ -2217,11 +2222,9 @@
                                            (fn [model-id]
                                              (reset! model (if model-id (cm/bare-id model-id) ""))
                                              (when model-id
-                                               (when-let [mdef (get @modeldb (cm/model-key model-id))]
-                                                 (let [defaults (into {} (for [p (:props mdef) :when (:name p)]
-                                                                          [(:name p) (or (:default p) "")]))]
+                                               (when-let [mdef (get @modeldb model-id)]
+                                                 (when-let [defaults (cm/model-prop-defaults mdef)]
                                                    (swap! props (fn [m] (merge defaults m))))))
-                                             (swap! schematic update key assoc :texture_key nil)
                                              (post-action!))]))}
             [cm/search]]]
           ; Get properties from built-in device and model
@@ -2243,7 +2246,7 @@
                                         (str base "\n" label ": {self.props." path-str "}"))))
                                   (post-action!))))]
             [cm/recursive-editor all-props props
-             (fn [] (swap! schematic update key assoc :texture_key nil) (post-action!))
+             post-action!
              (when @show-prop-insert
                (fn [path]
                  (let [already? (prop-in-template? path)]
@@ -2735,7 +2738,51 @@
   (set! js/document.onkeydown (partial cm/keyboard-shortcuts immediate-shortcuts))
   (rdc/render root [schematic-ui]))
 
+;; §§§
+;; @semantic Mosaic drop handler for sidebar factory cards. Reads text/x-gfp-factory,
+;;   looks up model in PouchDB-backed modeldb, places device at SVG drop coordinates.
+;;   Requires model to be pre-loaded in modeldb (unlike Livewire which resolves on demand).
+;; @callgraph
+;;   - reads: text/x-gfp-factory JSON payload from FactoryCard.onDragStart
+;;   - reads: @modeldb (PouchDB-backed model definitions)
+;;   - calls: make-name (generates unique instance name)
+;;   - calls: cm/model-key (converts FQN to "models:" prefixed key)
+;;   - calls: cm/viewbox-coord (converts drop event to SVG coordinates)
+;;   - calls: cm/model-prop-defaults (extracts default prop values from model)
+;;   - writes: @schematic (inserts new device document)
+;;   - calls: post-action! (records undo checkpoint, splits wires, annotates nets)
+;; @tags factory card dragging
+;; §§§
+(defn- on-drop [e]
+  (.preventDefault e)
+  (.stopPropagation e)
+  (let [dt (.-dataTransfer e)
+        fqn (some-> (.getData dt "text/x-gfp-factory") js/JSON.parse js->clj (get "factory"))]
+    (when (seq fqn)
+      (let [model-key (cm/model-key fqn)
+            model-def (get @modeldb model-key)]
+        (if-not model-def
+          (cm/alert (str "Unknown component: " fqn))
+          (let [[x y] (cm/viewbox-coord e)
+                raw-type (or (:type model-def) "ckt")
+                device-type (if (contains? cm/device-types raw-type) raw-type "ckt")
+                name (make-name device-type)
+                defaults (cm/model-prop-defaults model-def)
+                dev (cond-> {:type device-type
+                             :model fqn
+                             :name name
+                             :transform cm/IV
+                             :x (Math/round x)
+                             :y (Math/round y)}
+                      (seq defaults) (assoc :props defaults))]
+            (if (s/valid? :nyancad.mosaic.common/device dev)
+              (do (swap! schematic assoc (str group sep name) dev)
+                  (post-action!))
+              (js/console.warn "Invalid device from drop:" (s/explain-str :nyancad.mosaic.common/device dev)))))))))
+
 (defn ^:export init []
+  (.addEventListener js/document "dragover" #(.preventDefault %))
+  (.addEventListener js/document "drop" on-drop)
   (init-extra!)
   (render))
 

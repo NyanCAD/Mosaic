@@ -337,6 +337,34 @@
     (is (= {} (get-in idx ["photonic"])))))
 
 ;; ---------------------------------------------------------------------------
+;; model-prop-defaults — extract default prop values from a model definition
+;; ---------------------------------------------------------------------------
+;;
+;; Contract: given a model definition with :props, return a map of
+;; {prop-name → default-value}. nil model-def → nil. Empty :props → nil.
+;; Props missing :name are skipped. Missing :default falls back to "".
+
+(deftest model-prop-defaults-nil-model
+  (is (nil? (cm/model-prop-defaults nil))))
+
+(deftest model-prop-defaults-empty-props
+  (is (nil? (cm/model-prop-defaults {:props []}))))
+
+(deftest model-prop-defaults-with-named-props
+  (is (= {"length" "10" "width" ""}
+         (cm/model-prop-defaults {:props [{:name "length" :default "10"}
+                                          {:name "width"}]}))))
+
+(deftest model-prop-defaults-skips-nameless
+  (is (= {"a" "1"}
+         (cm/model-prop-defaults {:props [{:name "a" :default "1"}
+                                          {:tooltip "orphan"}]}))))
+
+(deftest model-prop-defaults-nil-default-falls-back
+  (is (= {"x" ""}
+         (cm/model-prop-defaults {:props [{:name "x" :default nil}]}))))
+
+;; ---------------------------------------------------------------------------
 ;; format — template interpolation via JS Function
 ;; ---------------------------------------------------------------------------
 ;;
