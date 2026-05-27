@@ -143,6 +143,27 @@
           (is (contains? result mirror)
               (str "spread-ports " n " " size ": " p " has no mirror " mirror)))))))
 
+;; Contract (spread-ports alignment): :start packs ports toward position 1,
+;; :end packs toward position size. n > size overflow is the same regardless.
+
+(deftest spread-ports-start-alignment
+  (testing ":start packs ports toward position 1"
+    (is (= [1] (cm/spread-ports 1 3 :start)))
+    (is (= [1 2] (cm/spread-ports 2 5 :start)))
+    (is (= [1 2 3] (cm/spread-ports 3 3 :start)) "n = size: same as default")))
+
+(deftest spread-ports-end-alignment
+  (testing ":end packs ports toward position size"
+    (is (= [3] (cm/spread-ports 1 3 :end)))
+    (is (= [4 5] (cm/spread-ports 2 5 :end)))
+    (is (= [2] (cm/spread-ports 1 2 :end)))
+    (is (= [1 2 3] (cm/spread-ports 3 3 :end)) "n = size: same as default")))
+
+(deftest spread-ports-alignment-overflow
+  (testing "n > size with alignment: same overflow as default"
+    (is (= [1 2 3 4] (cm/spread-ports 4 2 :start)))
+    (is (= [1 2 3 4] (cm/spread-ports 4 2 :end)))))
+
 ;; Contract (port-perimeter): compute [width height] of the device body
 ;; from the count of ports on each side. Height = max(left_count,
 ;; right_count) with a +1 bump if the counts have different parity (so
@@ -179,16 +200,26 @@
     (is (= [1 3] (cm/port-perimeter
                    (into [] (concat (repeat 2 {:side :left}) (repeat 3 {:side :right}))))))))
 
-(deftest port-perimeter-amp-shape
-  (testing "amp constraint: width >= ceil(height/2)"
-    ;; 6 left ports → height 6, so width must be >= 3
-    (is (= [3 6] (cm/port-perimeter (repeat 6 {:side :left}) :amp))))
-  (testing "amp constraint does not shrink existing width"
-    ;; 5 top ports already force width 5; 2 left ports require height >= 2.
-    ;; The amp minimum (ceil(2/2) = 1) is smaller, so width stays 5.
-    (let [ports (into [] (concat (repeat 5 {:side :top}) (repeat 2 {:side :left})))
-          [w _] (cm/port-perimeter ports :amp)]
-      (is (>= w 5)))))
+(deftest port-perimeter-amp-type
+  (testing "amp min-dims [1 2] ensures minimum height"
+    (is (= [1 2] (cm/port-perimeter [{:side :left}] "amp"))
+        "1 left port: width 1, height bumped from 1 to 2 by min-dims"))
+  (testing "amp with many left ports: min-dims don't shrink"
+    (is (= [1 6] (cm/port-perimeter (repeat 6 {:side :left}) "amp"))
+        "6 left ports: height 6 > min 2, width stays 1")))
+
+(deftest port-perimeter-type-driven-min-dims
+  (testing "ring-single min-dims [1 2]"
+    (is (= [1 2] (cm/port-perimeter [{:side :left} {:side :right}] "ring-single"))
+        "1L+1R: raw [1 1], min-dims bumps height to 2"))
+  (testing "sbend min-dims [1 2]"
+    (is (= [1 2] (cm/port-perimeter [{:side :left} {:side :right}] "sbend"))))
+  (testing "mmi-2x2 min-dims [1 3]"
+    (is (= [1 3] (cm/port-perimeter (into [] (concat (repeat 2 {:side :left})
+                                                      (repeat 2 {:side :right}))) "mmi-2x2"))
+        "2L+2R: raw [1 2], min-dims bumps height to 3"))
+  (testing "unknown type: no min-dims, default behavior"
+    (is (= [1 1] (cm/port-perimeter [{:side :left} {:side :right}] "resistor")))))
 
 ;; Contract (port-locations): each port gets an (x, y) on the device border.
 ;; Body occupies [1..width] × [1..height]; ports sit at x=0 (left),
@@ -219,15 +250,39 @@
           locs (into {} (map (juxt :name (juxt :x :y))) (cm/port-locations ports))]
       (is (= {"T" [1 0] "B" [1 2] "L" [0 1] "R" [2 1]} locs)))))
 
-(deftest port-locations-amp-shape-top-aligned
-  (testing "amp shape: top ports use sequential x (1, 2, ...) — triangle narrows to right"
+(deftest port-locations-amp-type-top-aligned
+  (testing "amp type: top ports use :start alignment (1, 2, ...)"
     (let [ports [{:name "A" :side :top :type :electric}
                  {:name "B" :side :top :type :electric}
                  {:name "L" :side :left :type :electric}]
-          locs (cm/port-locations ports :amp)
+          locs (cm/port-locations ports "amp")
           top (sort-by :x (filter #(= (:side %) :top) locs))]
       (is (= 1 (:x (first top))))
       (is (= 2 (:x (second top)))))))
+
+(deftest port-locations-type-driven-alignment
+  (testing "ring-single: left :end, right :end — ports at bottom"
+    (let [ports [{:name "o1" :side :left :type "photonic"}
+                 {:name "o2" :side :right :type "photonic"}]
+          locs (into {} (map (juxt :name (juxt :x :y))) (cm/port-locations ports "ring-single"))]
+      (is (= {"o1" [0 2] "o2" [2 2]} locs)
+          "both ports at y=2 (bottom of height=2 box)")))
+  (testing "sbend: left :start, right :end — staggered ports"
+    (let [ports [{:name "o1" :side :left :type "photonic"}
+                 {:name "o2" :side :right :type "photonic"}]
+          locs (into {} (map (juxt :name (juxt :x :y))) (cm/port-locations ports "sbend"))]
+      (is (= {"o1" [0 1] "o2" [2 2]} locs)
+          "left at top, right at bottom")))
+  (testing "mmi-2x2: default spread with min-dims [1 3]"
+    (let [ports [{:name "o1" :side :left :type "photonic"}
+                 {:name "o2" :side :right :type "photonic"}
+                 {:name "o3" :side :left :type "photonic"}
+                 {:name "o4" :side :right :type "photonic"}]
+          locs (into {} (map (juxt :name (juxt :x :y))) (cm/port-locations ports "mmi-2x2"))]
+      (is (= [0 1] (get locs "o1")))
+      (is (= [0 3] (get locs "o3")))
+      (is (= "gap at y=2 between left port pairs"
+             "gap at y=2 between left port pairs")))))
 
 (deftest port-locations-preserves-port-data
   (testing ":name and :type survive; :x :y added; :side is kept normalized"

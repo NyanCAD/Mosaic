@@ -466,19 +466,26 @@
   (let [by-side (group-by (comp keyword :side) ports)]
     by-side))
 
+(def ^:private shape-opts
+  {"amp"         {:align {:top :start :bottom :start} :min-dims [1 2]}
+   "ring-single" {:align {:left :end :right :end}     :min-dims [1 2]}
+   "sbend"       {:align {:left :start :right :end}   :min-dims [1 2]}
+   "mmi-2x2"     {:min-dims [1 3]}
+   "mzi-2x2"     {:min-dims [1 3]}})
+
 (defn port-perimeter
   "Calculate device perimeter [width height] based on ports.
-   Ports are [{:name :side :type}]. Optional shape parameter: :amp constrains aspect ratio."
+   Ports are [{:name :side :type}]. Optional type string looks up min-dims in shape-opts."
   ([ports] (port-perimeter ports nil))
-  ([ports shape]
-   (let [by-side (group-ports-by-side ports)
+  ([ports type]
+   (let [{:keys [min-dims]} (get shape-opts type)
+         by-side (group-ports-by-side ports)
          left-n (count (:left by-side))
          right-n (count (:right by-side))
          top-n (count (:top by-side))
          bottom-n (count (:bottom by-side))
          raw-height (max 1 left-n right-n)
          raw-width (max 1 top-n bottom-n)
-         ;; Widen to odd if parities differ on opposite sides
          height (if (and (not= (odd? left-n) (odd? right-n))
                          (even? raw-height))
                   (inc raw-height)
@@ -487,50 +494,44 @@
                              (even? raw-width))
                       (inc raw-width)
                       raw-width)
-         ;; For amp: ensure minimum width proportional to height
-         width (if (= shape :amp)
-                 (max base-width (int (Math/ceil (/ height 2))))
-                 base-width)]
-     [width height])))
+         [min-w min-h] (or min-dims [0 0])]
+     [(max base-width min-w) (max height min-h)])))
 
 (defn spread-ports
-  "Spread n ports in size slots. Gap in middle if n < size."
-  [n size]
+  "Spread n ports in size slots. Gap in middle if n < size.
+   Optional align: :start packs toward position 1, :end packs toward position size."
+  [n size & [align]]
   (cond
-    (= n size) (vec (range 1 (inc n)))
     (= n 0) []
-    (< n size)
+    (<= size n) (vec (range 1 (inc n)))
+    (= align :start) (vec (range 1 (inc n)))
+    (= align :end) (vec (range (- size n -1) (inc size)))
+    :else
     (let [mid (quot (inc size) 2)
           half (quot n 2)
           first-half (range 1 (inc half))
           second-half (range (- size half -1) (inc size))]
       (vec (if (odd? n)
              (concat first-half [mid] second-half)
-             (concat first-half second-half))))
-    :else (vec (range 1 (inc n)))))
+             (concat first-half second-half))))))
 
 (defn port-locations
   "Calculate port positions from [{:name :side :type}].
    Returns flat list of port maps with :x :y added.
-   Optional shape parameter: :amp left-aligns top/bottom ports."
+   Optional type string looks up per-side alignment in shape-opts."
   ([ports] (port-locations ports nil))
-  ([ports shape]
-   (let [[width height] (port-perimeter ports shape)
+  ([ports type]
+   (let [{:keys [align]} (get shape-opts type)
+         [width height] (port-perimeter ports type)
          by-side (group-ports-by-side ports)
          left (or (:left by-side) [])
          right (or (:right by-side) [])
          top (or (:top by-side) [])
          bottom (or (:bottom by-side) [])
-         ;; Spread ports with gap in middle when fewer than dimension
-         left-ys (spread-ports (count left) height)
-         right-ys (spread-ports (count right) height)
-         ;; For amp: left-align top/bottom (triangle narrows to right)
-         top-xs (if (= shape :amp)
-                  (vec (range 1 (inc (count top))))
-                  (spread-ports (count top) width))
-         bottom-xs (if (= shape :amp)
-                     (vec (range 1 (inc (count bottom))))
-                     (spread-ports (count bottom) width))
+         left-ys (spread-ports (count left) height (get align :left))
+         right-ys (spread-ports (count right) height (get align :right))
+         top-xs (spread-ports (count top) width (get align :top))
+         bottom-xs (spread-ports (count bottom) width (get align :bottom))
          left-locs (map-indexed (fn [i p] (assoc p :side :left :x 0 :y (nth left-ys i))) left)
          right-locs (map-indexed (fn [i p] (assoc p :side :right :x (inc width) :y (nth right-ys i))) right)
          top-locs (map-indexed (fn [i p] (assoc p :side :top :x (nth top-xs i) :y 0)) top)

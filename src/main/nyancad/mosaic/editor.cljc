@@ -501,16 +501,6 @@
    ::elements [[:path {:d "M25,75 C55,75 45,95 75,95 C105,95 95,75 125,75"}]
                [:path {:d "M25,125 C55,125 45,105 75,105 C105,105 95,125 125,125"}]]})
 
-;; Coupler-ring: 2x2 with ports inside, no padding
-;; size 2, 100x100px. Ports: (0,0)(1,0)(0,1)(1,1) → px (25,25)(75,25)(25,75)(75,75)
-(defn coupler-ring-bg [k v]
-  [device 2 k v
-   [:rect.tetris {:x 0 :y 0 :width (* 2 grid-size) :height (* 2 grid-size)}]])
-
-(def coupler-ring-elements
-  {::size 2
-   ::elements [[:path {:d "M25,25 A25,23 0 0,0 75,25"}]
-               [:path {:d "M25,75 A25,23 0 0,1 75,75"}]]})
 
 ;; bg [1,3], size 5, 250x250px — ckt-block style rect with port leads
 ;; MMI 1x2: Ports: (0,2)→px(25,125), (2,1)→px(125,75), (2,3)→px(125,175)
@@ -596,19 +586,42 @@
                [:path {:d "M75,55 A35,35 0 0,1 75,95"}]
                [:path {:d "M84,49 A45,45 0 0,1 84,101"}]]})
 
+(defn- photonic-sym
+  "§§§
+   @semantic Render built-in SVG elements centered in a model-port-derived
+   bounding box. When port-perimeter matches the builtin size, rendering is
+   identical to render-symbol-data.
+   @callgraph
+     -calls device, device-template, render-element, cm/model-key, cm/port-perimeter
+     -called-by get-model
+   @tags photonic model ports
+   §§§"
+  [builtin-elements k v]
+  (let [model (:model v)
+        ports (when model (get-in @modeldb [(cm/model-key model) :ports]))
+        [width height] (if (seq ports) (cm/port-perimeter ports (:type v)) [1 1])
+        new-size (+ 2 (max width height))
+        {orig-size ::size, elements ::elements} builtin-elements
+        delta (- new-size orig-size)
+        offset (* (/ delta 2) grid-size)]
+    (into [device new-size k v
+           [device-template v new-size]]
+          (if (zero? delta)
+            (map render-element elements)
+            [(into [:g {:transform (str "translate(" offset "," offset ")")}]
+                   (map render-element elements))]))))
+
 (defn circuit-shape [k v]
   (let [model (:model v)
         ports (get-in @modeldb [(cm/model-key model) :ports])
-        shape (when (= (:type v) "amp") :amp)
-        size (if ports (cm/port-perimeter ports shape) [1 1])]
+        size (if ports (cm/port-perimeter ports (:type v)) [1 1])]
     (draw-background size k v)))
 
 (defn circuit-conn [k v]
   (let [model (:model v)
         ports (get-in @modeldb [(cm/model-key model) :ports])
-        shape (when (= (:type v) "amp") :amp)
-        [width height] (if ports (cm/port-perimeter ports shape) [1 1])
-        pattern (if ports (cm/port-locations ports shape) [])]
+        [width height] (if ports (cm/port-perimeter ports (:type v)) [1 1])
+        pattern (if ports (cm/port-locations ports (:type v)) [])]
     (draw-pattern (+ 2 (max width height)) pattern
                   port k v)))
 
@@ -665,8 +678,8 @@
         model-name (or (:name model-def) model)
         ports (:ports model-def)
         has-model? (and model (seq model) ports)
-        [width height] (if ports (cm/port-perimeter ports) [1 1])
-        all-locs (cm/port-locations ports)
+        [width height] (if ports (cm/port-perimeter ports (:type v)) [1 1])
+        all-locs (cm/port-locations ports (:type v))
         by-side (group-by :side all-locs)
         top-locs (:top by-side)
         bottom-locs (:bottom by-side)
@@ -724,8 +737,8 @@
         model-name (or (:name model-def) model)
         ports (:ports model-def)
         has-model? (and model (seq model) ports)
-        [width height] (if ports (cm/port-perimeter ports :amp) [1 1])
-        all-locs (cm/port-locations ports :amp)
+        [width height] (if ports (cm/port-perimeter ports (:type v)) [1 1])
+        all-locs (cm/port-locations ports (:type v))
         by-side (group-by :side all-locs)
         top-locs (:top by-side)
         bottom-locs (:bottom by-side)
@@ -889,159 +902,71 @@
                           ::template "{self.name}"
                           ::props []}
              ;; Photonic components
-             "straight" {::bg [1 1]
-                         ::conn cm/horizontal-conn
-                         ::sym straight-elements
+             "straight" {::sym straight-elements
                          ::category "photonic"
                          ::template "{self.name}"
                          ::props []}
-             "bend" {::bg [1 1]
-                     ::conn (cm/ascii-patern "photonic"
-                             ["   "
-                              "1  "
-                              " 2 "])
-                     ::sym bend-elements
+             "bend" {::sym bend-elements
                      ::category "photonic"
                      ::template "{self.name}"
                      ::props []}
-             "sbend" {::bg [1 2]
-                      ::conn (cm/ascii-patern "photonic"
-                              ["   "
-                               "1  "
-                               "  2"])
-                      ::sym sbend-elements
+             "sbend" {::sym sbend-elements
                       ::category "photonic"
                       ::template "{self.name}"
                       ::props []}
-             "taper" {::bg [1 1]
-                      ::conn cm/horizontal-conn
-                      ::sym taper-elements
+             "taper" {::sym taper-elements
                       ::category "photonic"
                       ::template "{self.name}"
                       ::props []}
-             "transition" {::bg [1 1]
-                           ::conn cm/horizontal-conn
-                           ::sym transition-elements
+             "transition" {::sym transition-elements
                            ::category "photonic"
                            ::template "{self.name}"
                            ::props []}
-             "terminator" {::bg [1 1]
-                           ::conn (cm/ascii-patern "photonic"
-                                   ["   "
-                                    "1  "
-                                    "   "])
-                           ::sym terminator-elements
+             "terminator" {::sym terminator-elements
                            ::category "photonic"
                            ::template "{self.name}"
                            ::props []}
-             "crossing" {::bg [1 1]
-                         ::conn cm/cross-conn
-                         ::sym crossing-elements
+             "crossing" {::sym crossing-elements
                          ::category "photonic"
                          ::template "{self.name}"
                          ::props []}
-             "ring-single" {::bg [1 2]
-                            ::conn (cm/ascii-patern "photonic"
-                                    ["   "
-                                     "   "
-                                     "1 2"])
-                            ::sym ring-single-elements
+             "ring-single" {::sym ring-single-elements
                             ::category "photonic"
                             ::template "{self.name}"
                             ::props []}
-             "ring-double" {::bg [1 2]
-                            ::conn (cm/ascii-patern "photonic"
-                                    ["   "
-                                     "1 2"
-                                     "3 4"])
-                            ::sym ring-double-elements
+             "ring-double" {::sym ring-double-elements
                             ::category "photonic"
                             ::template "{self.name}"
                             ::props []}
-             "spiral" {::bg [1 1]
-                       ::conn cm/horizontal-conn
-                       ::sym spiral-elements
+             "spiral" {::sym spiral-elements
                        ::category "photonic"
                        ::template "{self.name}"
                        ::props []}
-             "splitter-1x2" {::bg [1 3]
-                             ::conn (cm/ascii-patern "photonic"
-                                     ["   "
-                                      "  2"
-                                      "1  "
-                                      "  3"
-                                      "   "])
-                             ::sym splitter-1x2-elements
+             "splitter-1x2" {::sym splitter-1x2-elements
                              ::category "photonic"
                              ::template "{self.name}"
                              ::props []}
-             "coupler" {::bg [1 2]
-                        ::conn (cm/ascii-patern "photonic"
-                                ["   "
-                                 "1 2"
-                                 "3 4"])
-                        ::sym coupler-elements
+             "coupler" {::sym coupler-elements
                         ::category "photonic"
                         ::template "{self.name}"
                         ::props []}
-             "coupler-ring" {::bg #'coupler-ring-bg
-                             ::conn (cm/ascii-patern "photonic"
-                                     ["12"
-                                      "34"])
-                             ::sym coupler-ring-elements
-                             ::category "photonic"
-                             ::template "{self.name}"
-                             ::props []}
-             "mmi-1x2" {::bg [1 3]
-                        ::conn (cm/ascii-patern "photonic"
-                                ["   "
-                                 "  2"
-                                 "1  "
-                                 "  3"
-                                 "   "])
-                        ::sym mmi-1x2-elements
+             "mmi-1x2" {::sym mmi-1x2-elements
                         ::category "photonic"
                         ::template "{self.name}"
                         ::props []}
-             "mmi-2x2" {::bg [1 3]
-                        ::conn (cm/ascii-patern "photonic"
-                                ["   "
-                                 "1 2"
-                                 "   "
-                                 "3 4"
-                                 "   "])
-                        ::sym mmi-2x2-elements
+             "mmi-2x2" {::sym mmi-2x2-elements
                         ::category "photonic"
                         ::template "{self.name}"
                         ::props []}
-             "mzi-1x2" {::bg [1 3]
-                        ::conn (cm/ascii-patern "photonic"
-                                ["   "
-                                 "  2"
-                                 "1  "
-                                 "  3"
-                                 "   "])
-                        ::sym mzi-1x2-elements
+             "mzi-1x2" {::sym mzi-1x2-elements
                         ::category "photonic"
                         ::template "{self.name}"
                         ::props []}
-             "mzi-2x2" {::bg [1 3]
-                        ::conn (cm/ascii-patern "photonic"
-                                ["   "
-                                 "1 2"
-                                 "   "
-                                 "3 4"
-                                 "   "])
-                        ::sym mzi-2x2-elements
+             "mzi-2x2" {::sym mzi-2x2-elements
                         ::category "photonic"
                         ::template "{self.name}"
                         ::props []}
-"grating-coupler" {::bg [1 1]
-                                ::conn (cm/ascii-patern "photonic"
-                                        ["   "
-                                         "1  "
-                                         "   "])
-                                ::sym grating-coupler-elements
+             "grating-coupler" {::sym grating-coupler-elements
                                 ::category "source"
                                 ::template "{self.name}"
                                 ::props []}
@@ -1118,9 +1043,8 @@
   (let [transform (or transform cm/IV)
         mod (get @modeldb (cm/model-key model))
         ports (:ports mod)
-        shape (when (= type "amp") :amp)
-        conn (if ports (cm/port-locations ports shape) [])
-        [w h] (if ports (cm/port-perimeter ports shape) [1 1])
+        conn (if ports (cm/port-locations ports type) [])
+        [w h] (if ports (cm/port-perimeter ports type) [1 1])
         size (+ 2 (max w h))]
     [(map (juxt :x :y) (rotate-shape conn size transform x y))
      (map (juxt :x :y) (rotate-shape (for [bx (range w) by (range h)]
@@ -1132,10 +1056,9 @@
     (cond
       (= cell "wire") (wire-locations dev)
       (= cell "text") []
-      ;; Polylines reference other devices' pins; they contribute no
-      ;; connection points of their own to the schematic point-index.
       (= cell "polyline") [[] []]
-      (contains? models cell) (builtin-locations dev)
+      (and (contains? models cell) (::conn (get models cell)))
+      (builtin-locations dev)
       :else (circuit-locations dev))))
 
 (defn device-port-types
@@ -1147,7 +1070,7 @@
       (= cell "wire") nil
       (= cell "text") nil
       (= cell "polyline") nil
-      (contains? models cell)
+      (and (contains? models cell) (::conn (get models cell)))
       (let [mod (get models cell)
             conn (::conn mod)
             bg (::bg mod)
@@ -1159,13 +1082,8 @@
       :else
       (let [mod (get @modeldb (cm/model-key model))
             ports (:ports mod)
-            shape (when (= (:type dev) "amp") :amp)
-            conn (if ports (cm/port-locations ports shape) [])
-            ;; Must match circuit-locations: (+ 2 (max w h)) from port-perimeter,
-            ;; NOT pattern-size. They diverge for subcircuits that don't fill every
-            ;; side (e.g. op-amp: port-perimeter → [1 3], but max coord + 1 = 4),
-            ;; which silently drops port attribution under rotation.
-            [w h] (if ports (cm/port-perimeter ports shape) [1 1])
+            conn (if ports (cm/port-locations ports cell) [])
+            [w h] (if ports (cm/port-perimeter ports cell) [1 1])
             size (+ 2 (max w h))]
         (rotate-shape conn size transform x y)))))
 
@@ -1944,14 +1862,27 @@
     (when (and (.-isPrimary e) (< (count old-cache) 2))
       (eraser-drag k e))))
 
-(defn get-model [layer model k v]
+(defn get-model
+  "§§§
+   @semantic Dispatch device rendering by layer, routing photonic builtins
+   (stripped of ::bg/::conn) through circuit-shape/circuit-conn and photonic-sym.
+   @callgraph
+     -calls circuit-shape, circuit-conn, photonic-sym, render-symbol-data,
+            draw-background, draw-pattern
+     -called-by render-device, staging-device
+   @tags photonic model ports
+   §§§"
+  [layer model k v]
   (let [model-entry (get models (:type model)
                          {::bg #'circuit-shape
                           ::conn #'circuit-conn
                           ::sym #'circuit-sym})
         m (get model-entry layer)]
-    ;; (assert m "no model")
     (cond
+      (and (nil? m) (= layer ::bg))   ^{:key k} [circuit-shape k v]
+      (and (nil? m) (= layer ::conn)) ^{:key k} [circuit-conn k v]
+      (and (nil? (::conn model-entry))
+           (= layer ::sym) (map? m)) ^{:key k} [photonic-sym m k v]
       (fn? m) ^{:key k} [m k v]
       (map? m) ^{:key k} [render-symbol-data m k v]
       (= layer ::bg) ^{:key k} [draw-background m k v]

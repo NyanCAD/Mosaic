@@ -503,3 +503,164 @@
           pt-idx (e/build-point-index schem)
           splits (e/build-wire-split-index schem pt-idx)]
       (is (empty? splits)))))
+
+;; ---------------------------------------------------------------------------
+;; Photonic model-defined ports
+;; ---------------------------------------------------------------------------
+;; Contract: when a photonic builtin has model ports in @modeldb,
+;; device-port-types returns model-named ports (e.g. "o1", "o2") and
+;; device-locations uses model-derived positions.
+
+(defn- photonic-dev
+  "A photonic builtin with a model reference."
+  [id type model-id x y]
+  [id {:type type :model model-id :x x :y y
+       :transform [1 0 0 1 0 0] :name id}])
+
+(deftest photonic-model-ports-override-port-names
+  (testing "straight with model ports uses model port names, not builtin '1'/'2'"
+    (reset! pform/modeldb
+            {"models:test.straight"
+             {:name "Straight"
+              :ports [{:name "o1" :side :left :type "photonic"}
+                      {:name "o2" :side :right :type "photonic"}]}})
+    (try
+      (let [dev {:type "straight" :model "test.straight"
+                 :x 0 :y 0 :transform [1 0 0 1 0 0] :name "S1"}
+            port-types (e/device-port-types dev)
+            names (set (map :name port-types))]
+        (is (= #{"o1" "o2"} names)
+            "port names come from model, not builtin"))
+      (finally
+        (reset! pform/modeldb {})))))
+
+(deftest photonic-without-model-uses-default-box
+  (testing "straight without :model field gets no connection points"
+    (reset! pform/modeldb {})
+    (let [dev {:type "straight" :x 0 :y 0
+               :transform [1 0 0 1 0 0] :name "S1"}
+          port-types (e/device-port-types dev)]
+      (is (empty? port-types)
+          "no model → no ports (circuit path with empty modeldb)"))))
+
+(deftest photonic-model-ports-location-alignment
+  (testing "device-locations and device-port-types agree for photonic with model ports"
+    (reset! pform/modeldb
+            {"models:test.straight"
+             {:name "Straight"
+              :ports [{:name "o1" :side :left :type "photonic"}
+                      {:name "o2" :side :right :type "photonic"}]}})
+    (try
+      (let [dev {:type "straight" :model "test.straight"
+                 :x 5 :y 5 :transform [1 0 0 1 0 0] :name "S1"}
+            [loc-endpoints _] (e/device-locations dev)
+            port-types (e/device-port-types dev)
+            loc-cells (set loc-endpoints)
+            port-cells (set (map (juxt :x :y) port-types))]
+        (is (= loc-cells port-cells)
+            "location endpoints and port-type positions must match"))
+      (finally
+        (reset! pform/modeldb {})))))
+
+(deftest photonic-model-ports-rotation-alignment
+  (testing "photonic with model ports under 90° rotation: :ids and :ports align"
+    (reset! pform/modeldb
+            {"models:test.straight"
+             {:name "Straight"
+              :ports [{:name "o1" :side :left :type "photonic"}
+                      {:name "o2" :side :right :type "photonic"}]}})
+    (try
+      (let [schem (sch (photonic-dev "S1" "straight" "test.straight" 5 5))
+            schem (update schem "S1" assoc :transform [0 1 -1 0 0 0])
+            idx (e/build-point-index schem)
+            id-cells (set (for [[pt {:keys [ids]}] idx
+                                :when (contains? ids "S1")]
+                            pt))
+            port-cells (set (for [[pt {:keys [ports]}] idx
+                                  :when (some #(= "S1" (first %)) ports)]
+                              pt))]
+        (is (= id-cells port-cells)
+            "cells where S1 appears in :ids must match cells where it appears in :ports"))
+      (finally
+        (reset! pform/modeldb {})))))
+
+;; ---------------------------------------------------------------------------
+;; Type-driven port alignment for photonic devices
+;; ---------------------------------------------------------------------------
+
+(deftest photonic-ring-single-ports-at-bottom
+  (testing "ring-single with model ports: both ports at bottom of [1,2] box"
+    (reset! pform/modeldb
+            {"models:test.ring"
+             {:name "RingSingle"
+              :ports [{:name "o1" :side :left :type "photonic"}
+                      {:name "o2" :side :right :type "photonic"}]}})
+    (try
+      (let [dev {:type "ring-single" :model "test.ring"
+                 :x 0 :y 0 :transform [1 0 0 1 0 0] :name "RS1"}
+            port-types (e/device-port-types dev)
+            locs (into {} (map (juxt :name (juxt :x :y))) port-types)]
+        (is (= [0 2] (get locs "o1")) "left port at bottom (y=2)")
+        (is (= [2 2] (get locs "o2")) "right port at bottom (y=2)"))
+      (finally
+        (reset! pform/modeldb {})))))
+
+(deftest photonic-sbend-ports-staggered
+  (testing "sbend with model ports: left at top, right at bottom"
+    (reset! pform/modeldb
+            {"models:test.sbend"
+             {:name "SBend"
+              :ports [{:name "o1" :side :left :type "photonic"}
+                      {:name "o2" :side :right :type "photonic"}]}})
+    (try
+      (let [dev {:type "sbend" :model "test.sbend"
+                 :x 0 :y 0 :transform [1 0 0 1 0 0] :name "SB1"}
+            port-types (e/device-port-types dev)
+            locs (into {} (map (juxt :name (juxt :x :y))) port-types)]
+        (is (= [0 1] (get locs "o1")) "left port at top (y=1)")
+        (is (= [2 2] (get locs "o2")) "right port at bottom (y=2)"))
+      (finally
+        (reset! pform/modeldb {})))))
+
+(deftest photonic-mmi-2x2-port-gap
+  (testing "mmi-2x2 with model ports: gap preserved between port pairs"
+    (reset! pform/modeldb
+            {"models:test.mmi"
+             {:name "MMI2x2"
+              :ports [{:name "o1" :side :left :type "photonic"}
+                      {:name "o2" :side :left :type "photonic"}
+                      {:name "o3" :side :right :type "photonic"}
+                      {:name "o4" :side :right :type "photonic"}]}})
+    (try
+      (let [dev {:type "mmi-2x2" :model "test.mmi"
+                 :x 0 :y 0 :transform [1 0 0 1 0 0] :name "M1"}
+            port-types (e/device-port-types dev)
+            locs (into {} (map (juxt :name (juxt :x :y))) port-types)]
+        (is (= [0 1] (get locs "o1")) "first left at y=1")
+        (is (= [0 3] (get locs "o2")) "second left at y=3 (gap at y=2)")
+        (is (= [2 1] (get locs "o3")) "first right at y=1")
+        (is (= [2 3] (get locs "o4")) "second right at y=3"))
+      (finally
+        (reset! pform/modeldb {})))))
+
+(deftest photonic-rotation-alignment-ring-single
+  (testing "ring-single under 90° rotation: :ids and :ports align"
+    (reset! pform/modeldb
+            {"models:test.ring"
+             {:name "RingSingle"
+              :ports [{:name "o1" :side :left :type "photonic"}
+                      {:name "o2" :side :right :type "photonic"}]}})
+    (try
+      (let [schem (sch (photonic-dev "RS1" "ring-single" "test.ring" 5 5))
+            schem (update schem "RS1" assoc :transform [0 1 -1 0 0 0])
+            idx (e/build-point-index schem)
+            id-cells (set (for [[pt {:keys [ids]}] idx
+                                :when (contains? ids "RS1")]
+                            pt))
+            port-cells (set (for [[pt {:keys [ports]}] idx
+                                  :when (some #(= "RS1" (first %)) ports)]
+                              pt))]
+        (is (= id-cells port-cells)
+            "cells where RS1 appears in :ids must match cells where it appears in :ports"))
+      (finally
+        (reset! pform/modeldb {})))))
