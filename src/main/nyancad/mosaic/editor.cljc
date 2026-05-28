@@ -1065,7 +1065,8 @@
   "Return typed port maps [{:x :y :type ...}] for a device after rotation."
   [dev]
   (let [cell (:type dev)
-        {:keys [x y transform model]} dev]
+        {:keys [x y model]} dev
+        transform (or (:transform dev) cm/IV)]
     (cond
       (= cell "wire") nil
       (= cell "text") nil
