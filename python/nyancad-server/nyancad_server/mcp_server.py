@@ -25,12 +25,15 @@ DeviceAdapter = TypeAdapter(Device)
 class SchematicResponse(BaseModel):
     """Response from get_schematic tool.
 
-    Contains validated devices with computed port locations and a generated SPICE netlist.
+    Contains validated devices with computed port locations and a generated SPICE
+    netlist.
     """
 
     schematic: dict[str, Device] = Field(
         ...,
-        description="Devices keyed by full document ID (format: 'schematic_id:device_name')",
+        description=(
+            "Devices keyed by full document ID (format: 'schematic_id:device_name')"
+        ),
     )
     spice: str = Field(
         ..., description="Generated SPICE netlist including all subcircuits"
@@ -79,7 +82,7 @@ token_verifier = JWTTokenVerifier()
 # Using stateless mode for multi-worker support (ClosedResourceError fixed in PR #1384)
 mcp = FastMCP(
     "nyancad-mcp",
-    host="0.0.0.0",  # Accept connections from any host
+    host="0.0.0.0",  # Accept connections from any host  # noqa: S104
     stateless_http=True,
     json_response=True,
     token_verifier=token_verifier,
@@ -170,7 +173,8 @@ async def get_schematic(
 
     Returns:
         SchematicResponse with:
-        - schematic: Dict of document ID → Device (Wire or Component with computed ports)
+        - schematic: Dict of document ID → Device (Wire or Component with
+          computed ports)
         - spice: Generated SPICE netlist as string
 
     Raises:
@@ -275,7 +279,8 @@ async def bulk_update_schematic(
     schematic_id: Annotated[str, "Schematic ID"],
     docs: Annotated[
         list[Device],
-        "List of complete Wire or Component documents. See Device schema for required fields.",
+        "List of complete Wire or Component documents."
+        " See Device schema for required fields.",
     ],
 ) -> list[dict[str, Any]]:
     """Bulk update schematic documents with complete device data.
@@ -322,9 +327,7 @@ async def bulk_update_schematic(
             docs_to_write.append(doc)
 
         # Submit to CouchDB
-        result = await api.bulk_update(docs_to_write)
-
-        return result
+        return await api.bulk_update(docs_to_write)
 
     finally:
         await api.close()
@@ -367,8 +370,7 @@ async def update_model(
             model_dict["_id"] = normalize_to_model_key(model_dict["_id"])
 
         # Use the new update_model API method
-        result = await api.update_model(model_dict)
-        return result
+        return await api.update_model(model_dict)
     finally:
         await api.close()
 
@@ -395,7 +397,6 @@ async def get_simulation_result(
     api = get_api_from_context(ctx)
     try:
         # Use the new get_simulation_results API method
-        result = await api.get_simulation_results(normalize_to_bare_id(id))
-        return result
+        return await api.get_simulation_results(normalize_to_bare_id(id))
     finally:
         await api.close()

@@ -273,7 +273,10 @@ async def workspace_endpoint(request: Request):
     if not re.match(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$", slug):
         return JSONResponse(
             {
-                "error": "Invalid workspace name. Use lowercase letters, numbers, and hyphens only."
+                "error": (
+                    "Invalid workspace name."
+                    " Use lowercase letters, numbers, and hyphens only."
+                )
             },
             status_code=400,
         )
@@ -378,7 +381,9 @@ async def workspace_endpoint(request: Request):
             if security_resp.status_code != 200:
                 return JSONResponse(
                     {
-                        "error": f"Failed to update workspace security: {security_resp.text}"
+                        "error": (
+                            f"Failed to update workspace security: {security_resp.text}"
+                        )
                     },
                     status_code=security_resp.status_code,
                 )
@@ -416,6 +421,8 @@ async def workspace_endpoint(request: Request):
             )
 
             return JSONResponse({"ok": True, "deleted": db_name})
+
+        return None
 
 
 # Whitelisted GitHub repositories for proxy access
@@ -483,7 +490,8 @@ def create_app(
     host: str = "localhost",
     port: int = 8080,
 ) -> Starlette:
-    """Create the Starlette application with static files and optional marimo edit integration.
+    """Create the Starlette application with static files and optional marimo
+    edit integration.
 
     Args:
         mode: Deployment mode (LOCAL, LAN, or WASM)
@@ -587,7 +595,7 @@ def create_app(
     app.state.limiter = limiter
     app.add_exception_handler(
         RateLimitExceeded,
-        lambda request, exc: JSONResponse(
+        lambda _request, _exc: JSONResponse(
             {"error": "Rate limit exceeded. Try again later."}, status_code=429
         ),
     )
@@ -648,7 +656,10 @@ def main():
         type=str,
         choices=["local", "lan", "wasm"],
         default="local",
-        help="Deployment mode: local (single user), lan (multi-user with auth), wasm (client-side)",
+        help=(
+            "Deployment mode: local (single user),"
+            " lan (multi-user with auth), wasm (client-side)"
+        ),
     )
 
     args = parser.parse_args()

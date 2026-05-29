@@ -13,7 +13,7 @@ The easiest way to install the Sky130 PDK is through [open_pdks](https://github.
 Since Mosaic is typically installed using conda, the easiest way to install it is by running the following command inside your Mosaic installation. (For example by opening a terminal from JupyterLab)
 
 ```
- conda install -c litex-hub open_pdks.sky130a 
+ conda install -c litex-hub open_pdks.sky130a
 ```
 
 # Adding Mosaic models

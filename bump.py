@@ -33,6 +33,7 @@ def run_bump(directory: Path, bump_type: str, name: str) -> bool:
         cwd=directory,
         capture_output=True,
         text=True,
+        check=False,
     )
 
     if result.returncode != 0:
@@ -40,11 +41,7 @@ def run_bump(directory: Path, bump_type: str, name: str) -> bool:
         print(result.stderr, file=sys.stderr)
         return False
 
-    print(
-        result.stdout.strip()
-        if result.stdout.strip()
-        else f"  {name} bumped successfully"
-    )
+    print(result.stdout.strip() or f"  {name} bumped successfully")
     return True
 
 

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2022 Pepijn de Vos
 #
 # SPDX-License-Identifier: MPL-2.0
-"""This module communicates with CouchDB to fetch schematics, and generate SPICE netlists out of them."""
+"""Fetch schematics from CouchDB and generate SPICE netlists."""
 
 import hashlib
 import re
@@ -10,8 +10,8 @@ import shutil
 # package download dependencies
 import sys
 import tempfile
-from collections import namedtuple
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import urlparse
 
 from InSpice.Spice.Netlist import Circuit, SubCircuit
@@ -26,15 +26,15 @@ if sys.platform == "emscripten":  # Pyodide/WASM
         """Download using native Pyodide pyfetch"""
         response = await pyfetch(url)
         if not response.ok:
-            raise Exception(f"HTTP {response.status}: {response.status_text}")
+            raise Exception(f"HTTP {response.status}: {response.status_text}")  # noqa: TRY002
         content = await response.bytes()
-        Path(dest_path).write_bytes(content)
+        Path(dest_path).write_bytes(content)  # noqa: ASYNC240
 else:  # Native Python
     import urllib.request
 
     async def download_file(url, dest_path):
         """Download using urllib"""
-        urllib.request.urlretrieve(url, dest_path)
+        urllib.request.urlretrieve(url, dest_path)  # noqa: S310
 
 
 try:
@@ -73,7 +73,10 @@ def bare_id(model_key_str):
     return model_key_str[7:]  # Remove 'models:' prefix (7 characters)
 
 
-class SchemId(namedtuple("SchemId", ["schem", "device"])):
+class SchemId(NamedTuple):
+    schem: str | None
+    device: str | None
+
     @classmethod
     def from_string(cls, id):
         schem, dev, *_ = id.split(":") + [None]
@@ -175,13 +178,13 @@ def invert_kf_nets(components, port_devices):
                 bucket["inst"].append(member)
 
     for port_name, dev in port_devices.items():
-        for _, net in (dev.get("nets") or {"P": port_name}).items():
+        port_name_str = str(port_name)
+        for net in (dev.get("nets") or {"P": port_name_str}).values():
             if not net:
                 continue
             bucket = out.setdefault(net, {"inst": [], "ports": []})
-            port_name = str(port_name)
-            if port_name not in bucket["ports"]:
-                bucket["ports"].append(port_name)
+            if port_name_str not in bucket["ports"]:
+                bucket["ports"].append(port_name_str)
 
     return out
 
@@ -333,8 +336,7 @@ def _coerce_settings(raw, factory=None):
         try:
             sig = inspect.signature(factory)
             param_types = {
-                name: _base_types(p.annotation)
-                for name, p in sig.parameters.items()
+                name: _base_types(p.annotation) for name, p in sig.parameters.items()
             }
         except (ValueError, TypeError):
             pass
@@ -398,9 +400,7 @@ def resolve_sax_netlist(recnet, pdk_cells):
         unique_keys = {
             tuple(
                 sorted(
-                    _coerce_settings(
-                        ii.get("settings", {}), factory=cell_fn
-                    ).items()
+                    _coerce_settings(ii.get("settings", {}), factory=cell_fn).items()
                 )
             )
             for _, ii in inst_list
@@ -420,12 +420,12 @@ def resolve_sax_netlist(recnet, pdk_cells):
                 except Exception:
                     try:
                         cell = cell_fn()
-                    except Exception:
+                    except Exception:  # noqa: S112
                         continue
 
                 try:
                     sub = cell.get_netlist(recursive=True)
-                except Exception:
+                except Exception:  # noqa: S112
                     continue
 
                 variant_name = f"{comp}_v{idx}" if needs_variants else comp
@@ -517,7 +517,8 @@ class NyanCADMixin:
                 # If the entry specifies a port order, use it
                 if selected_entry.get("port-order"):
                     port_order = selected_entry["port-order"]
-                # Apply params mapping (replaces device props with evaluated model params)
+                # Apply params mapping (replaces device props with evaluated model
+                # params)
                 if selected_entry.get("params"):
                     # Merge model default props under device instance props
                     defaults = {
@@ -640,7 +641,7 @@ class NyanCADMixin:
 class NyanCircuit(NyanCADMixin, Circuit):
     """InSpice Circuit populated from NyanCAD schematic data."""
 
-    def __init__(self, name, schem, corners=None, sim="NgSpice", **kwargs):
+    def __init__(self, name, schem, corners=None, sim="NgSpice", **kwargs) -> None:
         """Create InSpice Circuit from full NyanCAD schematic data.
 
         Parameters:
@@ -659,19 +660,23 @@ class NyanCircuit(NyanCADMixin, Circuit):
         # First populate main circuit elements to collect used models
         self.populate_from_nyancad(schem[name], models, corners, sim)
 
-        # Then process only the used models: create subcircuits for schematic models, add SPICE for others
+        # Then process only the used models: create subcircuits for schematic
+        # models, add SPICE for others
         for model_key_str in self.used_models:
             model_def = models[model_key_str]
-            # Extract bare model ID for schematic lookup (models dict keys always have "models:" prefix)
+            # Extract bare model ID for schematic lookup (models dict keys always
+            # have "models:" prefix)
             model_id = bare_id(model_key_str)
             # Skip the top-level circuit itself
             if model_id != name:
-                # Create subcircuits for schematic models or SPICE models with model entries
+                # Create subcircuits for schematic models or SPICE models with
+                # model entries
                 if model_id in schem:
                     # Create subcircuit for models with schematic implementations
                     docs = schem[model_id]
                     nodes = default_port_order(model_def["ports"])
-                    # Pass model parameter definitions as subcircuit parameters (default to 0)
+                    # Pass model parameter definitions as subcircuit parameters
+                    # (default to 0)
                     model_params = {
                         p["name"]: p.get("default", "0")
                         for p in model_def.get("props", [])
@@ -722,7 +727,9 @@ class NyanCircuit(NyanCADMixin, Circuit):
         self._pending_downloads.clear()
 
     def add_spice_code(self, spice_code: str):
-        """Add SPICE code to circuit. Try structured parsing first, fallback to raw injection.
+        """Add SPICE code to circuit.
+
+        Try structured parsing first, fallback to raw injection.
 
         Args:
             spice_code: Raw SPICE code (models, subcircuits, etc.)
@@ -771,7 +778,7 @@ class NyanCircuit(NyanCADMixin, Circuit):
             entrypoint = parsed.fragment
 
             # Generate cache key from URL
-            url_hash = hashlib.md5(archive_url.encode()).hexdigest()[:8]
+            url_hash = hashlib.md5(archive_url.encode()).hexdigest()[:8]  # noqa: S324
             filename = Path(parsed.path).name
             cached_file = cache_dir / f"{url_hash}_{filename}"
 
@@ -792,7 +799,7 @@ class NyanCircuit(NyanCADMixin, Circuit):
             path_obj._path = resolved_path
 
     def resolve_url_includes(self, spice_source):
-        """Resolve HTTP includes (archives or bare files) to local file paths in a SpiceSource object."""
+        """Resolve HTTP includes (archives or bare files) to local paths."""
         # Process includes
         for include in spice_source._includes:
             self._resolve_url_path(include)
@@ -808,7 +815,7 @@ class NyanSubCircuit(NyanCADMixin, SubCircuit):
 
     def __init__(
         self, name, nodes, docs, models, corners=None, sim="NgSpice", **kwargs
-    ):
+    ) -> None:
         """Create InSpice SubCircuit from NyanCAD docs.
 
         Parameters:
@@ -893,7 +900,7 @@ async def inspice_netlist_from_api(
     """
     if corner is not None and corners is None:
         corners = [corner]
-    seq, schem = await api.get_all_schem_docs(name)
+    _seq, schem = await api.get_all_schem_docs(name)
     circuit = NyanCircuit(name, schem, corners, sim, **kwargs)
     await circuit.download_includes()
     return circuit

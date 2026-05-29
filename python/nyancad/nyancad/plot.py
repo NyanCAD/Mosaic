@@ -92,7 +92,7 @@ def table(streams):
     return hv.DynamicMap(lambda data, cols: hv.Table(data[cols]), streams=streams)
 
 
-def fftplot(data, cols=[], n=1024):
+def fftplot(data, cols=None, n=1024):
     if cols is None:
         cols = data.columns.tolist()
     traces = []

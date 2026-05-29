@@ -68,7 +68,9 @@ class TestStrToHex:
 
 
 class TestNormalizeToBareId:
-    """normalize_to_bare_id strips 'models:' prefix if present, passes through bare IDs."""
+    """normalize_to_bare_id strips 'models:' prefix if present, passes through
+    bare IDs.
+    """
 
     def test_bare_id_unchanged(self):
         assert normalize_to_bare_id("abc-123") == "abc-123"
@@ -90,7 +92,9 @@ class TestNormalizeToBareId:
 
 
 class TestNormalizeToModelKey:
-    """normalize_to_model_key adds 'models:' prefix if missing, passes through prefixed IDs."""
+    """normalize_to_model_key adds 'models:' prefix if missing, passes through
+    prefixed IDs.
+    """
 
     def test_adds_prefix(self):
         assert normalize_to_model_key("abc-123") == "models:abc-123"

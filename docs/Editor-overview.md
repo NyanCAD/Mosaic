@@ -82,7 +82,7 @@ The toolbar also shows a little indicator when data synchronization is in progre
 
 ![image](https://user-images.githubusercontent.com/168609/177964003-f30c136a-f37e-4481-afcc-c0c5276849e5.png)
 
-The toolbar can be used to select items to place visually, as an alternative to the [keyboard shortcuts]. The selected device is highlighted in dark blue. Devices that have a little arrow can be long-pressed to reveal similar devices grouped under it. 
+The toolbar can be used to select items to place visually, as an alternative to the [keyboard shortcuts]. The selected device is highlighted in dark blue. Devices that have a little arrow can be long-pressed to reveal similar devices grouped under it.
 
 **Unstable** it will be possible to hide/collapse the device toolbar.
 

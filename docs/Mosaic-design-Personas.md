@@ -30,7 +30,7 @@ Caroline is a software developer who works on embedded systems.
 She is experienced in writing Verilog for FPGAs, and through the Google Skywatter shuttle, is experimenting with compiling some of her designs into ASICs.
 She has a rudimentary understanding of electronics, but would like to add some analog peripherals to her ASIC, such as an ADC.
 She hopes analog generators and place-and-route algorithms can take care of the analog bits for her as much as possible.
-Due to her software background, she wants to us unit tests and automate as much as possible. 
+Due to her software background, she wants to us unit tests and automate as much as possible.
 
 ## Dan - Experienced IC designer
 

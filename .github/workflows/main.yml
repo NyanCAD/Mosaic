@@ -152,12 +152,12 @@ jobs:
       - name: Build Python packages
         run: |
           mkdir -p public/wheels
-          
+
           # Build nyancad package
           cd python/nyancad
           python -m build --outdir ../../public/wheels
           cd ../..
-          
+
           # Build nyancad-server package
           cd python/nyancad-server
           python -m build --outdir ../../public/wheels

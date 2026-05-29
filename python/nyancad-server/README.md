@@ -73,7 +73,7 @@ The server includes fallback logic to work in development mode by looking for fi
 
 - Python 3.8+
 - marimo >= 0.13.0
-  
+
 - uvicorn[standard] >= 0.23.0
 - nyancad >= 0.1.0
 

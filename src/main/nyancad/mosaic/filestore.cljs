@@ -42,5 +42,5 @@
     ; Set the fileStores array with our PouchDB store
     (set! (.. js/window -__MARIMO_MOUNT_CONFIG__ -config -save)
           (clj->js {:autosave "after_delay", :autosave_delay 2000, :format_on_save true}))
-    (set! (.. js/window -__MARIMO_MOUNT_CONFIG__ -fileStores) 
+    (set! (.. js/window -__MARIMO_MOUNT_CONFIG__ -fileStores)
           (clj->js [pouchdb-store]))))

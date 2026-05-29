@@ -11,7 +11,7 @@ from nyancad_server import get_sax_notebook_path
 
 
 def main():
-    os.execvp("marimo", ["marimo", "run", get_sax_notebook_path()] + sys.argv[1:])
+    os.execvp("marimo", ["marimo", "run", get_sax_notebook_path()] + sys.argv[1:])  # noqa: S606
 
 
 if __name__ == "__main__":

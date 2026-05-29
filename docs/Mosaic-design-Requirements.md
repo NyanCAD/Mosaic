@@ -104,7 +104,7 @@ Guided design
 
 > Guided design is needed, I like what you are doing [gesturing at my .gif of real time operating point annotation]
 
-> Try to walk in the steps of the designer and make that easy. If a designer wants to characterize a process, make that easy. Give some figures of merit. 
+> Try to walk in the steps of the designer and make that easy. If a designer wants to characterize a process, make that easy. Give some figures of merit.
 
 Reusable components/tests
 

@@ -9,7 +9,7 @@ import traitlets
 
 
 class SchematicBridge(anywidget.AnyWidget):
-    """An anywidget that provides live bidirectional communication with the Mosaic editor.
+    """An anywidget for live bidirectional communication with the Mosaic editor.
 
     The widget displays a simple status indicator and automatically syncs schematic
     data from the Mosaic editor's PouchDB storage into the Python model, while also
@@ -18,7 +18,8 @@ class SchematicBridge(anywidget.AnyWidget):
     Attributes:
         schematic_data (dict): Live schematic data from the Mosaic editor
         simulation_data (dict): Simulation data to send to the Mosaic editor.
-                               Setting this will store the data with a timestamp in the editor's database.
+                               Setting this will store the data with a timestamp
+                               in the editor's database.
     """
 
     # ESM shim that dynamically imports the Shadow CLJS compiled anywidget module

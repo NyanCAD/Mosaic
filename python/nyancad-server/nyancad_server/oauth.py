@@ -44,7 +44,8 @@ class JWTTokenVerifier:
     """Verifies JWT tokens signed with shared HMAC secret.
 
     This verifier validates JWTs that were issued by the OAuth Authorization Server.
-    The same JWTs can be used with CouchDB when it's configured with the same HMAC secret.
+    The same JWTs can be used with CouchDB when it's configured with the same
+    HMAC secret.
     """
 
     async def verify_token(self, token: str) -> AccessToken | None:
@@ -102,8 +103,8 @@ class JWTTokenVerifier:
         except jwt.InvalidTokenError as e:
             logger.warning(f"Token verification failed: {e}")
             return None
-        except Exception as e:
-            logger.error(f"Token verification error: {e}")
+        except Exception:
+            logger.exception("Token verification error")
             return None
 
 
@@ -115,7 +116,8 @@ class CouchDBOAuthProvider(
     This provider:
     1. Validates user credentials against CouchDB
     2. Issues JWT tokens signed with shared HMAC secret
-    3. Stores all OAuth state in CouchDB (oauth_clients database) for multi-worker support
+    3. Stores all OAuth state in CouchDB (oauth_clients database) for
+       multi-worker support
     4. Supports PKCE for secure authorization code flow
     """
 
@@ -164,8 +166,8 @@ class CouchDBOAuthProvider(
                 if response.status_code != 200:
                     return None
                 return response.json()
-            except Exception as e:
-                logger.error(f"CouchDB GET {doc_id} failed: {e}")
+            except Exception:
+                logger.exception(f"CouchDB GET {doc_id} failed")
                 return None
 
     async def _couchdb_put(
@@ -181,13 +183,14 @@ class CouchDBOAuthProvider(
                 )
                 if response.status_code not in (200, 201, 202):
                     logger.error(
-                        f"CouchDB PUT {doc_id} failed: {response.status_code} - {response.text}"
+                        f"CouchDB PUT {doc_id} failed:"
+                        f" {response.status_code} - {response.text}"
                     )
                     return False
                 logger.debug(f"CouchDB PUT {doc_id} succeeded")
                 return True
-            except Exception as e:
-                logger.error(f"CouchDB PUT {doc_id} error: {e}")
+            except Exception:
+                logger.exception(f"CouchDB PUT {doc_id} error")
                 return False
 
     async def _couchdb_delete(
@@ -208,8 +211,8 @@ class CouchDBOAuthProvider(
                     return True
                 logger.error(f"CouchDB DELETE {doc_id} failed: {response.status_code}")
                 return False
-            except Exception as e:
-                logger.error(f"CouchDB DELETE {doc_id} error: {e}")
+            except Exception:
+                logger.exception(f"CouchDB DELETE {doc_id} error")
                 return False
 
     async def _store_state(self, state: str, params: dict) -> bool:
@@ -361,11 +364,12 @@ class CouchDBOAuthProvider(
         if not result:
             raise HTTPException(400, "Invalid or expired authorization code")
 
-        auth_code_stored, user_data = result
+        _auth_code_stored, user_data = result
         username = user_data["username"]
         roles = user_data["roles"]
 
-        # Validate PKCE (code_challenge is validated by the framework before calling this)
+        # Validate PKCE (code_challenge is validated by the framework before
+        # calling this)
 
         # Generate JWT access token using PyJWT
         now = int(time.time())
@@ -387,7 +391,7 @@ class CouchDBOAuthProvider(
         refresh_payload = {
             "sub": username,
             "iss": SERVER_URL,
-            "aud": f"{SERVER_URL}/token",  # Refresh tokens only valid for token endpoint
+            "aud": f"{SERVER_URL}/token",  # Only valid for token endpoint
             "exp": refresh_expires_at,
             "iat": now,
             "jti": refresh_jti,
@@ -432,7 +436,7 @@ class CouchDBOAuthProvider(
 
         return OAuthToken(
             access_token=access_token_str,
-            token_type="Bearer",
+            token_type="Bearer",  # noqa: S106
             expires_in=900,  # (was 3600)
             scope=" ".join(authorization_code.scopes),
             refresh_token=refresh_token_str,
@@ -498,8 +502,8 @@ class CouchDBOAuthProvider(
         except jwt.InvalidTokenError as e:
             logger.warning(f"Invalid refresh token: {e}")
             return None
-        except Exception as e:
-            logger.error(f"Error loading refresh token: {e}")
+        except Exception:
+            logger.exception("Error loading refresh token")
             return None
 
     async def exchange_refresh_token(
@@ -607,7 +611,7 @@ class CouchDBOAuthProvider(
 
             return OAuthToken(
                 access_token=access_token_str,
-                token_type="Bearer",
+                token_type="Bearer",  # noqa: S106
                 expires_in=900,
                 scope=" ".join(scopes),
                 refresh_token=new_refresh_token,
@@ -615,9 +619,9 @@ class CouchDBOAuthProvider(
 
         except HTTPException:
             raise
-        except Exception as e:
-            logger.error(f"Error exchanging refresh token: {e}")
-            raise HTTPException(500, "Internal server error")
+        except Exception:
+            logger.exception("Error exchanging refresh token")
+            raise HTTPException(500, "Internal server error") from None
 
     async def load_access_token(self, token: str) -> AccessToken | None:
         """Load and validate access token (for introspection) by decoding JWT."""
@@ -650,17 +654,18 @@ class CouchDBOAuthProvider(
 
         except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
             return None
-        except Exception as e:
-            logger.error(f"Token introspection error: {e}")
+        except Exception:
+            logger.exception("Token introspection error")
             return None
 
     async def revoke_token(
         self, token: str, token_type_hint: str | None = None
-    ) -> None:  # type: ignore
+    ) -> None:  # type: ignore[override]
         """Revoke a token.
 
         For refresh tokens: decode JWT to get username, then clear from user document.
-        For access tokens: JWTs cannot be revoked (stateless), but they expire after 15 minutes.
+        For access tokens: JWTs cannot be revoked (stateless), but they expire
+        after 15 minutes.
         """
         try:
             # Try to decode as refresh token
@@ -695,8 +700,8 @@ class CouchDBOAuthProvider(
         except jwt.InvalidTokenError:
             # Invalid token format, nothing to revoke
             logger.warning("Cannot revoke invalid token")
-        except Exception as e:
-            logger.error(f"Error revoking token: {e}")
+        except Exception:
+            logger.exception("Error revoking token")
 
     async def validate_credentials(
         self, request: Request, username: str | None = None, password: str | None = None
@@ -739,7 +744,7 @@ class CouchDBOAuthProvider(
 
                 # Handle both response formats:
                 # POST /_session: {"ok": true, "name": "username", "roles": [...]}
-                # GET /_session: {"ok": true, "userCtx": {"name": "username", "roles": [...]}}
+                # GET /_session: {"ok": true, "userCtx": {"name": "...", "roles": []}}
                 if "userCtx" in data:
                     # GET format (session check)
                     user_ctx = data["userCtx"]
@@ -755,8 +760,8 @@ class CouchDBOAuthProvider(
 
                 return True, authenticated_username, roles
 
-            except Exception as e:
-                logger.error(f"CouchDB authentication error: {e}")
+            except Exception:
+                logger.exception("CouchDB authentication error")
                 return False, "", []
 
     async def handle_oauth_login(self, request: Request) -> Response:
@@ -838,8 +843,8 @@ class CouchDBOAuthProvider(
 
             return JSONResponse({"redirect_url": redirect_uri})
 
-        except Exception as e:
-            logger.error(f"OAuth login error: {e}")
+        except Exception:
+            logger.exception("OAuth login error")
             return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
@@ -849,7 +854,9 @@ oauth_provider = CouchDBOAuthProvider()
 
 # Create OAuth routes using MCP SDK
 def create_oauth_routes() -> list[Route]:
-    """Create all OAuth routes including standard OAuth endpoints and custom login endpoints."""
+    """Create all OAuth routes including standard OAuth endpoints and custom
+    login endpoints.
+    """
     # OAuth settings for MCP (standard OAuth paths at root level)
     auth_settings = AuthSettings(
         issuer_url=AnyHttpUrl(SERVER_URL),

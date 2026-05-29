@@ -79,7 +79,7 @@
         py (python-for-nyancad cwd)
         input (str (clojure.string/join "\n" json-lines) "\n")
         ^js res (cp/spawnSync py
-                              #js ["-m" "tests._parity_oracle"]
+                              #js ["-m" "nyancad.parity_oracle"]
                               #js {:cwd cwd :input input})]
     (when-not (zero? (.-status res))
       (throw (ex-info "oracle exited non-zero"

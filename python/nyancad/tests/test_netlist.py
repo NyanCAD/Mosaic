@@ -128,7 +128,9 @@ class TestDefaultPortOrder:
 
 
 class TestDefaultPortList:
-    """_default_port_list returns canonical SPICE port order for built-in device types."""
+    """_default_port_list returns canonical SPICE port order for built-in
+    device types.
+    """
 
     def _make_ports(self, names):
         """Helper: create a ports dict and lookup function from port names."""
@@ -376,11 +378,13 @@ class TestEvalParams:
 
 class TestModelPropDefaultsFallback:
     """When a model exists but has no SPICE model entries, model default props
-    (like the SPICE model name) are applied as a fallback."""
+    (like the SPICE model name) are applied as a fallback.
+    """
 
     def test_nmos_gets_model_name_from_defaults(self):
         """NMOS with a model that has no SPICE entries but has a 'model'
-        default prop should use that prop value as the SPICE model name."""
+        default prop should use that prop value as the SPICE model name.
+        """
         schem = {
             "top": {
                 "top:M1": {
@@ -506,7 +510,8 @@ class TestPopulateFromNyancad:
 
     def test_skips_structural_types(self):
         """Structural docs never produce SPICE elements even if
-        they accidentally carry a :nets field."""
+        they accidentally carry a :nets field.
+        """
         schem = self._schem(
             {
                 "top:W1": {
@@ -643,7 +648,8 @@ def _kf_data(netlist):
 
 class TestKfNetlistFromNyancad:
     """The SAX notebook path should use Mosaic `nets` directly and avoid
-    requiring layout fields or DSchematic conversion."""
+    requiring layout fields or DSchematic conversion.
+    """
 
     def test_builds_kfnetlist_from_inline_nets(self):
         schem = {

@@ -227,7 +227,8 @@ def _(mo, spice, widget_state):
                 [
                     mo.md("**Operating Point Analysis**"),
                     mo.md(
-                        "Find the DC operating point with capacitors open and inductors shorted."
+                        "Find the DC operating point with capacitors open"
+                        " and inductors shorted."
                     ),
                     op_back_annotate,
                 ]
@@ -317,7 +318,8 @@ def _(mo, spice, widget_state):
                 [
                     mo.md("**Transfer Function Analysis**"),
                     mo.md(
-                        "Compute DC small-signal transfer function, input and output resistance."
+                        "Compute DC small-signal transfer function,"
+                        " input and output resistance."
                     ),
                     tf_output,
                     tf_input,
@@ -327,7 +329,8 @@ def _(mo, spice, widget_state):
                 [
                     mo.md("**DC Sensitivity Analysis**"),
                     mo.md(
-                        "Compute sensitivity of DC operating point to device parameters."
+                        "Compute sensitivity of DC operating point"
+                        " to device parameters."
                     ),
                     dc_sens_output,
                 ]

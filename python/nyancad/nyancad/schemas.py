@@ -62,8 +62,8 @@ ComponentType = Literal[
 class DeviceBase(BaseModel):
     """Base class for all schematic devices.
 
-    Defines common fields shared by wires and components: position, name, CouchDB metadata,
-    and editor-computed net assignments.
+    Defines common fields shared by wires and components: position, name,
+    CouchDB metadata, and editor-computed net assignments.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -135,7 +135,8 @@ class Component(DeviceBase):
     """Electronic component (resistor, capacitor, transistor, etc).
 
     Components are positioned at (x, y) with orientation defined by a transform matrix.
-    The transform matrix is a 2D affine transformation [a, b, c, d, e, f] for rotation/mirroring.
+    The transform matrix is a 2D affine transformation [a, b, c, d, e, f]
+    for rotation/mirroring.
 
     Component properties (props field) depend on the component type:
     - Resistor: {"resistance": "1k"}
@@ -169,18 +170,20 @@ class Component(DeviceBase):
     transform: list[float] = Field(
         min_length=6,
         max_length=6,
-        description="2D affine transform matrix [a, b, c, d, e, f] for rotation/mirroring",
+        description="2D affine transform matrix [a, b, c, d, e, f] for rotation/mirror",
     )
 
     # Optional component fields
     model: str | None = Field(
         None,
-        description="Model reference (bare ID without 'models:' prefix) for subcircuit components",
+        description="Model reference (bare ID, no 'models:' prefix) for subcircuits",
     )
     props: dict[str, Any] | None = Field(
         None,
-        description="Component properties dict. Names and values depend on component type. "
-        "Values use SPICE notation (1k, 10u, 100m, etc).",
+        description=(
+            "Component properties dict. Names and values depend on component type. "
+            "Values use SPICE notation (1k, 10u, 100m, etc)."
+        ),
     )
     variant: str | None = Field(
         None, description="Component variant (e.g., 'ground' for port type)"
@@ -272,11 +275,14 @@ class ModelMetadata(BaseModel):
     # dicts that have been through the MCP server (has_models injected).
     has_models: bool | None = Field(
         None,
-        description="Whether model entries exist for netlist generation (derived; set by mcp_server.py, not stored in DB)",
+        description=(
+            "Whether model entries exist for netlist generation "
+            "(derived; set by mcp_server.py, not stored in DB)"
+        ),
     )
     models: list[ModelEntry] | None = Field(
         None,
-        description="Flat list of model/template entries by language and implementation",
+        description="Flat list of model/template entries by language and impl",
     )
 
     # Port and parameter definitions

@@ -7,6 +7,7 @@ Provides a ProjectState that watches .nyancir/.nyanlib files for content
 changes, triggering Marimo cell re-execution when schematics are edited.
 """
 
+import contextlib
 import sys
 import threading
 import time
@@ -24,10 +25,8 @@ def _snapshot(path: Path) -> dict[str, float]:
     try:
         for f in path.iterdir():
             if f.suffix in (".nyancir", ".nyanlib"):
-                try:
+                with contextlib.suppress(FileNotFoundError):
                     files[f.name] = f.stat().st_mtime
-                except FileNotFoundError:
-                    pass
     except FileNotFoundError:
         pass
     return files

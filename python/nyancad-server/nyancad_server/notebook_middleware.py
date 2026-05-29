@@ -64,8 +64,8 @@ async def validate_couchdb_session(cookies: dict[str, str]) -> tuple[bool, str]:
 
             return True, username
 
-        except Exception as e:
-            logger.error(f"CouchDB session validation error: {e}")
+        except Exception:
+            logger.exception("CouchDB session validation error")
             return False, ""
 
 
@@ -75,7 +75,7 @@ class LANSessionManager:
     Provides the interface expected by marimo's signal_handler lifespan.
     """
 
-    def __init__(self, middleware: "UserNotebookMiddleware"):
+    def __init__(self, middleware: "UserNotebookMiddleware") -> None:
         self.middleware = middleware
         self.quiet = True
 
@@ -109,7 +109,7 @@ class UserNotebookMiddleware:
         require_auth: bool = True,
         host: str = "localhost",
         port: int = 8080,
-    ):
+    ) -> None:
         """Initialize middleware.
 
         Args:

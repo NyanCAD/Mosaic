@@ -19,8 +19,9 @@ from __future__ import annotations
 import json
 import sys
 
-from nyancad.schemas import Component, Device, ModelMetadata, Wire
 from pydantic import TypeAdapter, ValidationError
+
+from nyancad.schemas import Component, Device, ModelMetadata, Wire
 
 ADAPTERS = {
     "device": TypeAdapter(Device),
@@ -45,8 +46,8 @@ def validate(kind: str, doc: dict) -> dict:
 
 
 def main() -> int:
-    for line in sys.stdin:
-        line = line.strip()
+    for raw_line in sys.stdin:
+        line = raw_line.strip()
         if not line:
             continue
         try:

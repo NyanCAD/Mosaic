@@ -44,7 +44,7 @@
      (persistent! (transduce xform tombstone-conj! (transient to) from))
      (transduce xform tombstone-conj to from))))
 
-(defn- docs-into 
+(defn- docs-into
   ([m ^js docs] (docs-into m docs :doc))
   ([m ^js docs key]
    (into m (map #(vector (get % :id) (get % key)))
@@ -61,7 +61,7 @@
                               :limit limit})]
      (go (docs-into target (<p! docs))))))
 
-(defn get-view-group 
+(defn get-view-group
   ([db view prefix] (get-view-group db view prefix nil))
   ([db view prefix limit]
    (let [result (query db view #js{:startkey prefix

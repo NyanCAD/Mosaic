@@ -14,7 +14,7 @@ import re
 from abc import ABC, abstractmethod
 from collections import deque
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import httpx
 
@@ -91,14 +91,12 @@ class SchematicAPI(ABC):
             if model_id_prefixed in models:
                 model_def = models[model_id_prefixed]
 
-                # Schematic models have no model entries
-                if not model_def.get("models"):
-                    # Fetch subcircuit documents
-                    if model_id_bare not in schem:
-                        seq, subdocs = await self.get_docs(model_id_bare)
-                        if subdocs:
-                            schem[model_id_bare] = subdocs
-                            queue.extend(subdocs.values())
+                # Schematic models have no model entries; fetch subcircuit documents
+                if not model_def.get("models") and model_id_bare not in schem:
+                    seq, subdocs = await self.get_docs(model_id_bare)
+                    if subdocs:
+                        schem[model_id_bare] = subdocs
+                        queue.extend(subdocs.values())
 
         return seq, schem
 
@@ -120,7 +118,7 @@ class SchematicAPI(ABC):
 class BridgeAPI(SchematicAPI):
     """API implementation using anywidget SchematicBridge data."""
 
-    def __init__(self, bridge_widget):
+    def __init__(self, bridge_widget) -> None:
         """Create BridgeAPI wrapping a SchematicBridge widget.
 
         Args:
@@ -146,7 +144,7 @@ class BridgeAPI(SchematicAPI):
         return (None, docs)
 
     async def get_all_schem_docs(self, name: str) -> tuple[Any, dict[str, dict]]:
-        """Return complete schematic data from bridge (already includes all subcircuits)."""
+        """Return complete schematic data from bridge (includes all subcircuits)."""
         # Bridge schematic_data already has full hierarchy with subcircuits and models
         return (None, self.bridge.schematic_data)
 
@@ -176,7 +174,7 @@ class ServerAPI(SchematicAPI):
         username: str | None = None,
         password: str | None = None,
         auth_token: str | None = None,
-    ):
+    ) -> None:
         """Create ServerAPI with CouchDB connection.
 
         Args:
@@ -204,11 +202,11 @@ class ServerAPI(SchematicAPI):
         """Close httpx client."""
         await self.client.aclose()
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         """Async context manager entry."""
         return self
 
-    async def __aexit__(self, *args):  # noqa: ANN002
+    async def __aexit__(self, *args) -> None:
         """Async context manager exit.
 
         Args:
@@ -355,7 +353,8 @@ class ServerAPI(SchematicAPI):
                   For deletion: include _id, current _rev, and _deleted=true
 
         Returns:
-            CouchDB update response for the single model (first result from bulk operation)
+            CouchDB update response for the single model
+            (first result from bulk operation)
 
         Raises:
             httpx.HTTPStatusError: If the request fails
@@ -398,7 +397,7 @@ class ServerAPI(SchematicAPI):
 class FileAPI(SchematicAPI):
     """API implementation reading from .nyancir and .nyanlib files on disk."""
 
-    def __init__(self, project_dir: str | Path):
+    def __init__(self, project_dir: str | Path) -> None:
         """Create FileAPI for a project directory.
 
         Args:

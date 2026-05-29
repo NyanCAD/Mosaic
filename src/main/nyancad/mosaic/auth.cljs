@@ -31,7 +31,7 @@
     (try
       (reset! loading true)
       (reset! error-message nil)
-      (let [response (<p! (make-backend-request "POST" 
+      (let [response (<p! (make-backend-request "POST"
                                               "/auth/login"
                                               {:username username :password password}))]
         (if (.-ok response)
@@ -117,9 +117,9 @@
   (cond
     (empty? @username) "Username is required"
     (empty? @password) "Password is required"
-    (and (= @auth-mode :register) 
+    (and (= @auth-mode :register)
          (not= @password @confirm-password)) "Passwords do not match"
-    (and (= @auth-mode :register) 
+    (and (= @auth-mode :register)
          (< (count @password) 6)) "Password must be at least 6 characters"
     :else nil))
 
@@ -141,7 +141,7 @@
 
     (when @error-message
       [:div.error-message @error-message])
-    
+
     [:form {:on-submit (fn [e]
                          (.preventDefault e)
                          (if-let [error (validate-form)]
@@ -155,10 +155,10 @@
 
      [form-input "Username" "text" username "Enter your username"]
      [form-input "Password" "password" password "Enter your password"]
-     
+
      (when (= @auth-mode :register)
        [form-input "Confirm Password" "password" confirm-password "Confirm your password"])
-     
+
      [:button.primary {:type "submit" :disabled @loading}
       (if @loading
         "Please wait..."
@@ -177,7 +177,7 @@
                                          (reset! auth-mode :login)
                                          (reset! error-message nil))}
             "Login here"]])])]
-    
+
     [:div.local-option
      [:p "Or continue without an account:"]
      [:a.button.secondary {:href "/"} "Work Locally"]]]])
