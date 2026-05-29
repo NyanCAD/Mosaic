@@ -660,15 +660,15 @@ class TestKfNetlistFromNyancad:
                     "name": "out",
                     "nets": {"P": "n_out"},
                 },
-                "top:S1": {
+                "top_S1": {
                     "_id": "ignored-id",
                     "type": "straight",
                     "name": "S1",
                     "model": "straight",
                     "nets": {"o1": "n_in", "o2": "n_mid"},
                 },
-                "top:S2": {
-                    "_id": "top:S2",
+                "top_S2": {
+                    "_id": "top_S2",
                     "type": "straight",
                     "name": "S2",
                     "model": "straight",
@@ -684,13 +684,13 @@ class TestKfNetlistFromNyancad:
         data = _kf_data(netlist)
 
         assert data["instances"] == {
-            "top:S1": {
+            "top_S1": {
                 "kcl": "PDK",
                 "component": "straight",
                 "settings": {},
                 "array": {"na": 1, "nb": 1},
             },
-            "top:S2": {
+            "top_S2": {
                 "kcl": "PDK",
                 "component": "straight",
                 "settings": {},
@@ -698,20 +698,20 @@ class TestKfNetlistFromNyancad:
             },
         }
         assert {"name": "in"} in data["nets"][0]
-        assert {"instance": "top:S1", "port": "o1"} in data["nets"][0]
+        assert {"instance": "top_S1", "port": "o1"} in data["nets"][0]
         assert [
-            {"instance": "top:S1", "port": "o2"},
-            {"instance": "top:S2", "port": "o1"},
+            {"instance": "top_S1", "port": "o2"},
+            {"instance": "top_S2", "port": "o1"},
         ] in data["nets"]
         assert [
             {"name": "out"},
-            {"instance": "top:S2", "port": "o2"},
+            {"instance": "top_S2", "port": "o2"},
         ] in data["nets"]
 
     def test_builds_kfnetlist_ports_from_port_named_nets(self):
         schem = {
             "top": {
-                "top:S1": {
+                "top_S1": {
                     "type": "straight",
                     "model": "straight",
                     "nets": {"o1": "P1", "o2": "P2"},
@@ -733,13 +733,13 @@ class TestKfNetlistFromNyancad:
         netlist = kfnetlist_from_nyancad("top", schem)
         data = _kf_data(netlist)
 
-        assert [{"name": "P1"}, {"instance": "top:S1", "port": "o1"}] in data["nets"]
-        assert [{"name": "P2"}, {"instance": "top:S1", "port": "o2"}] in data["nets"]
+        assert [{"name": "P1"}, {"instance": "top_S1", "port": "o1"}] in data["nets"]
+        assert [{"name": "P2"}, {"instance": "top_S1", "port": "o2"}] in data["nets"]
 
     def test_uses_model_name_without_needing_layout(self):
         schem = {
             "top": {
-                "uuid-a": {
+                "uuid_a": {
                     "type": "component",
                     "model": "gf.components.straight",
                     "nets": {"o1": "a"},
@@ -757,7 +757,7 @@ class TestKfNetlistFromNyancad:
         netlist = kfnetlist_from_nyancad("top", schem)
         data = _kf_data(netlist)
 
-        assert data["instances"]["uuid-a"] == {
+        assert data["instances"]["uuid_a"] == {
             "kcl": "PDK",
             "component": "straight",
             "settings": {"length": 10.0},
@@ -767,7 +767,7 @@ class TestKfNetlistFromNyancad:
     def test_missing_model_metadata_is_an_error(self):
         schem = {
             "top": {
-                "uuid-a": {
+                "uuid_a": {
                     "type": "component",
                     "model": "gf.components.straight",
                     "nets": {"o1": "a"},
@@ -782,7 +782,7 @@ class TestKfNetlistFromNyancad:
     def test_missing_model_name_is_an_error(self):
         schem = {
             "top": {
-                "uuid-a": {
+                "uuid_a": {
                     "type": "component",
                     "model": "gf.components.straight",
                     "nets": {"o1": "a"},
@@ -799,8 +799,8 @@ class TestKfNetlistFromNyancad:
     def test_recursive_netlist_uses_subcircuit_component_name(self):
         schem = {
             "top": {
-                "top:U1": {
-                    "_id": "top:U1",
+                "top_U1": {
+                    "_id": "top_U1",
                     "type": "ckt",
                     "name": "U1",
                     "model": "sub",
@@ -808,8 +808,8 @@ class TestKfNetlistFromNyancad:
                 }
             },
             "sub": {
-                "sub:S1": {
-                    "_id": "sub:S1",
+                "sub_S1": {
+                    "_id": "sub_S1",
                     "type": "straight",
                     "name": "S1",
                     "model": "straight",
@@ -838,10 +838,10 @@ class TestKfNetlistFromNyancad:
 
         assert set(recnet) == {"top", "sub_model"}
         assert (
-            _kf_data(recnet["top"])["instances"]["top:U1"]["component"] == "sub_model"
+            _kf_data(recnet["top"])["instances"]["top_U1"]["component"] == "sub_model"
         )
         assert (
-            _kf_data(recnet["sub_model"])["instances"]["sub:S1"]["component"]
+            _kf_data(recnet["sub_model"])["instances"]["sub_S1"]["component"]
             == "straight"
         )
 
@@ -854,8 +854,8 @@ class TestKfNetlistFromNyancad:
                     "name": "in",
                     "nets": {"P": "n"},
                 },
-                "top:S1": {
-                    "_id": "top:S1",
+                "top_S1": {
+                    "_id": "top_S1",
                     "type": "straight",
                     "name": "S1",
                     "model": "straight",
@@ -870,4 +870,4 @@ class TestKfNetlistFromNyancad:
         recnet = recursive_kfnetlist_from_nyancad("top", schem)
 
         assert list(recnet) == ["top"]
-        assert _kf_data(recnet["top"])["instances"]["top:S1"]["component"] == "straight"
+        assert _kf_data(recnet["top"])["instances"]["top_S1"]["component"] == "straight"

@@ -186,6 +186,11 @@ def invert_kf_nets(components, port_devices):
     return out
 
 
+def _safe_ident(name):
+    """Replace characters that aren't valid in Python identifiers."""
+    return re.sub(r"[^A-Za-z0-9_]", "_", name)
+
+
 def kfnetlist_from_nyancad(name, schem, *, kcl="PDK"):
     """Build a ``kfnetlist.Netlist`` directly from Mosaic ``nets``.
 
@@ -203,7 +208,7 @@ def kfnetlist_from_nyancad(name, schem, *, kcl="PDK"):
         if dev.get("type") == "port":
             port_devices[str(dev.get("name") or dev_id)] = dev
         elif dev.get("type") not in STRUCTURAL_TYPES:
-            components.append((dev_id, dev))
+            components.append((_safe_ident(dev_id), dev))
 
     netlist = Netlist()
     for dev_id, dev in components:
@@ -262,6 +267,180 @@ def recursive_kfnetlist_from_nyancad(name, schem, *, kcl="PDK"):
                 queue.append(model_id)
 
     return result
+
+
+def _coerce_settings(raw, factory=None):
+    """Coerce string prop values to Python types using factory signature.
+
+    Adapted from ``gfp_kfactory.convert._coerce_settings`` to avoid
+    a hard dependency on gfp-kfactory (not published on PyPI).
+    """
+    import inspect
+    import types
+    from typing import Annotated, Union, get_args, get_origin
+
+    _drop = inspect.Parameter.empty
+
+    def _base_types(annotation):
+        if annotation is _drop:
+            return set()
+        if get_origin(annotation) is Annotated:
+            annotation = get_args(annotation)[0]
+        if isinstance(annotation, types.UnionType) or get_origin(annotation) is Union:
+            return set(get_args(annotation))
+        if isinstance(annotation, type):
+            return {annotation}
+        return set()
+
+    def _coerce_value(v, expected):
+        if v == "None":
+            return None if (type(None) in expected or not expected) else _drop
+        if bool in expected:
+            if v == "True":
+                return True
+            if v == "False":
+                return False
+        if int in expected:
+            try:
+                return int(v)
+            except ValueError:
+                pass
+        if float in expected:
+            try:
+                return float(v)
+            except ValueError:
+                pass
+        if str in expected:
+            return v
+        if not expected:
+            if v == "True":
+                return True
+            if v == "False":
+                return False
+            try:
+                return int(v)
+            except ValueError:
+                pass
+            try:
+                return float(v)
+            except ValueError:
+                pass
+            return v
+        return _drop
+
+    param_types = {}
+    if factory is not None:
+        try:
+            sig = inspect.signature(factory)
+            param_types = {
+                name: _base_types(p.annotation)
+                for name, p in sig.parameters.items()
+            }
+        except (ValueError, TypeError):
+            pass
+
+    out = {}
+    for k, v in raw.items():
+        if not isinstance(v, str):
+            out[k] = v
+            continue
+        coerced = _coerce_value(v, param_types.get(k, set()))
+        if coerced is not _drop:
+            out[k] = coerced
+    return out
+
+
+def resolve_sax_netlist(recnet, pdk_cells):
+    """Expand hierarchical components in a SAX RecursiveNetlist using PDK cells.
+
+    For each component referenced by top-level instances but not already
+    defined as a sub-netlist or available as a model, creates gdsfactory
+    cells with per-instance coerced settings and merges their netlists.
+    Instances with different settings get separate variant sub-netlists
+    (e.g. ``ring_single_v0``, ``ring_single_v1``).
+
+    Args:
+        recnet: SAX RecursiveNetlist dict (mutated in place).
+        pdk_cells: PDK cells module (e.g. ``cspdk.si220.cband.cells``).
+
+    Returns:
+        List of leaf component names that were expanded.
+    """
+    top_name = next(iter(recnet))
+    top = recnet.get(top_name, {})
+    instances = top.get("instances", {})
+    sub_netlists = set(recnet.keys()) - {top_name}
+
+    leaf_components = sorted(
+        {
+            info.get("component", name)
+            for name, info in instances.items()
+            if name not in sub_netlists
+            and info.get("component", name) not in sub_netlists
+        }
+    )
+
+    if pdk_cells is None:
+        return leaf_components
+
+    comp_instances = {}
+    for inst_name, inst_info in instances.items():
+        comp = inst_info.get("component", inst_name)
+        if comp not in leaf_components:
+            continue
+        comp_instances.setdefault(comp, []).append((inst_name, inst_info))
+
+    for comp, inst_list in comp_instances.items():
+        cell_fn = getattr(pdk_cells, comp, None)
+        if cell_fn is None:
+            continue
+
+        unique_keys = {
+            tuple(
+                sorted(
+                    _coerce_settings(
+                        ii.get("settings", {}), factory=cell_fn
+                    ).items()
+                )
+            )
+            for _, ii in inst_list
+        }
+        needs_variants = len(unique_keys) > 1
+        variant_map = {}
+        idx = 0
+
+        for _inst_name, inst_info in inst_list:
+            raw = inst_info.get("settings", {})
+            coerced = _coerce_settings(raw, factory=cell_fn)
+            key = tuple(sorted(coerced.items()))
+
+            if key not in variant_map:
+                try:
+                    cell = cell_fn(**coerced)
+                except Exception:
+                    try:
+                        cell = cell_fn()
+                    except Exception:
+                        continue
+
+                try:
+                    sub = cell.get_netlist(recursive=True)
+                except Exception:
+                    continue
+
+                variant_name = f"{comp}_v{idx}" if needs_variants else comp
+                idx += 1
+
+                if comp in sub and variant_name != comp:
+                    sub[variant_name] = sub.pop(comp)
+
+                recnet.update(sub)
+                variant_map[key] = variant_name
+
+            if key in variant_map:
+                inst_info["component"] = variant_map[key]
+
+    return leaf_components
 
 
 class NyanCADMixin:

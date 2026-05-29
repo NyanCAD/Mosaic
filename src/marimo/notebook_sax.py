@@ -194,7 +194,7 @@ def _():
     import numpy as np
     import holoviews as hv
     import sax
-    from nyancad.netlist import recursive_kfnetlist_from_nyancad
+    from nyancad.netlist import recursive_kfnetlist_from_nyancad, resolve_sax_netlist
     from sax.parsers.kfnetlist import parse_kfnetlist_recursive
     from nyancad.watch import watch_project_dir, file_schematic
 
@@ -206,6 +206,7 @@ def _():
         mo,
         np,
         parse_kfnetlist_recursive,
+        resolve_sax_netlist,
         sax,
         recursive_kfnetlist_from_nyancad,
         watch_project_dir,
@@ -295,6 +296,7 @@ def _(
     mo,
     parse_kfnetlist_recursive,
     pdk_cells,
+    resolve_sax_netlist,
     schem_data,
     schem_name,
     recursive_kfnetlist_from_nyancad,
@@ -307,32 +309,9 @@ def _(
     try:
         _kf_netlists = recursive_kfnetlist_from_nyancad(schem_name, schem_data)
         _recnet = parse_kfnetlist_recursive(_kf_netlists)
+        _leaf_components = resolve_sax_netlist(_recnet, pdk_cells)
 
         _top = _recnet.get(schem_name, {})
-        _instances = _top.get("instances", {})
-        _sub_netlists = set(_recnet.keys()) - {schem_name}
-
-        _leaf_components = sorted(
-            {
-                info.get("component", name)
-                for name, info in _instances.items()
-                if name not in _sub_netlists
-                and info.get("component", name) not in _sub_netlists
-            }
-        )
-
-        if pdk_cells is not None:
-            for _comp in _leaf_components:
-                _cell_fn = getattr(pdk_cells, _comp, None)
-                if _cell_fn is not None:
-                    try:
-                        _cell = _cell_fn()
-                        if hasattr(_cell, "get_netlist"):
-                            _sub = _cell.get_netlist(recursive=True)
-                            _recnet = dict(_recnet) | _sub
-                    except Exception:
-                        pass
-
         _ports_section = _top.get("ports", {})
         _circuit_ports = sorted(_ports_section.keys())
     except Exception as exc:
