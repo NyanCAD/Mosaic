@@ -354,13 +354,7 @@
                            :opt-un [::type ::tags ::ports ::models ::props ::symbol]))
 (s/def ::modeldb (s/map-of string? ::model-def))
 
-;; §§§
-;; @semantic Extracts default property values from a model definition's :props vector.
-;;   Returns a map of {prop-name default-value} or nil when no props are defined.
-;; @callgraph
-;;   - called-by: editor/on-drop, editor/commit-staged (populates :props on new devices)
 ;; @tags factory card dragging
-;; §§§
 (defn model-prop-defaults
   [model-def]
   (when model-def
@@ -797,14 +791,7 @@
               (map #(str (:name %) ": {self.props." (:name %) "}")
                    important))))))
 
-;; §§§
-;; @semantic Convert bare model ID → prefixed modeldb key ("models:...").
-;;   Asserts input is not already prefixed to catch double-prefixing bugs.
-;; @callgraph
-;;   - called-by: editor/on-drop, editor/commit-staged, editor/circuit-locations,
-;;     editor/circuit-sym-box, libman (model CRUD), extension (nyanlib loading)
 ;; @tags model identity
-;; §§§
 (defn model-key
   "Convert a bare model ID to a database key with 'models:' prefix.
    Returns nil if input is nil. Asserts that non-nil input is not already prefixed."
@@ -814,13 +801,7 @@
             (str "model-key expects bare ID, got prefixed: " bare-id))
     (str "models:" bare-id)))
 
-;; §§§
-;; @semantic Extract bare model ID from prefixed modeldb key (strips "models:" prefix).
-;;   Asserts input is prefixed to catch bare-ID-where-key-expected bugs.
-;; @callgraph
-;;   - called-by: libman (model editing/display)
 ;; @tags model identity
-;; §§§
 (defn bare-id
   "Extract bare ID from a model database key, removing 'models:' prefix.
    Returns nil if input is nil. Asserts that non-nil input is prefixed."

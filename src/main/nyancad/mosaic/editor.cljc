@@ -32,13 +32,7 @@
   (let [names (map #(str (cm/initial base) %) (next (range)))]
     (remove #(@schematic (str group sep %)) names)))
 
-;; §§§
-;; @semantic Generates unique instance name for dropped device (e.g. C1, R2)
-;; @callgraph
-;;   - reads: @schematic (checks for name collisions)
-;;   - called-by: on-drop, commit-staged (names the placed device)
 ;; @tags factory card dragging
-;; §§§
 (defn make-name [base]
   (first (make-names base)))
 
@@ -578,16 +572,8 @@
                [:path {:d "M75,55 A35,35 0 0,1 75,95"}]
                [:path {:d "M84,49 A45,45 0 0,1 84,101"}]]})
 
+;; @tags photonic model ports
 (defn- photonic-sym
-  "§§§
-   @semantic Render built-in SVG elements centered in a model-port-derived
-   bounding box. When port-perimeter matches the builtin size, rendering is
-   identical to render-symbol-data.
-   @callgraph
-     -calls device, device-template, render-element, cm/model-key, cm/port-perimeter
-     -called-by get-model
-   @tags photonic model ports
-   §§§"
   [builtin-elements k v]
   (let [model (:model v)
         ports (when model (get-in @modeldb [(cm/model-key model) :ports]))
@@ -1855,16 +1841,8 @@
     (when (and (.-isPrimary e) (< (count old-cache) 2))
       (eraser-drag k e))))
 
+;; @tags photonic model ports
 (defn get-model
-  "§§§
-   @semantic Dispatch device rendering by layer, routing photonic builtins
-   (stripped of ::bg/::conn) through circuit-shape/circuit-conn and photonic-sym.
-   @callgraph
-     -calls circuit-shape, circuit-conn, photonic-sym, render-symbol-data,
-            draw-background, draw-pattern
-     -called-by render-device, staging-device
-   @tags photonic model ports
-   §§§"
   [layer model k v]
   (let [model-entry (get models (:type model)
                          {::bg #'circuit-shape
@@ -2662,21 +2640,7 @@
   (set! js/document.onkeydown (partial cm/keyboard-shortcuts immediate-shortcuts))
   (rdc/render root [schematic-ui]))
 
-;; §§§
-;; @semantic Mosaic drop handler for sidebar factory cards. Reads text/x-gfp-factory,
-;;   looks up model in PouchDB-backed modeldb, places device at SVG drop coordinates.
-;;   Requires model to be pre-loaded in modeldb (unlike Livewire which resolves on demand).
-;; @callgraph
-;;   - reads: text/x-gfp-factory JSON payload from FactoryCard.onDragStart
-;;   - reads: @modeldb (PouchDB-backed model definitions)
-;;   - calls: make-name (generates unique instance name)
-;;   - calls: cm/model-key (converts FQN to "models:" prefixed key)
-;;   - calls: cm/viewbox-coord (converts drop event to SVG coordinates)
-;;   - calls: cm/model-prop-defaults (extracts default prop values from model)
-;;   - writes: @schematic (inserts new device document)
-;;   - calls: post-action! (records undo checkpoint, splits wires, annotates nets)
 ;; @tags factory card dragging
-;; §§§
 (defn- on-drop [e]
   (.preventDefault e)
   (.stopPropagation e)
