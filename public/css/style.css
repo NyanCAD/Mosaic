@@ -1234,7 +1234,7 @@ g.device polygon.arrow {
     stroke: none;
 }
 
-path.wire {
+polyline.wire {
     stroke: var(--canvas-wire-stroke);
     stroke-width: 2px;
     fill: none;
@@ -1245,7 +1245,7 @@ circle.wire {
     fill: var(--canvas-wire-stroke);
 }
 
-g.wire.photonic path.wire {
+g.wire.photonic polyline.wire {
     stroke: var(--canvas-wire-photonic);
 }
 
@@ -1253,7 +1253,7 @@ g.wire.photonic circle.wire {
     fill: var(--canvas-wire-photonic);
 }
 
-g.wire.selected path.wire {
+g.wire.selected polyline.wire {
     stroke-dasharray: 10px 3px;
 }
 
@@ -1429,12 +1429,12 @@ svg.eyesore {
     fill: white;
 }
 
-.eyesore g.wire.selected path.wire {
+.eyesore g.wire.selected polyline.wire {
     stroke: white;
     stroke-dasharray: none;
 }
 
-.eyesore path.wire {
+.eyesore polyline.wire {
     stroke-width: 1px;
     vector-effect: non-scaling-stroke;
 }
