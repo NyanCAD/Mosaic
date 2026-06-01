@@ -2131,7 +2131,7 @@
             [cm/search]]]
           ; Get properties from built-in device and model
           (let [device-props (::props (get models @device-type) [])
-                model-props (:props model-def [])
+                model-props (mapv cm/schema->field-type (:props model-def []))
                 all-props (concat device-props model-props)
                 prop-in-template? (fn [path]
                                     (let [path-str (clojure.string/join "." (map clojure.core/name path))

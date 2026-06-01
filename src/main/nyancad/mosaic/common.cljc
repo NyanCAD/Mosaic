@@ -65,11 +65,16 @@
 (defn- leaf-editor
   "Render a single leaf field: label + input/textarea/select/csv.
    Optional extra-el is injected inline next to the input (like the model selector button)."
-  [{:keys [name tooltip type options placeholder default] :or {type :input}} cursor on-change extra-el]
+  [{:keys [name tooltip type item-type options placeholder default] :or {type :input}} cursor on-change extra-el]
   (let [k (keyword name)
         ph (or placeholder "")
         valfn #(or (get % k) default "")
+        numvalfn #(let [v (get % k default)] (if (some? v) (str v) ""))
         wrap (fn [f] (fn [st v] (f st v) (when on-change (on-change))))
+        coerce-csv (case item-type
+                     :number  #(let [n (js/parseFloat %)] (if (js/isNaN n) % n))
+                     :integer #(let [n (js/parseInt % 10)] (if (js/isNaN n) % n))
+                     str)
         input (case type
                 :textarea [dbfield :textarea {:id name :rows 4 :placeholder ph} cursor
                            valfn (wrap #(swap! %1 assoc k %2))]
@@ -83,8 +88,16 @@
                                    :on-change #(do (swap! cursor assoc k (.. % -target -checked))
                                                    (when on-change (on-change)))}]
                 :csv      [dbfield :input {:id name :type "text" :placeholder ph} cursor
-                           #(clojure.string/join " " (get % k []))
-                           (wrap #(swap! %1 assoc k (clojure.string/split %2 #"[, ]+" -1)))]
+                           #(clojure.string/join ", " (get % k []))
+                           (wrap #(swap! %1 assoc k (mapv coerce-csv (clojure.string/split %2 #"[, ]+"))))]
+                :number   [dbfield :input {:id name :type "number" :step "any" :placeholder ph} cursor
+                           numvalfn
+                           (wrap #(let [n (js/parseFloat %2)]
+                                    (swap! %1 assoc k (if (js/isNaN n) %2 n))))]
+                :integer  [dbfield :input {:id name :type "number" :step "1" :placeholder ph} cursor
+                           numvalfn
+                           (wrap #(let [n (js/parseInt %2 10)]
+                                    (swap! %1 assoc k (if (js/isNaN n) %2 n))))]
                 ;; default: text input
                           [dbfield :input {:id name :type "text" :placeholder ph} cursor
                            valfn (wrap #(swap! %1 assoc k %2))])]
@@ -361,6 +374,44 @@
     (not-empty
       (into {} (for [p (:props model-def) :when (:name p)]
                  [(:name p) (or (:default p) "")])))))
+
+(defn schema->field-type
+  "Convert a nyanlib prop (carrying optional :schema from JSON Schema) into a
+   field descriptor suitable for recursive-editor / leaf-editor."
+  [{:keys [name tooltip schema default] :as prop}]
+  (let [base {:name name :tooltip (or tooltip "") :default default}]
+    (cond
+      (nil? schema) (merge base (dissoc prop :schema))
+
+      (:enum schema)
+      (assoc base :type :select
+                  :options (mapv #(hash-map :value (str %) :label (str %)) (:enum schema)))
+
+      (= "boolean" (:type schema))
+      (assoc base :type :checkbox)
+
+      (= "integer" (:type schema))
+      (assoc base :type :integer)
+
+      (= "number" (:type schema))
+      (assoc base :type :number)
+
+      (:prefixItems schema)
+      (let [types (map #(-> {:name "_" :schema %} schema->field-type :type) (:prefixItems schema))
+            item-type (when (apply = types) (first types))]
+        (assoc base :type :csv :item-type item-type))
+
+      (and (= "array" (:type schema)) (:items schema))
+      (let [item-field (schema->field-type {:name "_" :schema (:items schema)})]
+        (assoc base :type :csv :item-type (:type item-field)))
+
+      (:anyOf schema)
+      (let [non-null (remove #(= "null" (:type %)) (:anyOf schema))]
+        (if (= 1 (count non-null))
+          (schema->field-type (assoc prop :schema (first non-null)))
+          (merge base (dissoc prop :schema))))
+
+      :else (merge base (dissoc prop :schema)))))
 
 (defn has-code-models?
   "Check if a model definition has code model entries (vs. schematic-only)."

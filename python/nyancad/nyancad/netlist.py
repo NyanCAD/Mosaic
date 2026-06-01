@@ -272,84 +272,38 @@ def recursive_kfnetlist_from_nyancad(name, schem, *, kcl="PDK"):
     return result
 
 
-def _coerce_settings(raw, factory=None):
-    """Coerce string prop values to Python types using factory signature.
-
-    Adapted from ``gfp_kfactory.convert._coerce_settings`` to avoid
-    a hard dependency on gfp-kfactory (not published on PyPI).
+def _accepted_params(factory):
+    """Return the set of parameter names *factory* accepts, or None if it
+    accepts arbitrary keyword arguments.
     """
     import inspect
-    import types
-    from typing import Annotated, Union, get_args, get_origin
 
-    _drop = inspect.Parameter.empty
+    try:
+        sig = inspect.signature(factory)
+    except (ValueError, TypeError):
+        return None
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+        return None
+    return set(sig.parameters.keys()) - {"self"}
 
-    def _base_types(annotation):
-        if annotation is _drop:
-            return set()
-        if get_origin(annotation) is Annotated:
-            annotation = get_args(annotation)[0]
-        if isinstance(annotation, types.UnionType) or get_origin(annotation) is Union:
-            return set(get_args(annotation))
-        if isinstance(annotation, type):
-            return {annotation}
-        return set()
 
-    def _coerce_value(v, expected):
-        if v == "None":
-            return None if (type(None) in expected or not expected) else _drop
-        if bool in expected:
-            if v == "True":
-                return True
-            if v == "False":
-                return False
-        if int in expected:
-            try:
-                return int(v)
-            except ValueError:
-                pass
-        if float in expected:
-            try:
-                return float(v)
-            except ValueError:
-                pass
-        if str in expected:
-            return v
-        if not expected:
-            if v == "True":
-                return True
-            if v == "False":
-                return False
-            try:
-                return int(v)
-            except ValueError:
-                pass
-            try:
-                return float(v)
-            except ValueError:
-                pass
-            return v
-        return _drop
+def _to_python(v):
+    """Convert JSON-native value to Python: list → tuple, rest unchanged."""
+    if isinstance(v, list):
+        return tuple(_to_python(item) for item in v)
+    return v
 
-    param_types = {}
-    if factory is not None:
-        try:
-            sig = inspect.signature(factory)
-            param_types = {
-                name: _base_types(p.annotation) for name, p in sig.parameters.items()
-            }
-        except (ValueError, TypeError):
-            pass
 
-    out = {}
-    for k, v in raw.items():
-        if not isinstance(v, str):
-            out[k] = v
-            continue
-        coerced = _coerce_value(v, param_types.get(k, set()))
-        if coerced is not _drop:
-            out[k] = coerced
-    return out
+def _coerce_settings(raw, accepted=None):
+    """Normalise prop values from native JSON to Python types.
+
+    All editors now write native JSON types, so the only transforms
+    needed are JSON array → Python tuple and filtering to parameters
+    the factory actually accepts (extra keys cause TypeError on call).
+    """
+    return {
+        k: _to_python(v) for k, v in raw.items() if accepted is None or k in accepted
+    }
 
 
 def resolve_sax_netlist(recnet, pdk_cells):
@@ -368,6 +322,11 @@ def resolve_sax_netlist(recnet, pdk_cells):
     Returns:
         List of leaf component names that were expanded.
     """
+    import logging
+    import warnings
+
+    log = logging.getLogger(__name__)
+
     top_name = next(iter(recnet))
     top = recnet.get(top_name, {})
     instances = top.get("instances", {})
@@ -385,7 +344,7 @@ def resolve_sax_netlist(recnet, pdk_cells):
     if pdk_cells is None:
         return leaf_components
 
-    comp_instances = {}
+    comp_instances: dict[str, list[tuple[str, dict]]] = {}
     for inst_name, inst_info in instances.items():
         comp = inst_info.get("component", inst_name)
         if comp not in leaf_components:
@@ -397,43 +356,56 @@ def resolve_sax_netlist(recnet, pdk_cells):
         if cell_fn is None:
             continue
 
-        unique_keys = {
-            tuple(
-                sorted(
-                    _coerce_settings(ii.get("settings", {}), factory=cell_fn).items()
-                )
-            )
-            for _, ii in inst_list
-        }
+        accepted = _accepted_params(cell_fn)
+
+        coerced_per_inst = []
+        for inst_name, inst_info in inst_list:
+            coerced = _coerce_settings(inst_info.get("settings", {}), accepted=accepted)
+            key = tuple(sorted(coerced.items()))
+            coerced_per_inst.append((inst_name, inst_info, coerced, key))
+
+        unique_keys = {key for _, _, _, key in coerced_per_inst}
         needs_variants = len(unique_keys) > 1
-        variant_map = {}
+        variant_map: dict[tuple, str] = {}
         idx = 0
 
-        for _inst_name, inst_info in inst_list:
-            raw = inst_info.get("settings", {})
-            coerced = _coerce_settings(raw, factory=cell_fn)
-            key = tuple(sorted(coerced.items()))
-
+        for _inst_name, inst_info, coerced, key in coerced_per_inst:
             if key not in variant_map:
                 try:
                     cell = cell_fn(**coerced)
                 except Exception:
-                    try:
-                        cell = cell_fn()
-                    except Exception:  # noqa: S112
-                        continue
+                    log.warning(
+                        "%s: cell_fn(**%r) failed, skipping",
+                        comp,
+                        coerced,
+                        exc_info=True,
+                    )
+                    continue
 
                 try:
-                    sub = cell.get_netlist(recursive=True)
-                except Exception:  # noqa: S112
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        sub = cell.get_netlist(recursive=True)
+                except Exception:
+                    log.warning(
+                        "%s: get_netlist failed, skipping",
+                        comp,
+                        exc_info=True,
+                    )
                     continue
 
                 variant_name = f"{comp}_v{idx}" if needs_variants else comp
                 idx += 1
-
-                if comp in sub and variant_name != comp:
+                if comp in sub and comp != variant_name:
                     sub[variant_name] = sub.pop(comp)
 
+                for existing_key in set(recnet.keys()) & set(sub.keys()):
+                    if existing_key != variant_name:
+                        log.debug(
+                            "%s: sub-netlist key %r already in recnet, overwriting",
+                            comp,
+                            existing_key,
+                        )
                 recnet.update(sub)
                 variant_map[key] = variant_name
 
