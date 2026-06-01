@@ -413,6 +413,44 @@
 
       :else (merge base (dissoc prop :schema)))))
 
+(defn schema->field-type
+  "Convert a nyanlib prop (carrying optional :schema from JSON Schema) into a
+   field descriptor suitable for recursive-editor / leaf-editor."
+  [{:keys [name tooltip schema default] :as prop}]
+  (let [base {:name name :tooltip (or tooltip "") :default default}]
+    (cond
+      (nil? schema) (merge base (dissoc prop :schema))
+
+      (:enum schema)
+      (assoc base :type :select
+                  :options (mapv #(hash-map :value (str %) :label (str %)) (:enum schema)))
+
+      (= "boolean" (:type schema))
+      (assoc base :type :checkbox)
+
+      (= "integer" (:type schema))
+      (assoc base :type :integer)
+
+      (= "number" (:type schema))
+      (assoc base :type :number)
+
+      (:prefixItems schema)
+      (let [types (map #(-> {:name "_" :schema %} schema->field-type :type) (:prefixItems schema))
+            item-type (when (apply = types) (first types))]
+        (assoc base :type :csv :item-type item-type))
+
+      (and (= "array" (:type schema)) (:items schema))
+      (let [item-field (schema->field-type {:name "_" :schema (:items schema)})]
+        (assoc base :type :csv :item-type (:type item-field)))
+
+      (:anyOf schema)
+      (let [non-null (remove #(= "null" (:type %)) (:anyOf schema))]
+        (if (= 1 (count non-null))
+          (schema->field-type (assoc prop :schema (first non-null)))
+          (merge base (dissoc prop :schema))))
+
+      :else (merge base (dissoc prop :schema)))))
+
 (defn has-code-models?
   "Check if a model definition has code model entries (vs. schematic-only)."
   [model]
