@@ -58,6 +58,12 @@ ComponentType = Literal[
     "grating-coupler",
 ]
 
+IDENTITY_TRANSFORM = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+
+
+def _identity_transform() -> list[float]:
+    return IDENTITY_TRANSFORM.copy()
+
 
 class DeviceBase(BaseModel):
     """Base class for all schematic devices.
@@ -168,6 +174,7 @@ class Component(DeviceBase):
 
     device_type: ComponentType = Field(alias="type")
     transform: list[float] = Field(
+        default_factory=_identity_transform,
         min_length=6,
         max_length=6,
         description="2D affine transform matrix [a, b, c, d, e, f] for rotation/mirror",

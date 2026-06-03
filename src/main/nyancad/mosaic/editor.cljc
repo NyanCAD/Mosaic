@@ -80,7 +80,7 @@
 (defonce undotree (cm/newundotree))
 
 (declare build-wire-split-index build-point-index split-wire point-index wire-type-index
-         build-wire-networks build-netlist build-net-annotations polyline-sym)
+         build-wire-networks build-netlist build-net-annotations)
 
 (defn post-action!
   "Record undo checkpoint, split wires, and annotate :nets/:net after a user
@@ -954,7 +954,10 @@
                      ::props []}
              "polyline" {::bg []
                          ::conn []
-                         ::sym #'polyline-sym
+                         ;; Polylines render no inline symbol — their airwire
+                         ;; ratsnest is drawn by the top-level
+                         ;; `schematic-airwires` layer instead.
+                         ::sym nil
                          ::props []}
              "port" {::bg []
                      ::conn [{:name "P" :x 0 :y 0}]
@@ -1068,9 +1071,9 @@
 
 (defn- find-port-world-pos
   "Absolute grid coords of [dev-id port-name] in sch, or nil if either the
-   device or the port is missing. Used by polyline-sym to anchor the
-   airwire arc at the actual Mosaic device pins (the polyline's own
-   vertices live in Livewire's µm/y-down frame and don't apply here)."
+   device or the port is missing. Used by `schematic-airwires` to anchor an
+   airwire arc at the actual Mosaic device pins (a polyline's own vertices
+   live in Livewire's µm/y-down frame and don't apply here)."
   [sch dev-id port-name]
   (when-let [dev (get sch dev-id)]
     (let [target (name port-name)]
@@ -1079,41 +1082,69 @@
                 [(:x p) (:y p)]))
             (device-port-types dev)))))
 
-(defn polyline-sym
-  "Render an 'airwire' ratsnest arc for Livewire-authored polylines whose
-   endpoints don't agree on a net.
+(defn- airwire-arc
+  "A subtle dashed-red 'airwire' ratsnest arc between two grid points `p1`
+   and `p2` (each `[gx gy]`), carrying `title` as a tooltip. Returns hiccup,
+   or nil when the two points coincide. Pointer-events are disabled so the
+   arc sits above the schematic purely as a hint."
+  [key p1 p2 title]
+  (let [x1 (* (+ (first p1) 0.5) grid-size)
+        y1 (* (+ (second p1) 0.5) grid-size)
+        x2 (* (+ (first p2) 0.5) grid-size)
+        y2 (* (+ (second p2) 0.5) grid-size)
+        dx (- x2 x1)
+        dy (- y2 y1)
+        len (math/sqrt (+ (* dx dx) (* dy dy)))]
+    (when (pos? len)
+      (let [mx (/ (+ x1 x2) 2)
+            my (/ (+ y1 y2) 2)
+            sag (* 0.15 len)
+            cx (+ mx (* (- (/ dy len)) sag))
+            cy (+ my (* (/ dx len) sag))]
+        [:g.airwire {:key key}
+         [:title title]
+         [:path {:d (str "M" x1 "," y1 " Q" cx "," cy " " x2 "," y2)}]]))))
 
-   Match rule: silent only when both endpoint pins carry a non-nil :nets
-   entry and the two nets are equal. Any missing or differing annotation
-   triggers a subtle dashed red arc between the two referenced device pins
-   — surfacing both LVS-style mismatches and in-progress unbound ports.
+(defn- mismatched-nets? [a b]
+  (not (and a b (= a b))))
 
-   Polylines themselves are non-interactive here; the arc is a hint that
-   sits above the schematic with pointer-events:none."
-  [_key polyline]
-  (let [sch @schematic
-        {:keys [start finish]} (:terminals polyline)
-        s-net (get-in sch [(:component_id start) :nets (keyword (:port_name start))])
-        f-net (get-in sch [(:component_id finish) :nets (keyword (:port_name finish))])]
-    (when-not (and s-net f-net (= s-net f-net))
-      (when-let [p1 (find-port-world-pos sch (:component_id start) (:port_name start))]
-        (when-let [p2 (find-port-world-pos sch (:component_id finish) (:port_name finish))]
-          (let [x1 (* (+ (first p1) 0.5) grid-size)
-                y1 (* (+ (second p1) 0.5) grid-size)
-                x2 (* (+ (first p2) 0.5) grid-size)
-                y2 (* (+ (second p2) 0.5) grid-size)
-                dx (- x2 x1)
-                dy (- y2 y1)
-                len (math/sqrt (+ (* dx dx) (* dy dy)))]
-            (when (pos? len)
-              (let [mx (/ (+ x1 x2) 2)
-                    my (/ (+ y1 y2) 2)
-                    sag (* 0.15 len)
-                    cx (+ mx (* (- (/ dy len)) sag))
-                    cy (+ my (* (/ dx len) sag))]
-                [:g.airwire
-                 [:title "Ratsnest: polyline endpoints are on different nets"]
-                 [:path {:d (str "M" x1 "," y1 " Q" cx "," cy " " x2 "," y2)}]]))))))))
+(defn- net-at
+  "Return the schematic net for `dev-id.port-name`."
+  [sch dev-id port-name]
+  (get-in sch [dev-id :nets (keyword port-name)]))
+
+(defn- polyline-airwire [sch k v]
+  (let [{:keys [start finish]} (:terminals v)
+        s-net (net-at sch (:component_id start) (:port_name start))
+        f-net (net-at sch (:component_id finish) (:port_name finish))]
+    (when (mismatched-nets? s-net f-net)
+      (let [p1 (find-port-world-pos sch (:component_id start) (:port_name start))
+            p2 (find-port-world-pos sch (:component_id finish) (:port_name finish))]
+        (when (and p1 p2)
+          (airwire-arc [:poly k] p1 p2
+                       "Ratsnest: polyline endpoints are on different nets"))))))
+
+(defn- attached-port-airwire [sch k v]
+  (let [ap (:attached_port v)
+        port-net (get-in v [:nets :P])
+        dev-net (net-at sch (:component_id ap) (:port_name ap))]
+    (when (and ap (mismatched-nets? port-net dev-net))
+      (let [p1 (find-port-world-pos sch k "P")
+            p2 (find-port-world-pos sch (:component_id ap) (:port_name ap))]
+        (when (and p1 p2)
+          (airwire-arc [:port k] p1 p2
+                       "Ratsnest: port marker attached to a pin on a different net"))))))
+
+(defn- build-schematic-airwires [sch]
+  (concat
+   (keep (fn [[k v]]
+           (when (= "polyline" (:type v))
+             (polyline-airwire sch k v)))
+         sch)
+   (keep (fn [[k v]]
+           (when (and (= "port" (:type v)) (:attached_port v))
+             (attached-port-airwire sch k v)))
+         sch)))
 
 ;; --- point-index: unified per-point fold ---------------------------------
 ;; Replaces location-index (:ids/:body-ids), point-type-index (:types/:*-count),
@@ -1173,7 +1204,7 @@
     "port" [[x y]]))
 
 (def ^:private empty-component
-  {:wires #{} :attributions [] :port-names [] :wire-names [] :points #{}})
+  {:wires #{} :attributions [] :port-names [] :port-ids [] :wire-names [] :points #{}})
 
 (defn- absorb-cell
   "Record a cell's attributions into the component-in-progress."
@@ -1184,13 +1215,16 @@
 
 (defn- absorb-doc
   "Record a wire-like doc's contribution — :wires for wires, plus :wire-names
-   / :port-names when named."
+   / :port-names and :port-ids when named. :port-ids lets build-netlist map
+   each port doc back to its component's net name so we can write the
+   cross-editor :nets annotation onto the port itself."
   [comp id dev]
   (let [nm (:name dev)]
     (cond-> comp
       (= "wire" (:type dev))          (update :wires conj id)
       (and (= "wire" (:type dev)) nm) (update :wire-names conj nm)
-      (and (= "port" (:type dev)) nm) (update :port-names conj nm))))
+      (and (= "port" (:type dev)) nm) (update :port-names conj nm)
+      (and (= "port" (:type dev)) nm) (update :port-ids conj id))))
 
 (defn- expand-from-cell
   "BFS from `seed-cell`. The queue holds cells; wire-like docs are edges that
@@ -1294,21 +1328,30 @@
 
 (defn build-netlist
   "Returns {:devices {dev-id {port-name net-name}}
-            :wires   {wire-id net-name}} from a wire-networks partition.
-   Net name priority: first port-doc name > first wire name > generated 'netN'."
+            :wires   {wire-id net-name}
+            :ports   {port-doc-id net-name}} from a wire-networks partition.
+   Net name priority: first port-doc name > first wire name > generated 'netN'.
+
+   :ports maps each named port doc to its component's net name so the port can
+   carry an explicit cross-editor :nets annotation (consumed by Livewire's
+   derive-and-glue and the compile-time nets fallback)."
   [{:keys [components wire->component]}]
   (let [names   (component-net-names components)
         devices (reduce (fn [acc [i comp]]
                           (assign-net acc (nth names i) (:attributions comp)))
                         {} (map-indexed vector components))
-        wires   (into {} (for [[wid ci] wire->component] [wid (nth names ci)]))]
-    {:devices devices :wires wires}))
+        wires   (into {} (for [[wid ci] wire->component] [wid (nth names ci)]))
+        ports   (into {} (for [[i comp] (map-indexed vector components)
+                               pid (:port-ids comp)]
+                           [pid (nth names i)]))]
+    {:devices devices :wires wires :ports ports}))
 
+;; @tags nyancir format
 (defn build-net-annotations
   "Return {doc-id {:nets …}|{:net …}} with only the docs whose annotation
    needs to change. Keys of this map drive which docs the pouch/JsAtom swap
    will touch, so unchanged docs are deliberately omitted."
-  [sch {:keys [devices wires]}]
+  [sch {:keys [devices wires ports]}]
   (letfn [(wire-update [id dev]
             (let [desired (get wires id)]
               (when (not= (:net dev) desired)
@@ -1318,9 +1361,19 @@
                   current (or (:nets dev) {})]
               (when (not= current desired)
                 {:nets desired})))
+          (port-update [id dev]
+            ;; A port doc carries explicit connectivity as {:nets {:P net}} so
+            ;; Livewire (which never writes :nets) and the compile-time nets
+            ;; fallback can resolve what the port exposes. The net name is the
+            ;; port's own component net (usually the port's name).
+            (let [desired (get ports id)
+                  current (get (:nets dev) :P)]
+              (when (and desired (not= current desired))
+                {:nets {:P desired}})))
           (entry [id dev]
             (cond
               (= "wire" (:type dev)) (wire-update id dev)
+              (= "port" (:type dev)) (port-update id dev)
               (attributable? dev)    (device-update id dev)))]
     (reduce-kv
      (fn [acc id dev]
@@ -1850,6 +1903,9 @@
                           ::sym #'circuit-sym})
         m (get model-entry layer)]
     (cond
+      ;; Explicit no-symbol model (e.g. polyline): render nothing. Its airwire
+      ;; ratsnest is drawn by the `schematic-airwires` layer instead.
+      (and (= layer ::sym) (nil? m) (contains? model-entry ::sym)) nil
       (and (nil? m) (= layer ::bg))   ^{:key k} [circuit-shape k v]
       (and (nil? m) (= layer ::conn)) ^{:key k} [circuit-conn k v]
       (and (nil? (::conn model-entry))
@@ -2484,6 +2540,24 @@
         all-types (into (or port-types #{}) wire-type-set)]
     (first all-types)))
 
+;; @tags nyancir format, livewire auto-route lvs arrows
+(defn schematic-airwires
+  "Top-level ratsnest layer. Draws dashed-red airwire arcs for two kinds of
+   cross-editor connectivity hints:
+
+   (a) Livewire polylines whose two endpoint pins don't agree on a net
+       (migrated from the former `polyline-sym`), and
+   (b) `type:\"port\"` docs carrying an `:attached_port` (Livewire's rigid
+       layout binding) whose net disagrees with the attached device-port's
+       net.
+
+   Match rule (both cases): silent only when both pins carry a non-nil net and
+   the two nets are equal. Any missing or differing net surfaces an arc.
+
+   Sits above `schematic-elements` with pointer-events:none."
+  []
+  (into [:<>] (build-schematic-airwires @schematic)))
+
 (defn schematic-dots []
   (let [icon-size (/ grid-size 2.5)
         icon-offset (- (/ grid-size 2) (/ icon-size 2))
@@ -2592,6 +2666,7 @@
               :width (* 1000 grid-size)
               :height (* 1000 grid-size)}]
       [schematic-elements @schematic]
+      [schematic-airwires]
       [schematic-dots]
       [tool-elements]]]
     [notebook-panel notebook-state]]

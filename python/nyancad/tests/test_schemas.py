@@ -125,6 +125,18 @@ class TestComponent:
         assert c.device_type == "resistor"
         assert c.props == {"resistance": "1k"}
 
+    def test_missing_transform_defaults_to_identity(self):
+        c = Component.model_validate(
+            {
+                "_id": "schem:R1",
+                "type": "resistor",
+                "x": 5,
+                "y": 7,
+                "name": "R1",
+            }
+        )
+        assert c.transform == [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+
     def test_all_valid_types(self):
         """Every supported component type should parse."""
         valid_types = [

@@ -742,6 +742,37 @@ class TestKfNetlistFromNyancad:
         assert [{"name": "P1"}, {"instance": "top_S1", "port": "o1"}] in data["nets"]
         assert [{"name": "P2"}, {"instance": "top_S1", "port": "o2"}] in data["nets"]
 
+    def test_layout_only_port_resolves_via_attached_port(self):
+        """A Livewire layout-only port (``attached_port`` present, ``nets``
+        absent) must join its attached instance port on a synthesized net,
+        rather than being mis-bucketed under a net named after itself.
+        """
+        schem = {
+            "top": {
+                "top_S1": {
+                    "type": "straight",
+                    "model": "straight",
+                    "nets": {"o2": "n_mid"},
+                },
+                "in": {
+                    "type": "port",
+                    "name": "in",
+                    "attached_port": {"component_id": "top_S1", "port_name": "o1"},
+                },
+            },
+            "models": {
+                "models:straight": {"name": "straight", "ports": []},
+            },
+        }
+
+        netlist = kfnetlist_from_nyancad("top", schem)
+        data = _kf_data(netlist)
+
+        assert [
+            {"name": "in"},
+            {"instance": "top_S1", "port": "o1"},
+        ] in data["nets"]
+
     def test_uses_model_name_without_needing_layout(self):
         schem = {
             "top": {

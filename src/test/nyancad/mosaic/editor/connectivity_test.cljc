@@ -664,3 +664,101 @@
             "cells where RS1 appears in :ids must match cells where it appears in :ports"))
       (finally
         (reset! pform/modeldb {})))))
+
+;; ---------------------------------------------------------------------------
+;; Port nets annotation — port docs carry {:nets {:P net}}
+;; ---------------------------------------------------------------------------
+;; Contract: build-netlist returns a :ports {port-doc-id net-name} map, and
+;; build-net-annotations writes {:nets {:P net}} onto each port doc so the
+;; port carries explicit cross-editor connectivity (consumed by Livewire's
+;; derive-and-glue and the compile-time nets fallback).
+
+(deftest netlist-port-doc-gets-ports-entry
+  (testing "build-netlist maps a port doc to its component's net name"
+    (let [schem (sch (resistor "R1" 0 0)        ; N at (1,2)
+                     (port-doc "in" 1 2 "in"))  ; same cell, named "in"
+          {:keys [ports]} (e/build-netlist (build-networks schem))]
+      (is (= "in" (get ports "in"))))))
+
+(deftest annotations-port-doc-gets-nets-P
+  (testing "a port doc carries {:nets {:P net}}"
+    (let [schem (sch (resistor "R1" 0 0)
+                     (port-doc "in" 1 2 "in"))
+          a (annotations schem)]
+      (is (= {:P "in"} (get-in a ["in" :nets]))))))
+
+(deftest annotations-two-ports-one-network-same-net
+  (testing "two port docs on one network resolve to the same net"
+    (let [schem (sch (resistor "R1" 0 0)        ; N at (1,2)
+                     (wire "W1" 1 2 0 2)         ; (1,2)→(1,4)
+                     (port-doc "in" 1 2 "in")
+                     (port-doc "out" 1 4 "out"))
+          {:keys [ports]} (e/build-netlist (build-networks schem))]
+      (is (= (get ports "in") (get ports "out"))
+          "both port docs share the component's single net"))))
+
+;; ---------------------------------------------------------------------------
+;; schematic-airwires — top-level ratsnest layer
+;; ---------------------------------------------------------------------------
+;; Contract: render a dashed-red arc for (a) polylines whose endpoints sit on
+;; different nets and (b) port docs whose :attached_port pin sits on a
+;; different net. Silent only when both pins carry equal non-nil nets.
+
+(defn- count-airwires
+  "Count :g.airwire elements anywhere in a hiccup tree."
+  [hiccup]
+  (->> (tree-seq #(or (seq? %) (vector? %)) seq hiccup)
+       (filter #(and (vector? %) (= :g.airwire (first %))))
+       count))
+
+(deftest airwires-polyline-mismatch-renders
+  (testing "a polyline whose endpoints are on different nets draws one airwire"
+    (reset! pform/schematic
+            (sch ["R1" {:type "resistor" :x 0 :y 0 :transform [1 0 0 1 0 0]
+                        :name "R1" :nets {:P "n1"}}]
+                 ["R2" {:type "resistor" :x 5 :y 5 :transform [1 0 0 1 0 0]
+                        :name "R2" :nets {:P "n2"}}]
+                 ["poly_1" {:type "polyline"
+                            :terminals {:start  {:component_id "R1" :port_name "P"}
+                                        :finish {:component_id "R2" :port_name "P"}}}]))
+    (try
+      (is (= 1 (count-airwires (e/schematic-airwires))))
+      (finally (reset! pform/schematic {})))))
+
+(deftest airwires-polyline-match-silent
+  (testing "matching endpoint nets → no airwire"
+    (reset! pform/schematic
+            (sch ["R1" {:type "resistor" :x 0 :y 0 :transform [1 0 0 1 0 0]
+                        :name "R1" :nets {:P "n1"}}]
+                 ["R2" {:type "resistor" :x 5 :y 5 :transform [1 0 0 1 0 0]
+                        :name "R2" :nets {:P "n1"}}]
+                 ["poly_1" {:type "polyline"
+                            :terminals {:start  {:component_id "R1" :port_name "P"}
+                                        :finish {:component_id "R2" :port_name "P"}}}]))
+    (try
+      (is (= 0 (count-airwires (e/schematic-airwires))))
+      (finally (reset! pform/schematic {})))))
+
+(deftest airwires-port-attached-mismatch-renders
+  (testing "a port marker attached to a pin on a different net draws one airwire"
+    (reset! pform/schematic
+            (sch ["R1" {:type "resistor" :x 0 :y 0 :transform [1 0 0 1 0 0]
+                        :name "R1" :nets {:P "n1"}}]
+                 ["in" {:type "port" :x 5 :y 5 :transform [1 0 0 1 0 0]
+                        :name "in" :nets {:P "n2"}
+                        :attached_port {:component_id "R1" :port_name "P"}}]))
+    (try
+      (is (= 1 (count-airwires (e/schematic-airwires))))
+      (finally (reset! pform/schematic {})))))
+
+(deftest airwires-port-attached-match-silent
+  (testing "a port marker whose net matches its attached pin → no airwire"
+    (reset! pform/schematic
+            (sch ["R1" {:type "resistor" :x 0 :y 0 :transform [1 0 0 1 0 0]
+                        :name "R1" :nets {:P "n1"}}]
+                 ["in" {:type "port" :x 5 :y 5 :transform [1 0 0 1 0 0]
+                        :name "in" :nets {:P "n1"}
+                        :attached_port {:component_id "R1" :port_name "P"}}]))
+    (try
+      (is (= 0 (count-airwires (e/schematic-airwires))))
+      (finally (reset! pform/schematic {})))))

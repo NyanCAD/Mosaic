@@ -166,7 +166,15 @@ def kf_component_name(dev_id, dev, models):
 
 
 def invert_kf_nets(components, port_devices):
-    """Build ``{net_name: {"inst": [...], "ports": [...]}}`` from Mosaic nets."""
+    """Build ``{net_name: {"inst": [...], "ports": [...]}}`` from Mosaic nets.
+
+    Port markers resolve via the same precedence as the converter: a
+    Livewire-owned ``attached_port`` (layout binding) is the primary resolver,
+    then the Mosaic-owned ``nets`` value. A layout-only port (``attached_port``
+    present, ``nets`` absent) synthesizes a net joining the top port with its
+    attached instance port — without this it would be mis-bucketed under a net
+    named after itself and never connect to the device.
+    """
     out = {}
     for inst, dev in components:
         for port, net in (dev.get("nets") or {}).items():
@@ -179,6 +187,24 @@ def invert_kf_nets(components, port_devices):
 
     for port_name, dev in port_devices.items():
         port_name_str = str(port_name)
+
+        # 1. attached_port — Livewire layout binding, primary resolver.
+        ap = dev.get("attached_port")
+        if isinstance(ap, dict):
+            cid = ap.get("component_id") or ap.get("device") or ap.get("instance")
+            pn = ap.get("port_name") or ap.get("port")
+            if cid and pn:
+                # Synthesize a net (keyed by the port name) joining the top
+                # port with its attached instance port.
+                bucket = out.setdefault(port_name_str, {"inst": [], "ports": []})
+                member = (_safe_ident(str(cid)), str(pn))
+                if member not in bucket["inst"]:
+                    bucket["inst"].append(member)
+                if port_name_str not in bucket["ports"]:
+                    bucket["ports"].append(port_name_str)
+                continue
+
+        # 2. else fall back to the Mosaic-owned nets value.
         for net in (dev.get("nets") or {"P": port_name_str}).values():
             if not net:
                 continue
