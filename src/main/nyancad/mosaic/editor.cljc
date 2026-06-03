@@ -1379,6 +1379,7 @@
                            [pid (nth names i)]))]
     {:devices devices :wires wires :ports ports}))
 
+;; @tags nyancir format
 (defn build-net-annotations
   "Return {doc-id {:nets …}|{:net …}} with only the docs whose annotation
    needs to change. Keys of this map drive which docs the pouch/JsAtom swap
