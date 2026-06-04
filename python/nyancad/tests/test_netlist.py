@@ -451,6 +451,81 @@ class TestModelPropDefaultsFallback:
 
 
 # ---------------------------------------------------------------------------
+# Structured library + sections model entries (Cadnip :lib/:include migration)
+# ---------------------------------------------------------------------------
+
+
+class TestLibrarySectionEntry:
+    """A PDK model migrated to the new schema carries a structured ``library``
+    (+ optional ``sections``) model entry instead of inline ``.lib … {corner}``
+    code. The circuit must emit a ``.lib library section`` / ``.include library``
+    line — with the corner chosen by :func:`_select_corner`, not a baked-in
+    ``{corner}`` token — and order the X-call pins by ``port-order``.
+    """
+
+    def _schem(self, sections=("tt",), drop_sections=False):
+        entry = {
+            "language": "spice",
+            "name": "sky130_fd_pr__nfet_01v8",
+            "spice-type": "SUBCKT",
+            "library": "https://example.com/pdk.zip#sky130.lib.spice",
+            "port-order": ["D", "G", "S", "B"],
+        }
+        if not drop_sections:
+            entry["sections"] = list(sections)
+        return {
+            "top": {
+                "top:X1": {
+                    "_id": "top:X1",
+                    "type": "nmos",
+                    "name": "X1",
+                    "model": "sky.nfet",
+                    "nets": {"D": "d", "G": "g", "S": "s", "B": "b"},
+                }
+            },
+            "models": {
+                "models:sky.nfet": {
+                    "name": "sky130_fd_pr__nfet_01v8",
+                    "type": "nmos",
+                    "ports": [
+                        {"name": "D", "side": "top"},
+                        {"name": "G", "side": "left"},
+                        {"name": "S", "side": "bottom"},
+                        {"name": "B", "side": "right"},
+                    ],
+                    "models": [entry],
+                }
+            },
+        }
+
+    def test_emits_lib_with_default_corner(self):
+        """No corner preference → first section, emitted as a real `.lib` line,
+        with no leftover `{corner}` template token.
+        """
+        spice = str(NyanCircuit("top", self._schem()))
+        assert "pdk.zip#sky130.lib.spice tt" in spice
+        assert "{corner}" not in spice
+
+    def test_corner_preference_selects_section(self):
+        spice = str(
+            NyanCircuit("top", self._schem(sections=("ss", "tt", "ff")), corners=["ff"])
+        )
+        assert "pdk.zip#sky130.lib.spice ff" in spice
+
+    def test_include_when_no_sections(self):
+        """A model entry without sections falls back to `.include` (no corner)."""
+        spice = str(NyanCircuit("top", self._schem(drop_sections=True)))
+        assert ".include" in spice
+        assert ".lib " not in spice
+        assert "{corner}" not in spice
+
+    def test_xcall_orders_pins_by_port_order(self):
+        """The subcircuit X-call lists nets in the entry's port-order."""
+        spice = str(NyanCircuit("top", self._schem()))
+        assert "d g s b sky130_fd_pr__nfet_01v8" in spice
+
+
+# ---------------------------------------------------------------------------
 # populate_from_nyancad — reads :nets off each device
 # ---------------------------------------------------------------------------
 
