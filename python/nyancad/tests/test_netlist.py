@@ -552,6 +552,70 @@ class TestLibrarySectionEntry:
 
 
 # ---------------------------------------------------------------------------
+# Case-insensitive port matching — built-in symbols vs. migrated model ports
+# ---------------------------------------------------------------------------
+
+
+class TestCaseInsensitivePorts:
+    """Built-in nmos/pmos symbols label pins with uppercase chars (D/G/S/B),
+    but PDK models migrated by SpiceArmyKnife.jl declare ports/port-order in
+    lowercase (sky130 subckts use ``d g s b``). SPICE is case-insensitive, so
+    the X-call must still resolve each model port to the right device net
+    regardless of case.
+    """
+
+    def _schem(self, *, port_order, ports):
+        """nmos device with uppercase nets against a model whose port names
+        and port-order are given by the caller (typically lowercase).
+        """
+        return {
+            "top": {
+                "top:M1": {
+                    "_id": "top:M1",
+                    "type": "nmos",
+                    "name": "M1",
+                    "model": "sky.nfet",
+                    "nets": {"D": "nd", "G": "ng", "S": "ns", "B": "nb"},
+                }
+            },
+            "models": {
+                "models:sky.nfet": {
+                    "name": "sky130_fd_pr__nfet_01v8_lvt",
+                    "type": "nmos",
+                    "ports": [{"name": n, "side": "left"} for n in ports],
+                    "models": [
+                        {
+                            "language": "spice",
+                            "name": "sky130_fd_pr__nfet_01v8_lvt",
+                            "spice-type": "SUBCKT",
+                            "library": "models/sky130.lib.spice",
+                            "sections": ["tt"],
+                            "port-order": port_order,
+                        }
+                    ],
+                }
+            },
+        }
+
+    def test_lowercase_port_order_resolves_uppercase_nets(self):
+        """Lowercase ``port-order`` maps onto uppercase device nets in order."""
+        schem = self._schem(
+            port_order=["d", "g", "s", "b"], ports=["d", "g", "s", "b"]
+        )
+        spice = str(NyanCircuit("top", schem))
+        assert "nd ng ns nb sky130_fd_pr__nfet_01v8_lvt" in spice
+
+    def test_lowercase_default_port_order_resolves_uppercase_nets(self):
+        """With no explicit port-order, the alphabetical default of the
+        lowercase model ports still resolves against uppercase nets.
+        """
+        schem = self._schem(port_order=None, ports=["d", "g", "s", "b"])
+        # default_port_order sorts by name: b, d, g, s
+        spice = str(NyanCircuit("top", schem))
+        assert "nb nd ng ns sky130_fd_pr__nfet_01v8_lvt" in spice
+
+
+# ---------------------------------------------------------------------------
 # populate_from_nyancad — reads :nets off each device
 # ---------------------------------------------------------------------------
 

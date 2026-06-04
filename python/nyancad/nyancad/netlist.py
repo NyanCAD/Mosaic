@@ -534,9 +534,14 @@ class NyanCADMixin:
 
         # Helper to get port by name. The editor annotates every port with
         # a net — disconnected pins get their own generated netN — so the
-        # lookup is total and a plain dict access is correct.
+        # lookup is total. Built-in device symbols label pins with uppercase
+        # chars (D/G/S/B), while a model's port-order may use any case (sky130
+        # subckts migrated by SpiceArmyKnife.jl use lowercase d/g/s/b). SPICE is
+        # case-insensitive, so resolve port names case-insensitively.
+        ports_ci = {k.lower(): v for k, v in ports.items()}
+
         def p(port_name):
-            return ports[port_name]
+            return ports_ci[port_name.lower()]
 
         # Map SPICE element type letters to InSpice methods
         _spice_type_map = {
