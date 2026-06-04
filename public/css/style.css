@@ -37,7 +37,7 @@ html {
     --canvas-wire-photonic: var(--vscode-editor-foreground, light-dark(black, #94e2d5));
     --canvas-text: var(--vscode-editor-foreground, light-dark(#444, #cdd6f4));
     --canvas-text-muted: var(--vscode-descriptionForeground, light-dark(#666, #a6adc8));
-    --canvas-select: color-mix(in srgb, var(--vscode-focusBorder, light-dark(#6688cc, #ba7eee)) 25%, var(--canvas-bg));
+    --canvas-select: light-dark(rgb(229, 216, 243), #45365e);
     --canvas-nc: light-dark(red, #f38ba8);
     --canvas-error: light-dark(red, #f38ba8);
     --canvas-warning: light-dark(orange, #fab387);
@@ -1137,6 +1137,11 @@ rect.select {
 .dark-cursors .mosaic-canvas.eraser .device,
 .vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.eraser .wire:hover,
 .vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.eraser .device { cursor: url(icons/eraser-light.svg) 6 14, crosshair; }
+
+body.vscode-dark,
+body.vscode-light {
+    --canvas-select: color-mix(in srgb, var(--vscode-focusBorder) 25%, var(--canvas-bg));
+}
 
 body.vscode-dark .mosaic-container .menu .status,
 body.vscode-light .mosaic-container .menu .status {
