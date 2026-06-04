@@ -616,6 +616,83 @@ class TestCaseInsensitivePorts:
 
 
 # ---------------------------------------------------------------------------
+# Empty prop values are dropped — no invalid `param=` tokens
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyPropsDropped:
+    """Devices placed before commit 086820d (and any still in CouchDB) carry a
+    dense `:props` map where every model param was pre-filled with "". An empty
+    override is meaningless to SPICE: emitting ``w=`` is invalid and clobbers the
+    subckt's own default. The netlister must drop empty values before expanding
+    them as ``**props`` kwargs.
+    """
+
+    def _schem(self, props):
+        """pmos device against a SUBCKT model (IHP sg13_lv_pmos shape), with the
+        caller-supplied device props.
+        """
+        return {
+            "top": {
+                "top:M2": {
+                    "_id": "top:M2",
+                    "type": "pmos",
+                    "name": "M2",
+                    "model": "pdk.pmos",
+                    "nets": {"D": "nd", "G": "ng", "S": "ns", "B": "nb"},
+                    "props": props,
+                }
+            },
+            "models": {
+                "models:pdk.pmos": {
+                    "name": "sg13_lv_pmos",
+                    "type": "pmos",
+                    "ports": [
+                        {"name": n, "side": "left"} for n in ("d", "g", "s", "b")
+                    ],
+                    # Params with no defaults (the SpiceArmyKnife migration shape)
+                    "props": [{"name": k} for k in ("w", "l", "ad", "as")],
+                    "models": [
+                        {
+                            "language": "spice",
+                            "name": "sg13_lv_pmos",
+                            "spice-type": "SUBCKT",
+                            "library": "models/sg13g2.lib.spice",
+                            "port-order": ["d", "g", "s", "b"],
+                        }
+                    ],
+                }
+            },
+        }
+
+    def test_all_empty_props_emit_no_param_tokens(self):
+        """A device whose props are all "" produces an X-line with no
+        ``param=`` fragments — just the instance, nets and subckt name.
+        """
+        spice = str(
+            NyanCircuit("top", self._schem({"w": "", "l": "", "ad": "", "as": ""}))
+        )
+        assert "sg13_lv_pmos" in spice
+        # No empty `param=` fragments for any of the model params
+        assert " w=" not in spice
+        assert " l=" not in spice
+        assert " ad=" not in spice
+        assert " as=" not in spice
+        # And no bare empty-value token anywhere (e.g. "w= " or a trailing "=")
+        assert "= " not in spice
+        assert not any(line.rstrip().endswith("=") for line in spice.splitlines())
+
+    def test_real_value_still_emitted(self):
+        """A param with a real value survives the empty-drop and is emitted."""
+        spice = str(
+            NyanCircuit("top", self._schem({"w": "0.35u", "l": "", "ad": "", "as": ""}))
+        )
+        assert "w=0.35u" in spice
+        assert " l=" not in spice
+        assert " ad=" not in spice
+
+
+# ---------------------------------------------------------------------------
 # populate_from_nyancad — reads :nets off each device
 # ---------------------------------------------------------------------------
 

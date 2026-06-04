@@ -532,6 +532,12 @@ class NyanCADMixin:
                         props.setdefault(mp["name"], mp["default"])
                 props.setdefault("model", model_name)
 
+        # Drop params with no value: an empty override is meaningless to SPICE
+        # and would emit invalid `param=` lines, clobbering the model/subckt's
+        # own default. Only ""/None are dropped — 0, False and other native-JSON
+        # values are valid and kept. The "model" key is non-empty and preserved.
+        props = {k: v for k, v in props.items() if v != "" and v is not None}
+
         # Helper to get port by name. The editor annotates every port with
         # a net — disconnected pins get their own generated netN — so the
         # lookup is total. Built-in device symbols label pins with uppercase
