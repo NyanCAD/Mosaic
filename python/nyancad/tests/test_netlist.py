@@ -499,23 +499,27 @@ class TestLibrarySectionEntry:
         }
 
     def test_emits_lib_with_default_corner(self):
-        """No corner preference → first section, emitted as a real `.lib` line,
-        with no leftover `{corner}` template token.
+        """No corner preference → first section, emitted as a real `.lib` line
+        pointing at the resolved local cache path, with no leftover `{corner}`
+        template token.
         """
         spice = str(NyanCircuit("top", self._schem()))
-        assert "pdk.zip#sky130.lib.spice tt" in spice
+        assert "nyancad_archive_cache" in spice
+        assert "sky130.lib.spice tt" in spice
         assert "{corner}" not in spice
 
     def test_corner_preference_selects_section(self):
         spice = str(
             NyanCircuit("top", self._schem(sections=("ss", "tt", "ff")), corners=["ff"])
         )
-        assert "pdk.zip#sky130.lib.spice ff" in spice
+        assert "nyancad_archive_cache" in spice
+        assert "sky130.lib.spice ff" in spice
 
     def test_include_when_no_sections(self):
         """A model entry without sections falls back to `.include` (no corner)."""
         spice = str(NyanCircuit("top", self._schem(drop_sections=True)))
         assert ".include" in spice
+        assert "nyancad_archive_cache" in spice
         assert ".lib " not in spice
         assert "{corner}" not in spice
 
@@ -523,6 +527,28 @@ class TestLibrarySectionEntry:
         """The subcircuit X-call lists nets in the entry's port-order."""
         spice = str(NyanCircuit("top", self._schem()))
         assert "d g s b sky130_fd_pr__nfet_01v8" in spice
+
+    def test_registers_pending_download(self):
+        """The structured `library` URL is registered for download: archive URL
+        (without fragment) + entrypoint extracted from the URL fragment.
+        """
+        circuit = NyanCircuit("top", self._schem())
+        urls = [url for url, _dest, _entry in circuit._pending_downloads]
+        assert "https://example.com/pdk.zip" in urls
+        entrypoints = {
+            url: entry for url, _dest, entry in circuit._pending_downloads
+        }
+        assert entrypoints["https://example.com/pdk.zip"] == "sky130.lib.spice"
+
+    def test_bare_local_library_passthrough(self):
+        """A non-URL `library` is emitted unchanged and registers no download."""
+        schem = self._schem()
+        schem["models"]["models:sky.nfet"]["models"][0]["library"] = "models/foo.lib"
+        circuit = NyanCircuit("top", schem)
+        spice = str(circuit)
+        assert "models/foo.lib tt" in spice
+        assert "nyancad_archive_cache" not in spice
+        assert circuit._pending_downloads == []
 
 
 # ---------------------------------------------------------------------------

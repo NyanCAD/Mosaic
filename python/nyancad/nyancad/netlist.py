@@ -696,11 +696,15 @@ class NyanCircuit(NyanCADMixin, Circuit):
                     if entry:
                         # Handle library includes
                         if entry.get("library"):
+                            library = entry["library"]
+                            resolved = self._resolve_url(library)
+                            if resolved is not None:
+                                library = str(resolved)
                             section = _select_corner(entry.get("sections"), corners)
                             if section:
-                                self.lib(entry["library"], section)
+                                self.lib(library, section)
                             else:
-                                self.include(entry["library"])
+                                self.include(library)
                         # Handle inline SPICE code
                         code = entry.get("code", "").strip()
                         if code:
@@ -736,9 +740,6 @@ class NyanCircuit(NyanCADMixin, Circuit):
             # Parse SPICE code
             spice_source = SpiceSource(spice_code, title_line=False)
 
-            # Resolve URL includes in the SpiceSource before building
-            self.resolve_url_includes(spice_source)
-
             builder = Builder()
             parsed_circuit = builder.translate(spice_source)
             # Copy all content to self (models, subcircuits, elements)
@@ -760,52 +761,22 @@ class NyanCircuit(NyanCADMixin, Circuit):
             # Append to raw_spice
             self.raw_spice += "\n" + spice_code.strip() + "\n"
 
-    def _resolve_url_path(self, path_obj):
-        """Helper to resolve a single URL path to a local file path."""
+    def _resolve_url(self, path_str):
+        """Resolve an http(s) library/include URL to a local cache path and register
+        the archive for download. Returns the resolved Path, or None when path_str is
+        not an http(s) URL (caller keeps the original path)."""
+        parsed = urlparse(path_str)
+        if parsed.scheme not in ("http", "https"):
+            return None
+        archive_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        entrypoint = parsed.fragment
         cache_dir = Path(tempfile.gettempdir()) / "nyancad_archive_cache"
         cache_dir.mkdir(exist_ok=True)
-
-        # Get the raw path from the AST
-        ast = path_obj._ast
-        path_str = str(next(iter(ast))).strip("\"'")
-
-        parsed = urlparse(path_str)
-
-        if parsed.scheme in ("http", "https"):
-            archive_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-            entrypoint = parsed.fragment
-
-            # Generate cache key from URL
-            url_hash = hashlib.md5(archive_url.encode()).hexdigest()[:8]  # noqa: S324
-            filename = Path(parsed.path).name
-            cached_file = cache_dir / f"{url_hash}_{filename}"
-
-            # Schedule download if not cached
-            if not cached_file.exists():
-                self._pending_downloads.append((archive_url, cached_file, entrypoint))
-
-            # Compute the expected resolved path (will exist after download/extract)
-            if entrypoint:
-                base_name = cached_file.stem
-                extract_dir = cache_dir / base_name
-                resolved_path = extract_dir / entrypoint
-            else:
-                # Bare SPICE file - use directly
-                resolved_path = cached_file
-
-            # Replace the _path in the object
-            path_obj._path = resolved_path
-
-    def resolve_url_includes(self, spice_source):
-        """Resolve HTTP includes (archives or bare files) to local paths."""
-        # Process includes
-        for include in spice_source._includes:
-            self._resolve_url_path(include)
-
-        # Also process libs if they exist
-        if hasattr(spice_source, "_libs"):
-            for lib in spice_source._libs:
-                self._resolve_url_path(lib)
+        url_hash = hashlib.md5(archive_url.encode()).hexdigest()[:8]  # noqa: S324
+        cached_file = cache_dir / f"{url_hash}_{Path(parsed.path).name}"
+        if not cached_file.exists():
+            self._pending_downloads.append((archive_url, cached_file, entrypoint))
+        return (cache_dir / cached_file.stem / entrypoint) if entrypoint else cached_file
 
 
 class NyanSubCircuit(NyanCADMixin, SubCircuit):
