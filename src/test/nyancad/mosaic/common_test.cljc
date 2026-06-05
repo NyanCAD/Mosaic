@@ -396,8 +396,10 @@
 ;; ---------------------------------------------------------------------------
 ;;
 ;; Contract: given a model definition with :props, return a map of
-;; {prop-name → default-value}. nil model-def → nil. Empty :props → nil.
-;; Props missing :name are skipped. Missing :default falls back to "".
+;; {prop-name → default-value} for props that carry a non-nil :default. nil
+;; model-def → nil. Empty :props → nil. Props missing :name are skipped. Props
+;; without a :default (or :default nil) are omitted entirely — they must not be
+;; materialized as empty overrides into the device doc.
 
 (deftest model-prop-defaults-nil-model
   (is (nil? (cm/model-prop-defaults nil))))
@@ -406,18 +408,17 @@
   (is (nil? (cm/model-prop-defaults {:props []}))))
 
 (deftest model-prop-defaults-with-named-props
-  (is (= {"length" "10" "width" ""}
+  (is (= {:length "10"}
          (cm/model-prop-defaults {:props [{:name "length" :default "10"}
                                           {:name "width"}]}))))
 
 (deftest model-prop-defaults-skips-nameless
-  (is (= {"a" "1"}
+  (is (= {:a "1"}
          (cm/model-prop-defaults {:props [{:name "a" :default "1"}
                                           {:tooltip "orphan"}]}))))
 
-(deftest model-prop-defaults-nil-default-falls-back
-  (is (= {"x" ""}
-         (cm/model-prop-defaults {:props [{:name "x" :default nil}]}))))
+(deftest model-prop-defaults-nil-default-excluded
+  (is (nil? (cm/model-prop-defaults {:props [{:name "x" :default nil}]}))))
 
 ;; ---------------------------------------------------------------------------
 ;; format — template interpolation via JS Function

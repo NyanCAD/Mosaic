@@ -6,9 +6,9 @@
     }
   },
   "indexes": {
-    "category-type-index": {
+    "tags-type-index": {
       "index": {
-        "fields": ["category", "type"]
+        "fields": ["tags", "type"]
       },
       "type": "json"
     }

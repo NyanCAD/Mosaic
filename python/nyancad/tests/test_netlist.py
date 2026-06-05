@@ -451,6 +451,248 @@ class TestModelPropDefaultsFallback:
 
 
 # ---------------------------------------------------------------------------
+# Structured library + sections model entries (Cadnip :lib/:include migration)
+# ---------------------------------------------------------------------------
+
+
+class TestLibrarySectionEntry:
+    """A PDK model migrated to the new schema carries a structured ``library``
+    (+ optional ``sections``) model entry instead of inline ``.lib … {corner}``
+    code. The circuit must emit a ``.lib library section`` / ``.include library``
+    line — with the corner chosen by :func:`_select_corner`, not a baked-in
+    ``{corner}`` token — and order the X-call pins by ``port-order``.
+    """
+
+    def _schem(self, sections=("tt",), drop_sections=False):
+        entry = {
+            "language": "spice",
+            "name": "sky130_fd_pr__nfet_01v8",
+            "spice-type": "SUBCKT",
+            "library": "https://example.com/pdk.zip#sky130.lib.spice",
+            "port-order": ["D", "G", "S", "B"],
+        }
+        if not drop_sections:
+            entry["sections"] = list(sections)
+        return {
+            "top": {
+                "top:X1": {
+                    "_id": "top:X1",
+                    "type": "nmos",
+                    "name": "X1",
+                    "model": "sky.nfet",
+                    "nets": {"D": "d", "G": "g", "S": "s", "B": "b"},
+                }
+            },
+            "models": {
+                "models:sky.nfet": {
+                    "name": "sky130_fd_pr__nfet_01v8",
+                    "type": "nmos",
+                    "ports": [
+                        {"name": "D", "side": "top"},
+                        {"name": "G", "side": "left"},
+                        {"name": "S", "side": "bottom"},
+                        {"name": "B", "side": "right"},
+                    ],
+                    "models": [entry],
+                }
+            },
+        }
+
+    def test_emits_lib_with_default_corner(self):
+        """No corner preference → first section, emitted as a real `.lib` line
+        pointing at the resolved local cache path, with no leftover `{corner}`
+        template token.
+        """
+        spice = str(NyanCircuit("top", self._schem()))
+        assert "nyancad_archive_cache" in spice
+        assert "sky130.lib.spice tt" in spice
+        assert "{corner}" not in spice
+
+    def test_corner_preference_selects_section(self):
+        spice = str(
+            NyanCircuit("top", self._schem(sections=("ss", "tt", "ff")), corners=["ff"])
+        )
+        assert "nyancad_archive_cache" in spice
+        assert "sky130.lib.spice ff" in spice
+
+    def test_include_when_no_sections(self):
+        """A model entry without sections falls back to `.include` (no corner)."""
+        spice = str(NyanCircuit("top", self._schem(drop_sections=True)))
+        assert ".include" in spice
+        assert "nyancad_archive_cache" in spice
+        assert ".lib " not in spice
+        assert "{corner}" not in spice
+
+    def test_xcall_orders_pins_by_port_order(self):
+        """The subcircuit X-call lists nets in the entry's port-order."""
+        spice = str(NyanCircuit("top", self._schem()))
+        assert "d g s b sky130_fd_pr__nfet_01v8" in spice
+
+    def test_registers_pending_download(self):
+        """The structured `library` URL is registered for download: archive URL
+        (without fragment) + entrypoint extracted from the URL fragment.
+        """
+        circuit = NyanCircuit("top", self._schem())
+        urls = [url for url, _dest, _entry in circuit._pending_downloads]
+        assert "https://example.com/pdk.zip" in urls
+        entrypoints = {
+            url: entry for url, _dest, entry in circuit._pending_downloads
+        }
+        assert entrypoints["https://example.com/pdk.zip"] == "sky130.lib.spice"
+
+    def test_bare_local_library_passthrough(self):
+        """A non-URL `library` is emitted unchanged and registers no download."""
+        schem = self._schem()
+        schem["models"]["models:sky.nfet"]["models"][0]["library"] = "models/foo.lib"
+        circuit = NyanCircuit("top", schem)
+        spice = str(circuit)
+        assert "models/foo.lib tt" in spice
+        assert "nyancad_archive_cache" not in spice
+        assert circuit._pending_downloads == []
+
+
+# ---------------------------------------------------------------------------
+# Case-insensitive port matching — built-in symbols vs. migrated model ports
+# ---------------------------------------------------------------------------
+
+
+class TestCaseInsensitivePorts:
+    """Built-in nmos/pmos symbols label pins with uppercase chars (D/G/S/B),
+    but PDK models migrated by SpiceArmyKnife.jl declare ports/port-order in
+    lowercase (sky130 subckts use ``d g s b``). SPICE is case-insensitive, so
+    the X-call must still resolve each model port to the right device net
+    regardless of case.
+    """
+
+    def _schem(self, *, port_order, ports):
+        """nmos device with uppercase nets against a model whose port names
+        and port-order are given by the caller (typically lowercase).
+        """
+        return {
+            "top": {
+                "top:M1": {
+                    "_id": "top:M1",
+                    "type": "nmos",
+                    "name": "M1",
+                    "model": "sky.nfet",
+                    "nets": {"D": "nd", "G": "ng", "S": "ns", "B": "nb"},
+                }
+            },
+            "models": {
+                "models:sky.nfet": {
+                    "name": "sky130_fd_pr__nfet_01v8_lvt",
+                    "type": "nmos",
+                    "ports": [{"name": n, "side": "left"} for n in ports],
+                    "models": [
+                        {
+                            "language": "spice",
+                            "name": "sky130_fd_pr__nfet_01v8_lvt",
+                            "spice-type": "SUBCKT",
+                            "library": "models/sky130.lib.spice",
+                            "sections": ["tt"],
+                            "port-order": port_order,
+                        }
+                    ],
+                }
+            },
+        }
+
+    def test_lowercase_port_order_resolves_uppercase_nets(self):
+        """Lowercase ``port-order`` maps onto uppercase device nets in order."""
+        schem = self._schem(
+            port_order=["d", "g", "s", "b"], ports=["d", "g", "s", "b"]
+        )
+        spice = str(NyanCircuit("top", schem))
+        assert "nd ng ns nb sky130_fd_pr__nfet_01v8_lvt" in spice
+
+    def test_lowercase_default_port_order_resolves_uppercase_nets(self):
+        """With no explicit port-order, the alphabetical default of the
+        lowercase model ports still resolves against uppercase nets.
+        """
+        schem = self._schem(port_order=None, ports=["d", "g", "s", "b"])
+        # default_port_order sorts by name: b, d, g, s
+        spice = str(NyanCircuit("top", schem))
+        assert "nb nd ng ns sky130_fd_pr__nfet_01v8_lvt" in spice
+
+
+# ---------------------------------------------------------------------------
+# Empty prop values are dropped — no invalid `param=` tokens
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyPropsDropped:
+    """Devices placed before commit 086820d (and any still in CouchDB) carry a
+    dense `:props` map where every model param was pre-filled with "". An empty
+    override is meaningless to SPICE: emitting ``w=`` is invalid and clobbers the
+    subckt's own default. The netlister must drop empty values before expanding
+    them as ``**props`` kwargs.
+    """
+
+    def _schem(self, props):
+        """pmos device against a SUBCKT model (IHP sg13_lv_pmos shape), with the
+        caller-supplied device props.
+        """
+        return {
+            "top": {
+                "top:M2": {
+                    "_id": "top:M2",
+                    "type": "pmos",
+                    "name": "M2",
+                    "model": "pdk.pmos",
+                    "nets": {"D": "nd", "G": "ng", "S": "ns", "B": "nb"},
+                    "props": props,
+                }
+            },
+            "models": {
+                "models:pdk.pmos": {
+                    "name": "sg13_lv_pmos",
+                    "type": "pmos",
+                    "ports": [
+                        {"name": n, "side": "left"} for n in ("d", "g", "s", "b")
+                    ],
+                    # Params with no defaults (the SpiceArmyKnife migration shape)
+                    "props": [{"name": k} for k in ("w", "l", "ad", "as")],
+                    "models": [
+                        {
+                            "language": "spice",
+                            "name": "sg13_lv_pmos",
+                            "spice-type": "SUBCKT",
+                            "library": "models/sg13g2.lib.spice",
+                            "port-order": ["d", "g", "s", "b"],
+                        }
+                    ],
+                }
+            },
+        }
+
+    def test_all_empty_props_emit_no_param_tokens(self):
+        """A device whose props are all "" produces an X-line with no
+        ``param=`` fragments — just the instance, nets and subckt name.
+        """
+        spice = str(
+            NyanCircuit("top", self._schem({"w": "", "l": "", "ad": "", "as": ""}))
+        )
+        assert "sg13_lv_pmos" in spice
+        # No empty `param=` fragments for any of the model params
+        assert " w=" not in spice
+        assert " l=" not in spice
+        assert " ad=" not in spice
+        assert " as=" not in spice
+        # And no bare empty-value token anywhere (e.g. "w= " or a trailing "=")
+        assert "= " not in spice
+        assert not any(line.rstrip().endswith("=") for line in spice.splitlines())
+
+    def test_real_value_still_emitted(self):
+        """A param with a real value survives the empty-drop and is emitted."""
+        spice = str(
+            NyanCircuit("top", self._schem({"w": "0.35u", "l": "", "ad": "", "as": ""}))
+        )
+        assert "w=0.35u" in spice
+        assert " l=" not in spice
+        assert " ad=" not in spice
+
+
+# ---------------------------------------------------------------------------
 # populate_from_nyancad — reads :nets off each device
 # ---------------------------------------------------------------------------
 
