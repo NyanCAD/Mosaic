@@ -2179,10 +2179,9 @@
                                           [model-selector-popup @device-type
                                            (fn [model-id]
                                              (reset! model (if model-id (cm/bare-id model-id) ""))
-                                             (when model-id
-                                               (when-let [mdef (get @modeldb model-id)]
-                                                 (when-let [defaults (cm/model-prop-defaults mdef)]
-                                                   (swap! props (fn [m] (merge defaults m))))))
+                                             (let [mdef (when model-id (get @modeldb model-id))
+                                                   defaults (or (cm/model-prop-defaults mdef) {})]
+                                               (reset! props defaults))
                                              (post-action!))]))}
             [cm/search]]]
           ; Get properties from built-in device and model

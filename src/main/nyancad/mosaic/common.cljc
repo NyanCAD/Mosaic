@@ -373,7 +373,7 @@
   (when model-def
     (not-empty
       (into {} (for [p (:props model-def) :when (and (:name p) (some? (:default p)))]
-                 [(:name p) (:default p)])))))
+                 [(keyword (:name p)) (:default p)])))))
 
 (defn schema->field-type
   "Convert a nyanlib prop (carrying optional :schema from JSON Schema) into a
