@@ -408,12 +408,12 @@
   (is (nil? (cm/model-prop-defaults {:props []}))))
 
 (deftest model-prop-defaults-with-named-props
-  (is (= {"length" "10"}
+  (is (= {:length "10"}
          (cm/model-prop-defaults {:props [{:name "length" :default "10"}
                                           {:name "width"}]}))))
 
 (deftest model-prop-defaults-skips-nameless
-  (is (= {"a" "1"}
+  (is (= {:a "1"}
          (cm/model-prop-defaults {:props [{:name "a" :default "1"}
                                           {:tooltip "orphan"}]}))))
 
