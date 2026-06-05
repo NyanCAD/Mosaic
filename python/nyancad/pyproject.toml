@@ -25,7 +25,8 @@ classifiers = [
 dependencies = [
     "anywidget>=0.9.0",
     "traitlets",
-    "InSpice[vacask]",
+    "InSpice",
+    'vacask-bin>=0.3.0; platform_machine != "wasm32"',
     "holoviews",
 ]
 
