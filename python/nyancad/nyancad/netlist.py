@@ -775,7 +775,8 @@ class NyanCircuit(NyanCADMixin, Circuit):
     def _resolve_url(self, path_str):
         """Resolve an http(s) library/include URL to a local cache path and register
         the archive for download. Returns the resolved Path, or None when path_str is
-        not an http(s) URL (caller keeps the original path)."""
+        not an http(s) URL (caller keeps the original path).
+        """
         parsed = urlparse(path_str)
         if parsed.scheme not in ("http", "https"):
             return None
@@ -787,7 +788,9 @@ class NyanCircuit(NyanCADMixin, Circuit):
         cached_file = cache_dir / f"{url_hash}_{Path(parsed.path).name}"
         if not cached_file.exists():
             self._pending_downloads.append((archive_url, cached_file, entrypoint))
-        return (cache_dir / cached_file.stem / entrypoint) if entrypoint else cached_file
+        return (
+            (cache_dir / cached_file.stem / entrypoint) if entrypoint else cached_file
+        )
 
 
 class NyanSubCircuit(NyanCADMixin, SubCircuit):

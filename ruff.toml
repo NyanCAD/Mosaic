@@ -1,0 +1,118 @@
+target-version = "py312"
+
+[format]
+docstring-code-format = true
+
+[lint]
+select = ["ALL"]
+ignore = [
+    # Path-related
+    "PTH",
+    # Fixme comments
+    "FIX",
+    # Commented-out code (ERA)
+    "ERA",
+    # Trailing comma (conflicts with formatter)
+    "COM812",
+    # TODO formatting
+    "TD001",
+    "TD002",
+    "TD003",
+    # Banned relative imports
+    "TID252",
+    # Use of assert
+    "S101",
+    # Too many statements / branches / complexity
+    "PLR0915",
+    "PLR0912",
+    "C901",
+    # Dynamically typed expressions (typing.Any)
+    "ANN401",
+    # Unused function argument
+    "ARG001",
+    # Too many arguments
+    "PLR0913",
+    # f-string in logging
+    "G004",
+    # Partial executable path / subprocess shell
+    "S607",
+    "S602",
+    "S603",
+    # Typing-only import (move into TYPE_CHECKING)
+    "TC002",
+    # Missing type annotations (not yet enforced project-wide)
+    "ANN001",
+    "ANN002",
+    "ANN003",
+    "ANN201",
+    "ANN202",
+    "ANN205",
+    "ANN206",
+    # Docstring rules not yet enforced project-wide
+    "D100",
+    "D102",
+    "D103",
+    "D104",
+    "D105",
+    "D107",
+    "D205",
+    "D301",
+    "D415",
+    "D417",
+    # Magic value comparison
+    "PLR2004",
+    # Import outside top-level (common in lazy/conditional imports)
+    "PLC0415",
+    # Private member access (common in tests)
+    "SLF001",
+    # Blind except
+    "BLE001",
+    # Boolean positional argument
+    "FBT001",
+    "FBT002",
+    # Ambiguous unicode
+    "RUF002",
+    # Mutable class default
+    "RUF012",
+    # Builtin shadowing (type, id used as parameter names)
+    "A002",
+    # Unused method arguments (marimo cell dependency tracking)
+    "ARG002",
+    # Useless expression (marimo cell return values)
+    "B018",
+    # Missing class docstring
+    "D101",
+    # Exception with string literal
+    "EM101",
+    # Exception with f-string literal
+    "EM102",
+    # Non-lowercase argument (scientific naming)
+    "N803",
+    # Non-lowercase variable (scientific naming)
+    "N806",
+    # Too many return statements
+    "PLR0911",
+    # Useless return (marimo cell output suppression)
+    "PLR1711",
+    # Collection concatenation
+    "RUF005",
+    # try-except-pass
+    "S110",
+    # Ternary instead of if-else
+    "SIM108",
+    # Print found (CLI tools, notebooks, server startup)
+    "T201",
+    # Long exception messages
+    "TRY003",
+    # Consider else block
+    "TRY300",
+    # Abstract raise
+    "TRY301",
+]
+exclude = ["docs/*", "build/*", "node_modules/*", "out/*", ".venv/*", "public/*"]
+
+[lint.isort]
+known-third-party = ["marimo"]
+
+[lint.pydocstyle]
+convention = "google"

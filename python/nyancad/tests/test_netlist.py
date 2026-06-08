@@ -535,9 +535,7 @@ class TestLibrarySectionEntry:
         circuit = NyanCircuit("top", self._schem())
         urls = [url for url, _dest, _entry in circuit._pending_downloads]
         assert "https://example.com/pdk.zip" in urls
-        entrypoints = {
-            url: entry for url, _dest, entry in circuit._pending_downloads
-        }
+        entrypoints = {url: entry for url, _dest, entry in circuit._pending_downloads}
         assert entrypoints["https://example.com/pdk.zip"] == "sky130.lib.spice"
 
     def test_bare_local_library_passthrough(self):
@@ -565,7 +563,7 @@ class TestCaseInsensitivePorts:
     """
 
     def _schem(self, *, port_order, ports):
-        """nmos device with uppercase nets against a model whose port names
+        """Nmos device with uppercase nets against a model whose port names
         and port-order are given by the caller (typically lowercase).
         """
         return {
@@ -599,9 +597,7 @@ class TestCaseInsensitivePorts:
 
     def test_lowercase_port_order_resolves_uppercase_nets(self):
         """Lowercase ``port-order`` maps onto uppercase device nets in order."""
-        schem = self._schem(
-            port_order=["d", "g", "s", "b"], ports=["d", "g", "s", "b"]
-        )
+        schem = self._schem(port_order=["d", "g", "s", "b"], ports=["d", "g", "s", "b"])
         spice = str(NyanCircuit("top", schem))
         assert "nd ng ns nb sky130_fd_pr__nfet_01v8_lvt" in spice
 
@@ -629,7 +625,7 @@ class TestEmptyPropsDropped:
     """
 
     def _schem(self, props):
-        """pmos device against a SUBCKT model (IHP sg13_lv_pmos shape), with the
+        """Pmos device against a SUBCKT model (IHP sg13_lv_pmos shape), with the
         caller-supplied device props.
         """
         return {

@@ -1,0 +1,23 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: debug-statements
+      - id: mixed-line-ending
+      - id: name-tests-test
+        args: ['--pytest-test-first']
+      - id: trailing-whitespace
+        args: ['--markdown-linebreak-ext=md']
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.0
+    hooks:
+      - id: ruff-format
+        types_or: [python, jupyter, pyi]
+      - id: ruff-check
+        types_or: [python, pyi]
+        args: ['--fix']
