@@ -80,19 +80,11 @@
         :on-click #(.postMessage vscode
                      #js{:type "start-sax-simulation"})}
     [cm/photonic-icon]]
-   #?(:gfp nil
-      :default
-      [:a {:title "Open library manager"
-           :on-click #(.postMessage vscode
-                        #js{:type "open-file"
-                            :filename "models.nyanlib"})}
-       [cm/library]])
-   #?(:gfp
-      [:a {:title "Open in Livewire layout editor"
-           :on-click #(.postMessage vscode
-                        #js{:type "switchEditor"
-                            :viewType "gdsfactoryplus.livewireNyancirEditor"})}
-       [cm/sync-active]])])
+   [:a {:title "Open library manager"
+        :on-click #(.postMessage vscode
+                     #js{:type "open-file"
+                         :filename "models.nyanlib"})}
+    [cm/library]]])
 
 (defn init-extra!
   "Set up get-state handler for VS Code webview."

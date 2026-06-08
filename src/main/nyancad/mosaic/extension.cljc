@@ -217,12 +217,6 @@
                                 :else "default")]
                 (<p! (.. vscode/commands (executeCommand "vscode.openWith" file-uri editor-id)))))))
 
-        ;; Switch to another custom editor for the same document
-        "switchEditor"
-        (when doc-file-uri
-          (let [view-type (or (.-viewType message) "gdsfactoryplus.livewireNyancirEditor")]
-            (.. vscode/commands (executeCommand "vscode.openWith" doc-file-uri view-type))))
-
         ;; State response from webview (for get-state requests)
         "state-response"
         (deliver-response! message)
@@ -407,8 +401,7 @@
           basename (uri-basename (.-uri document) ".nyancir")
           disposables #js[]
           nyanlib-uri (if ws-root
-                        #?(:gfp (uri-join ws-root "build" "models.nyanlib")
-                           :default (uri-join ws-root "models.nyanlib"))
+                        (uri-join ws-root "models.nyanlib")
                         (uri-join doc-uri "models.nyanlib"))]
       (js/Promise.
         (fn [resolve reject]
