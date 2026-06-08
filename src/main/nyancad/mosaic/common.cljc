@@ -367,7 +367,6 @@
                            :opt-un [::type ::tags ::ports ::models ::props ::symbol]))
 (s/def ::modeldb (s/map-of string? ::model-def))
 
-;; @tags factory card dragging
 (defn model-prop-defaults
   [model-def]
   (when model-def
@@ -842,7 +841,6 @@
               (map #(str (:name %) ": {self.props." (:name %) "}")
                    important))))))
 
-;; @tags model identity
 (defn model-key
   "Convert a bare model ID to a database key with 'models:' prefix.
    Returns nil if input is nil. Asserts that non-nil input is not already prefixed."
@@ -852,7 +850,6 @@
             (str "model-key expects bare ID, got prefixed: " bare-id))
     (str "models:" bare-id)))
 
-;; @tags model identity
 (defn bare-id
   "Extract bare ID from a model database key, removing 'models:' prefix.
    Returns nil if input is nil. Asserts that non-nil input is prefixed."
