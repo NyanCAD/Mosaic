@@ -17,6 +17,18 @@ env:
   MOSAIC_ROOT: '.'
 
 jobs:
+  lint:
+    name: Lint 🧹
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: 'format --check'
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: 'check'
+
   # Fast Python unit tests — no Docker, no JS build, no native deps.
   # Future test jobs (CLJS unit, Python integration with CouchDB, Playwright E2E)
   # will be added as parallel jobs alongside this one. See testing-plan.md.
