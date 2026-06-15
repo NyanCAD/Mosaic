@@ -789,6 +789,38 @@
     "amp" (circuit-sym-amplifier k v)
     (circuit-sym-box k v)))
 
+(def tran-field
+  {:name "tran" :tooltip "Transient waveform" :type :tagged-enum
+   :tag-key "type"
+   :variants
+   [{:value "sin" :label "Sinusoidal"
+     :children [{:name "offset" :tooltip "DC offset" :default "0"}
+                {:name "amplitude" :tooltip "Amplitude" :default "1"}
+                {:name "frequency" :tooltip "Frequency (Hz)" :default "1k"}
+                {:name "delay" :tooltip "Delay (s)" :default "0"}
+                {:name "damping" :tooltip "Damping factor (1/s)" :default "0"}]}
+    {:value "pulse" :label "Pulse"
+     :children [{:name "initial" :tooltip "Initial value" :default "0"}
+                {:name "pulsed" :tooltip "Pulsed value" :default "5"}
+                {:name "width" :tooltip "Pulse width (s)" :default "500u"}
+                {:name "period" :tooltip "Period (s)" :default "1m"}
+                {:name "delay" :tooltip "Delay (s)" :default "0"}
+                {:name "rise" :tooltip "Rise time (s)" :default "10n"}
+                {:name "fall" :tooltip "Fall time (s)" :default "10n"}]}
+    {:value "exp" :label "Exponential"
+     :children [{:name "initial" :tooltip "Initial value" :default "0"}
+                {:name "pulsed" :tooltip "Pulsed value" :default "5"}
+                {:name "rise-delay" :tooltip "Rise delay time (s)" :default "0"}
+                {:name "rise-tau" :tooltip "Rise time constant (s)"}
+                {:name "fall-delay" :tooltip "Fall delay time (s)"}
+                {:name "fall-tau" :tooltip "Fall time constant (s)"}]}
+    {:value "sffm" :label "Single-Freq FM"
+     :children [{:name "offset" :tooltip "Offset" :default "0"}
+                {:name "amplitude" :tooltip "Amplitude" :default "1"}
+                {:name "carrier-freq" :tooltip "Carrier frequency (Hz)" :default "1M"}
+                {:name "mod-index" :tooltip "Modulation index" :default "5"}
+                {:name "signal-freq" :tooltip "Signal frequency (Hz)" :default "10k"}]}]})
+
 (def models {"pmos" {::bg cm/active-bg
                      ::conn mosfet-shape
                      ::sym mosfet-sym
@@ -838,7 +870,7 @@
                         ::template "{self.name}: {self.props.dc}V"
                         ::props [{:name "dc" :tooltip "DC voltage" :spice "dc"}
                                  {:name "ac" :tooltip "AC voltage" :spice "ac"}
-                                 {:name "tran" :tooltip "Transient voltage" :spice "tran"}]}
+                                 tran-field]}
              "isource" {::bg cm/twoport-bg
                         ::conn cm/twoport-conn
                         ::sym isource-elements
@@ -846,7 +878,7 @@
                         ::template "{self.name}: {self.props.dc}I"
                         ::props [{:name "dc" :tooltip "DC current" :spice "dc"}
                                  {:name "ac" :tooltip "AC current" :spice "ac"}
-                                 {:name "tran" :tooltip "Transient current" :spice "tran"}]}
+                                 tran-field]}
              "diode" {::bg cm/twoport-bg
                       ::conn cm/twoport-conn
                       ::sym #'diode-sym

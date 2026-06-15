@@ -14,6 +14,16 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urlparse
 
+from InSpice.Spice.HighLevelElement import (
+    ExponentialCurrentSource,
+    ExponentialVoltageSource,
+    PulseCurrentSource,
+    PulseVoltageSource,
+    SingleFrequencyFMCurrentSource,
+    SingleFrequencyFMVoltageSource,
+    SinusoidalCurrentSource,
+    SinusoidalVoltageSource,
+)
 from InSpice.Spice.Netlist import Circuit, SubCircuit
 from InSpice.Spice.Parser.HighLevelParser import SpiceSource
 from InSpice.Spice.Parser.Translator import Builder
@@ -116,6 +126,111 @@ def _select_corner(sections, corners):
 IDENTIFIER_RE = re.compile(r"\b[A-Za-z_]\w*", re.ASCII)
 VALID_IDENT_RE = re.compile(r"^[A-Za-z_]\w*$", re.ASCII)
 STRUCTURAL_TYPES = {"wire", "text", "port", "polyline", "via", "taper", "net"}
+
+_SIM_LANGUAGES = {
+    "ngspice": ("spice",),
+    "xyce": ("spice",),
+    "vacask": ("spectre",),
+}
+
+_SPICE_SUFFIX_SCALE = {
+    "t": 1e12,
+    "g": 1e9,
+    "meg": 1e6,
+    "k": 1e3,
+    "mil": 25.4e-6,
+    "m": 1e-3,
+    "u": 1e-6,
+    "n": 1e-9,
+    "p": 1e-12,
+    "f": 1e-15,
+}
+_SPICE_NUMBER_RE = re.compile(
+    r"^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)\s*(\w*)$", re.IGNORECASE
+)
+
+
+def _parse_spice_value(s):
+    """Convert a SPICE engineering-notation string to a float.
+
+    Handles suffixes like ``1k`` (1e3), ``10n`` (1e-8), ``4.7Meg`` (4.7e6),
+    and plain numeric strings. Returns None for None or empty strings.
+    """
+    if s is None or (isinstance(s, str) and not s.strip()):
+        return None
+    if isinstance(s, (int, float)):
+        return float(s)
+    s = s.strip()
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    m = _SPICE_NUMBER_RE.match(s)
+    if not m:
+        return None
+    num_str, suffix = m.group(1), m.group(2)
+    scale = _SPICE_SUFFIX_SCALE.get(suffix.lower())
+    if scale is None and suffix:
+        # Try "meg" prefix match for case variations like "Meg", "MEG"
+        if suffix.lower().startswith("meg"):
+            scale = 1e6
+        else:
+            return None
+    return float(num_str) * (scale if scale is not None else 1.0)
+
+
+_TRAN_SOURCE_CLASSES = {
+    "sin": {
+        "voltage": SinusoidalVoltageSource,
+        "current": SinusoidalCurrentSource,
+    },
+    "pulse": {
+        "voltage": PulseVoltageSource,
+        "current": PulseCurrentSource,
+    },
+    "exp": {
+        "voltage": ExponentialVoltageSource,
+        "current": ExponentialCurrentSource,
+    },
+    "sffm": {
+        "voltage": SingleFrequencyFMVoltageSource,
+        "current": SingleFrequencyFMCurrentSource,
+    },
+}
+
+_TRAN_PARAM_MAP = {
+    "sin": {
+        "offset": "offset",
+        "amplitude": "amplitude",
+        "frequency": "frequency",
+        "delay": "delay",
+        "damping": "damping_factor",
+    },
+    "pulse": {
+        "initial": "initial_value",
+        "pulsed": "pulsed_value",
+        "width": "pulse_width",
+        "period": "period",
+        "delay": "delay_time",
+        "rise": "rise_time",
+        "fall": "fall_time",
+    },
+    "exp": {
+        "initial": "initial_value",
+        "pulsed": "pulsed_value",
+        "rise-delay": "rise_delay_time",
+        "rise-tau": "rise_time_constant",
+        "fall-delay": "fall_delay_time",
+        "fall-tau": "fall_time_constant",
+    },
+    "sffm": {
+        "offset": "offset",
+        "amplitude": "amplitude",
+        "carrier-freq": "carrier_frequency",
+        "mod-index": "modulation_index",
+        "signal-freq": "signal_frequency",
+    },
+}
 
 
 def _eval_params(entry_params, device_props, sim="NgSpice"):
@@ -445,25 +560,57 @@ class NyanCADMixin:
     """Mixin providing NyanCAD integration for InSpice netlist objects."""
 
     def _select_model_entry(self, model_def, sim):
-        """Select a SPICE model entry from the flat models list.
+        """Select a model entry compatible with the target simulator.
 
-        Reads from model_def['models'] (flat list), filters for language=='spice',
-        and matches by implementation name (case-insensitive).
-
-        Returns:
-            dict: selected model entry or None if no SPICE entries
+        Each simulator only accepts specific languages (see ``_SIM_LANGUAGES``).
+        Priority: exact implementation match first, then first language-compatible
+        entry. Returns None when no compatible entry exists.
         """
         entries = model_def.get("models", [])
-        spice_entries = [e for e in entries if e.get("language") == "spice"]
-        if not spice_entries:
+        if not entries:
             return None
-
-        # Look for implementation matching sim parameter, fallback to first spice entry
-        for entry in spice_entries:
+        accepted = _SIM_LANGUAGES.get(sim.lower(), ("spice",))
+        for entry in entries:
             if entry.get("implementation", "").lower() == sim.lower():
                 return entry
+        for entry in entries:
+            if entry.get("language") in accepted:
+                return entry
+        return None
 
-        return spice_entries[0]  # Use first as default
+    _DC_OFFSET_VARIANTS = {"sin", "pulse"}
+
+    def _add_source(self, name, node_plus, node_minus, props, *, is_voltage):
+        """Add a voltage or current source, dispatching to structural InSpice
+        classes when ``props["tran"]`` is a tagged variant map.
+        """
+        dc = props.get("dc")
+        ac = props.get("ac")
+        tran = props.get("tran")
+
+        if isinstance(tran, dict) and tran.get("type"):
+            variant = tran["type"]
+            param_map = _TRAN_PARAM_MAP.get(variant, {})
+            kind = "voltage" if is_voltage else "current"
+            cls = _TRAN_SOURCE_CLASSES.get(variant, {}).get(kind)
+            if cls:
+                kwargs = {}
+                for tran_key, inspice_kwarg in param_map.items():
+                    val = _parse_spice_value(tran.get(tran_key))
+                    if val is not None:
+                        kwargs[inspice_kwarg] = val
+                if variant in self._DC_OFFSET_VARIANTS and dc is not None:
+                    kwargs["dc_offset"] = _parse_spice_value(dc) or 0
+                if variant in self._DC_OFFSET_VARIANTS and ac is not None:
+                    ac_val = _parse_spice_value(ac)
+                    if ac_val is not None:
+                        kwargs["ac_magnitude"] = ac_val
+                method = getattr(self, cls.__name__)
+                method(name, node_plus, node_minus, **kwargs)
+                return
+
+        fn = self.V if is_voltage else self.I
+        fn(name, node_plus, node_minus, dc, ac)
 
     def populate_from_nyancad(self, docs, models, corners=None, sim="NgSpice"):
         """Populate this netlist with elements from NyanCAD docs.
@@ -603,16 +750,10 @@ class NyanCADMixin:
             self.D(name, p("P"), p("N"), **props)
 
         elif device_type == "vsource":
-            dc = props.get("dc")
-            ac = props.get("ac")
-            tran = props.get("tran")
-            self.V(name, p("P"), p("N"), dc, ac, tran)
+            self._add_source(name, p("P"), p("N"), props, is_voltage=True)
 
         elif device_type == "isource":
-            dc = props.get("dc")
-            ac = props.get("ac")
-            tran = props.get("tran")
-            self.I(name, p("P"), p("N"), dc, ac, tran)
+            self._add_source(name, p("P"), p("N"), props, is_voltage=False)
 
         elif device_type in {"pmos", "nmos"}:
             bulk_node = p("B") if "B" in ports else self.gnd

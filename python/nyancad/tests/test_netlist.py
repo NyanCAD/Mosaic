@@ -12,6 +12,7 @@ from nyancad.netlist import (
     NyanCircuit,
     SchemId,
     _eval_params,
+    _parse_spice_value,
     _select_corner,
     bare_id,
     default_port_order,
@@ -219,6 +220,26 @@ class TestSelectModelEntry:
         entry = self._select(model_def, "NgSpice")
         # Even though sim doesn't match, it's the only SPICE entry — use it
         assert entry["implementation"] == "Xyce"
+
+    def test_vacask_selects_spectre_entry(self, spice_model_def):
+        entry = self._select(spice_model_def, "VACASK")
+        assert entry["name"] == "nmos_vacask"
+
+    def test_vacask_ignores_spice_entries(self):
+        model_def = {
+            "models": [
+                {"language": "spice", "implementation": "NgSpice", "name": "ng"},
+            ]
+        }
+        assert self._select(model_def, "VACASK") is None
+
+    def test_ngspice_ignores_spectre_entries(self):
+        model_def = {
+            "models": [
+                {"language": "spectre", "implementation": "VACASK", "name": "v"},
+            ]
+        }
+        assert self._select(model_def, "NgSpice") is None
 
 
 # ---------------------------------------------------------------------------
@@ -1146,3 +1167,167 @@ class TestKfNetlistFromNyancad:
 
         assert list(recnet) == ["top"]
         assert _kf_data(recnet["top"])["instances"]["top_S1"]["component"] == "straight"
+
+
+# ---------------------------------------------------------------------------
+# _parse_spice_value — SPICE engineering notation to float
+# ---------------------------------------------------------------------------
+
+
+class TestParseSpiceValue:
+    """_parse_spice_value converts SPICE engineering notation to Python floats."""
+
+    def test_plain_integer(self):
+        assert _parse_spice_value("100") == 100.0
+
+    def test_plain_float(self):
+        assert _parse_spice_value("3.14") == 3.14
+
+    def test_scientific_notation(self):
+        assert _parse_spice_value("1e3") == 1000.0
+
+    def test_kilo_suffix(self):
+        assert _parse_spice_value("1k") == 1e3
+
+    def test_nano_suffix(self):
+        assert _parse_spice_value("10n") == 1e-8
+
+    def test_meg_suffix(self):
+        assert _parse_spice_value("4.7Meg") == pytest.approx(4.7e6)
+
+    def test_micro_suffix(self):
+        assert _parse_spice_value("500u") == pytest.approx(500e-6)
+
+    def test_pico_suffix(self):
+        assert _parse_spice_value("10p") == pytest.approx(10e-12)
+
+    def test_femto_suffix(self):
+        assert _parse_spice_value("1f") == 1e-15
+
+    def test_none_returns_none(self):
+        assert _parse_spice_value(None) is None
+
+    def test_empty_string_returns_none(self):
+        assert _parse_spice_value("") is None
+
+    def test_whitespace_returns_none(self):
+        assert _parse_spice_value("  ") is None
+
+    def test_numeric_passthrough(self):
+        assert _parse_spice_value(42) == 42.0
+        assert _parse_spice_value(3.14) == 3.14
+
+
+# ---------------------------------------------------------------------------
+# Structured source parameters — InSpice dispatch
+# ---------------------------------------------------------------------------
+
+
+class TestStructuredSources:
+    """Structured transient source parameters dispatch to InSpice's typed
+    source classes instead of passing raw SPICE strings.
+    """
+
+    def _source_schem(self, device_type, props):
+        prefix = "V" if device_type == "vsource" else "I"
+        return {
+            "top": {
+                f"top:{prefix}1": {
+                    "_id": f"top:{prefix}1",
+                    "type": device_type,
+                    "name": f"{prefix}1",
+                    "nets": {"P": "inp", "N": "gnd"},
+                    "props": props,
+                }
+            },
+            "models": {},
+        }
+
+    def test_sin_voltage(self):
+        props = {
+            "dc": "0",
+            "tran": {"type": "sin", "offset": "0", "amplitude": "1", "frequency": "1k"},
+        }
+        spice = str(NyanCircuit("top", self._source_schem("vsource", props)))
+        assert "SIN(" in spice
+        assert "1000.0Hz" in spice
+
+    def test_sin_current(self):
+        props = {
+            "dc": "0",
+            "tran": {
+                "type": "sin",
+                "offset": "0",
+                "amplitude": "1m",
+                "frequency": "1k",
+            },
+        }
+        spice = str(NyanCircuit("top", self._source_schem("isource", props)))
+        assert "SIN(" in spice
+        assert "0.001A" in spice
+
+    def test_pulse_voltage(self):
+        props = {
+            "dc": "0",
+            "tran": {
+                "type": "pulse",
+                "initial": "0",
+                "pulsed": "5",
+                "width": "500u",
+                "period": "1m",
+            },
+        }
+        spice = str(NyanCircuit("top", self._source_schem("vsource", props)))
+        assert "PULSE(" in spice
+        assert "5.0V" in spice
+
+    def test_exp_voltage(self):
+        props = {
+            "dc": "0",
+            "tran": {
+                "type": "exp",
+                "initial": "0",
+                "pulsed": "5",
+                "rise-delay": "0",
+                "rise-tau": "1m",
+                "fall-delay": "2m",
+                "fall-tau": "1m",
+            },
+        }
+        spice = str(NyanCircuit("top", self._source_schem("vsource", props)))
+        assert "EXP(" in spice
+        assert "5.0V" in spice
+
+    def test_sffm_voltage(self):
+        props = {
+            "dc": "0",
+            "tran": {
+                "type": "sffm",
+                "offset": "0",
+                "amplitude": "1",
+                "carrier-freq": "1Meg",
+                "mod-index": "5",
+                "signal-freq": "10k",
+            },
+        }
+        spice = str(NyanCircuit("top", self._source_schem("vsource", props)))
+        assert "SFFM(" in spice
+        assert "1000000.0Hz" in spice
+
+    def test_dc_only_no_tran(self):
+        props = {"dc": "5", "ac": "1"}
+        spice = str(NyanCircuit("top", self._source_schem("vsource", props)))
+        assert "DC 5" in spice
+        assert "SIN(" not in spice
+        assert "PULSE(" not in spice
+
+    def test_dc_only_empty_tran_dict(self):
+        props = {"dc": "5", "tran": {}}
+        spice = str(NyanCircuit("top", self._source_schem("vsource", props)))
+        assert "DC 5" in spice
+        assert "SIN(" not in spice
+
+    def test_legacy_string_tran_ignored(self):
+        props = {"dc": "5", "tran": "SIN(0 1 1k)"}
+        spice = str(NyanCircuit("top", self._source_schem("vsource", props)))
+        assert "DC 5" in spice
