@@ -233,7 +233,6 @@ _TRAN_PARAM_MAP = {
 }
 
 
-
 def _eval_params(entry_params, device_props, sim="NgSpice"):
     """Substitute device props into SPICE param expressions.
 
