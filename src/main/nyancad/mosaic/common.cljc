@@ -107,6 +107,27 @@
        [:div.field-with-extra input extra-el]
        input)]))
 
+(defn- tagged-enum-editor
+  "Render a tagged union: a select for the discriminant, then the matching variant's children."
+  [{:keys [tag-key variants tooltip]} enum-cursor on-change wrap-leaf path]
+  (let [tag-val (get @enum-cursor (keyword tag-key))
+        variant (first (filter #(= (:value %) tag-val) variants))]
+    [:<>
+     [:label {:title tooltip} tag-key]
+     [:select {:value (or tag-val "")
+               :on-change #(let [v (.. % -target -value)
+                                  selected (first (filter (fn [vr] (= (:value vr) v)) variants))
+                                  defaults (into {} (map (fn [{:keys [name default]}]
+                                                           [(keyword name) (if (some? default) default "")]))
+                                                   (:children selected))]
+                             (reset! enum-cursor (if (seq v) (merge {(keyword tag-key) v} defaults) {}))
+                             (when on-change (on-change)))}
+      [:option {:value ""} "None"]
+      (for [{:keys [value label]} variants]
+        [:option {:key value :value value} label])]
+     (when variant
+       [recursive-editor (:children variant) enum-cursor on-change wrap-leaf path])]))
+
 (defn- list-editor
   "Render a list of maps: fieldset per item with add/remove, recurse per item."
   [{:keys [tooltip children type] :or {type :label}} list-cursor on-change wrap-leaf path]
@@ -139,11 +160,15 @@
   ([fields cursor on-change wrap-leaf path]
    [:<>
     (doall
-     (for [{:keys [name children] :as field} fields]
+     (for [{:keys [name children type] :as field} fields]
        (let [new-path (conj path (keyword name))]
          [:<> {:key name}
-          (if children
+          (cond
+            (= type :tagged-enum)
+            [tagged-enum-editor field (r/cursor cursor [(keyword name)]) on-change wrap-leaf new-path]
+            children
             [list-editor field (r/cursor cursor [(keyword name)]) on-change wrap-leaf new-path]
+            :else
             [leaf-editor field cursor on-change
              (when wrap-leaf (wrap-leaf new-path))])])))]))
 
