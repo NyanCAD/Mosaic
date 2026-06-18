@@ -391,11 +391,11 @@
    ::elements [[:lines [[[0.5 1.5] [2.5 1.5]]]]]})
 
 ;; bg [1,1], size 3, 150x150px
-;; Ports: (0,1)→px(25,75) left  (1,2)→px(75,125) bottom
-;; Quarter-arc from left port curving down to bottom port
+;; Ports: (0,1)→px(25,75) left  (1,0)→px(75,25) top
+;; Quarter-arc from left port curving up to top port
 (def bend-elements
   {::size 3
-   ::elements [[:path {:d "M25,75 H50 Q75,75 75,100 V125"}]]})
+   ::elements [[:path {:d "M25,75 H50 Q75,75 75,50 V25"}]]})
 
 ;; bg [1,2], size 4, 200x200px
 ;; Ports: (0,1)→px(25,75)  (2,2)→px(125,125)

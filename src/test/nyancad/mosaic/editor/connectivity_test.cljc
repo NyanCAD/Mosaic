@@ -622,6 +622,23 @@
       (finally
         (reset! pform/modeldb {})))))
 
+(deftest photonic-bend-ports-left-top
+  (testing "bend with model ports: o1 left, o2 top — markers at the canonical artwork endpoints"
+    (reset! pform/modeldb
+            {"models:test.bend"
+             {:name "Bend"
+              :ports [{:name "o1" :side :left :type "photonic"}
+                      {:name "o2" :side :top :type "photonic"}]}})
+    (try
+      (let [dev {:type "bend" :model "test.bend"
+                 :x 0 :y 0 :transform [1 0 0 1 0 0] :name "B1"}
+            port-types (e/device-port-types dev)
+            locs (into {} (map (juxt :name (juxt :x :y))) port-types)]
+        (is (= [0 1] (get locs "o1")) "left port at mid-left (0,1)")
+        (is (= [1 0] (get locs "o2")) "top port at mid-top (1,0)"))
+      (finally
+        (reset! pform/modeldb {})))))
+
 (deftest photonic-mmi-2x2-port-gap
   (testing "mmi-2x2 with model ports: gap preserved between port pairs"
     (reset! pform/modeldb
