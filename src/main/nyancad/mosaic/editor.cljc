@@ -5,7 +5,6 @@
 (ns nyancad.mosaic.editor
   (:require [reagent.core :as r]
             [reagent.dom.client :as rdc]
-            [shadow.resource :as rc]
             [#?(:web    nyancad.mosaic.editor.platform-web
                 :vscode nyancad.mosaic.editor.platform-vscode
                 :test   nyancad.mosaic.editor.platform-test)
@@ -13,7 +12,7 @@
                      done? syncactive notebook-panel secondary-menu-items
                      open-schematic resolve-symbol-url init-extra! root]]
             [clojure.spec.alpha :as s]
-            [cljs.core.async :refer [go go-loop <!]]
+            [cljs.core.async :refer [go <!]]
             [clojure.math :as math]
             clojure.edn
             clojure.set
@@ -2161,7 +2160,7 @@
 
 (defn model-selector-popup
   "Popup for selecting a device model with tag tree and search"
-  [device-type on-select]
+  [_device-type _on-select]
   (let [selected (r/atom nil)]
     (fn [device-type on-select]
       (let [;; Filter models by device type first

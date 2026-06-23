@@ -34,11 +34,11 @@
    Keystrokes update the input immediately; writes to st are debounced.
    valfn: extract display text from atom state  (st → string)
    changefn: write raw text back into atom      (st, string → nil)"
-  [typ props st valfn changefn]
+  [typ _props st valfn changefn]
   (let [int  (r/atom (valfn @st))   ; display text for instant UI feedback
         ext  (r/atom @st)           ; snapshot of st — detects external changes
         dbfn (debounce changefn)]   ; changefn called once per edit, after debounce
-    (fn [typ props st valfn changefn]
+    (fn [_typ props st valfn _changefn]
       (when (not= @ext @st)         ; st changed externally (remote sync, other component)
         (reset! int (valfn @st))    ; re-extract display text
         (reset! ext @st))           ; update snapshot
@@ -910,8 +910,9 @@
 ;; User's workspace list (fetched on demand)
 (defonce user-workspaces (r/atom []))
 
-(defn get-db-name []
+(defn get-db-name
   "Get the database name for current context (workspace or personal library)."
+  []
   (when-let [username (get-current-user)]
     (if current-workspace
       current-workspace                          ; ws-slug

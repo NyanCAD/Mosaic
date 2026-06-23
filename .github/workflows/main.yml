@@ -29,6 +29,22 @@ jobs:
         with:
           args: 'check'
 
+  lint-clj:
+    name: clj-kondo 🧹
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install clj-kondo
+        run: |
+          curl -sLO https://raw.githubusercontent.com/clj-kondo/clj-kondo/master/script/install-clj-kondo
+          chmod +x install-clj-kondo
+          sudo ./install-clj-kondo
+
+      - name: Run clj-kondo
+        working-directory: ${{ env.MOSAIC_ROOT }}
+        run: clj-kondo --lint src --fail-level warning
+
   # Fast Python unit tests — no Docker, no JS build, no native deps.
   # Future test jobs (CLJS unit, Python integration with CouchDB, Playwright E2E)
   # will be added as parallel jobs alongside this one. See testing-plan.md.

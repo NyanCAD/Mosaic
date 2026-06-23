@@ -61,7 +61,7 @@
 
     ;; Watch for changes to schematic atom and update model
     (add-watch schematic-cache ::anywidget-sync
-               (fn [key atom old-state new-state]
+               (fn [_key _atom _old-state new-state]
                  (println "Schematic updated, syncing to anywidget model")
                  (watch-subcircuits)
                  (.set model "schematic_data" (clj->js new-state))

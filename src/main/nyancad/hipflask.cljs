@@ -5,9 +5,9 @@
 (ns nyancad.hipflask
   (:require ["pouchdb" :as PouchDB]
             ["pouchdb-find" :as PouchDBFind]
-            [cljs.core.async :refer [go go-loop <!]]
+            [cljs.core.async :refer [go <!]]
             [cljs.core.async.interop :refer-macros [<p!]]
-            [clojure.string :refer [starts-with? split]]
+            [clojure.string :refer [split]]
             [nyancad.hipflask.util :refer [json->clj sep]])
   (:refer-clojure :exclude [find]))
 
@@ -124,9 +124,8 @@
           (dissok [docs ^js doc] ; remove OK documents (finished)
             (if (.-ok doc)
               (dissoc docs (.-id doc))
-              (do
-                ;; (js/console.log "update error!" doc)
-                docs)))
+              ;; (js/console.log "update error!" doc)
+              docs))
           (assok [cache doc] ; proccess OK (finished) documents
             (let [id (.-id doc)
                   rev (.-rev doc)]
@@ -140,7 +139,7 @@
               (set? key) key ; update-keys
               (map? key) (keys key) ; into
               (coll? key) #{(first key)} ; update-in
-              :default #{key}))] ; update/assoc/dissoc/etc.
+              :else #{key}))] ; update/assoc/dissoc/etc.
     ; build a map with only the keys to update
     (go
       (<! done?) ; sequentialize operations to avoid needless conflicts, over twice as fast

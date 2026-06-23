@@ -92,7 +92,7 @@
            (let [error-response (<p! (.json response))
                  error-clj (js->clj error-response :keywordize-keys true)]
              (reset! error-message (:error error-clj)))))
-       (catch js/Error e
+       (catch js/Error _e
          (reset! error-message "Failed to grant access. Please try again."))
        (finally
          (reset! loading false))))))

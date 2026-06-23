@@ -132,7 +132,7 @@ public/notebook
 public/wheels
 
 .calva
-.clj-kondo
+.clj-kondo/.cache
 .clinerules
 
 # Generated files

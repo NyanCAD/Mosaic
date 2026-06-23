@@ -26,6 +26,7 @@
             ["path" :as path]
             [cljs.test :refer [deftest is testing]]
             [clojure.spec.alpha :as s]
+            clojure.string
             [clojure.test.check.generators :as gen]
             [nyancad.mosaic.common :as cm]))
 
