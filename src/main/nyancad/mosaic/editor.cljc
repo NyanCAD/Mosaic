@@ -1594,6 +1594,12 @@
                  update :transform g)
           (post-action!)))))
 
+(defn move-selected [dx dy]
+  (when (seq @selected)
+    (swap! schematic update-keys @selected
+           #(-> % (update :x + dx) (update :y + dy)))
+    (post-action!)))
+
 (defn delete-selected []
   (let [selected (::selected @ui)]
     (swap! ui assoc ::selected #{})
@@ -2678,6 +2684,10 @@
                 #{:shift :s} (fn [_] (transform-selected #(.rotate % -90)))
                 #{:shift :f} (fn [_] (transform-selected #(.flipY %)))
                 #{:f}        (fn [_] (transform-selected #(.flipX %)))
+                #{:arrowup}    #(move-selected 0 -1)
+                #{:arrowdown}  #(move-selected 0 1)
+                #{:arrowleft}  #(move-selected -1 0)
+                #{:arrowright} #(move-selected 1 0)
                 #{:control :c} copy
                 #{:control :x} cut
                 #{:control :v} paste
