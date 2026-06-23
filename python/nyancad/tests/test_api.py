@@ -80,8 +80,8 @@ class TestReadFile:
 # ---------------------------------------------------------------------------
 # Contract:
 #   - group "models" reads models.nyanlib wholesale
-#   - any other group "foo" reads foo.nyancir wholesale; file-backed schematics
-#     are already grouped by file
+#   - any other id is the schematic's project-relative .nyancir path, read
+#     directly (the id is opaque and already carries the extension)
 #   - missing file returns (None, {})
 
 
@@ -96,14 +96,16 @@ class TestGetDocs:
             "models:divider_ckt",
         }
 
-    def test_circuit_group_reads_nyancir(self, project_dir):
+    def test_schematic_id_reads_relative_nyancir_path(self, project_dir):
+        # The id is the relative .nyancir path, read directly — no extension
+        # appended (a doubled "….nyancir.nyancir" would miss the file).
         api = FileAPI(project_dir)
-        _, docs = run_async(api.get_docs("top"))
+        _, docs = run_async(api.get_docs("top.nyancir"))
         assert set(docs.keys()) == {"top:R1", "top:R2", "top:C1", "top:W1", "top:W2"}
 
-    def test_missing_group_returns_empty(self, project_dir):
+    def test_missing_file_returns_empty(self, project_dir):
         api = FileAPI(project_dir)
-        _, docs = run_async(api.get_docs("nonexistent"))
+        _, docs = run_async(api.get_docs("nonexistent.nyancir"))
         assert docs == {}
 
 

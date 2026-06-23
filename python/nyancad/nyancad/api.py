@@ -40,8 +40,12 @@ class SchematicAPI(ABC):
         """Get schematic with all subcircuits and models via BFS.
 
         Default implementation uses get_docs() to fetch models, the main
-        schematic, and any referenced subcircuits recursively.
+        schematic, and any referenced subcircuits recursively. The id is opaque
+        and passed to get_docs verbatim; subcircuit-vs-leaf is decided from the
+        model definition, not the id string, so this stays backend-agnostic.
         Subclasses may override if their data is already complete (e.g. BridgeAPI).
+
+        @tags model identity
 
         Args:
             name: Top-level schematic group name
@@ -68,34 +72,35 @@ class SchematicAPI(ABC):
 
         schem[name] = docs
 
-        # BFS to resolve hierarchical circuits
+        # BFS to resolve hierarchical circuits. A device's ``model`` field is
+        # the referenced schematic's opaque id (a relative path under FileAPI, a
+        # UUID under CouchDB); it is passed to get_docs unchanged — the backend
+        # knows how to resolve its own ids. Whether a reference is a subcircuit
+        # (has documents) or a Python-factory leaf is decided from the model
+        # *definition*, not by inspecting the id string, so this stays
+        # backend-agnostic.
         queue = deque(docs.values())
         seen_models = set()
 
         while queue:
             dev = queue.popleft()
-            model_id_bare = dev.get("model")
+            model_id = dev.get("model")
 
-            if not model_id_bare:
+            if not model_id:
                 continue
 
-            model_id_prefixed = model_key(model_id_bare)
-
-            # Skip if already processed
+            model_id_prefixed = model_key(model_id)
             if model_id_prefixed in seen_models:
                 continue
-
             seen_models.add(model_id_prefixed)
 
-            # Check if model exists and is a schematic (no model entries)
             if model_id_prefixed in models:
                 model_def = models[model_id_prefixed]
-
-                # Schematic models have no model entries; fetch subcircuit documents
-                if not model_def.get("models") and model_id_bare not in schem:
-                    seq, subdocs = await self.get_docs(model_id_bare)
+                # Schematic subcircuits have no model entries; fetch their docs.
+                if not model_def.get("models") and model_id not in schem:
+                    seq, subdocs = await self.get_docs(model_id)
                     if subdocs:
-                        schem[model_id_bare] = subdocs
+                        schem[model_id] = subdocs
                         queue.extend(subdocs.values())
 
         return seq, schem
@@ -429,8 +434,12 @@ class FileAPI(SchematicAPI):
     async def get_docs(self, name: str) -> tuple[Any, dict[str, dict]]:
         """Get documents for a single group by reading the appropriate file.
 
+        @tags model identity
+
         Args:
-            name: Group name ("models" reads models.nyanlib, others read {name}.nyancir)
+            name: ``"models"`` reads models.nyanlib; any other value is a
+                schematic id — its project-relative ``.nyancir`` path — read
+                directly from disk.
 
         Returns:
             Tuple of (None, {document_id: document_data})
@@ -442,7 +451,9 @@ class FileAPI(SchematicAPI):
             path = build_path if build_path.exists() else root_path
             return (None, self._read_file(path))
 
-        docs = self._read_file(self.project_dir / f"{name}.nyancir")
+        # A schematic id is the project-relative path of its .nyancir file
+        # (the id is opaque and already carries the extension); read it directly.
+        docs = self._read_file(self.project_dir / name)
         return (None, docs)
 
     async def get_library(
