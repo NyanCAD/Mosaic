@@ -81,12 +81,18 @@
 
 (defonce undotree (cm/newundotree))
 
-(declare build-wire-split-index build-point-index split-wire point-index wire-type-index
-         build-wire-networks build-netlist build-net-annotations)
+(declare build-wire-split-index build-point-index split-wire point-index net-type-index
+         build-wire-networks build-netlist build-net-annotations build-net-type-index)
 
+;; @tags reactive indices
 (defn post-action!
   "Record undo checkpoint, split wires, and annotate :nets/:net after a user
-   action. Returns a channel that completes when done."
+   action. Returns a channel that completes when done.
+
+   The commit pipeline calls the `build-*` indices directly on a single
+   `@schematic` snapshot rather than derefing the reactive tracks — see the
+   `reactive indices` spec for why (snapshot consistency, freshness across its
+   own splits, independence from reactive timing)."
   []
   (go
     (<! (done? schematic))
@@ -100,7 +106,8 @@
           pt-idx   (build-point-index sch)
           networks (build-wire-networks sch pt-idx)
           nets     (build-netlist networks)
-          updates  (build-net-annotations sch nets)]
+          net-types (build-net-type-index networks pt-idx)
+          updates  (build-net-annotations sch nets net-types)]
       (when (seq updates)
         (swap! schematic (partial merge-with merge) updates)))))
 
@@ -202,7 +209,7 @@
         pts (if mx
               (str x1 "," y1 " " mx "," my " " x2 "," y2)
               (str x1 "," y1 " " x2 "," y2))
-        wire-type (get @wire-type-index key)]
+        wire-type (get @net-type-index key)]
     [:g.wire {:on-pointer-down #(on-pointer-down-element key %)
               :on-pointer-move #(on-pointer-move-element key %)
               :on-pointer-up on-pointer-up-bg
@@ -1222,6 +1229,9 @@
   [sch]
   (reduce record-device {} sch))
 
+;; @tags reactive indices
+;; Cached, render-facing form of build-point-index. See the `reactive indices`
+;; spec for when to deref this track vs. call the builder directly.
 (def point-index (r/track #(build-point-index @schematic)))
 
 ;; --- wire-networks: shared BFS over the wire graph -----------------------
@@ -1326,25 +1336,37 @@
 (def wire-networks
   (r/track #(build-wire-networks @schematic @point-index)))
 
-;; --- wire-type-index: now a fold over wire-networks -----------------------
+;; --- net-type-index: a fold over wire-networks ---------------------------
 
 (defn- network-type
   "First port type encountered at any point in the network, or nil."
   [point-idx points]
   (some #(first (get-in point-idx [% :types])) points))
 
-(defn build-wire-type-index
-  "{wire-id => \"photonic\"|\"electric\"|nil}.
-   Derived from wire-networks + point-index."
+(defn build-net-type-index
+  "{doc-id => \"photonic\"|\"electric\"|nil} for every wire AND port doc, keyed
+   by the type of the net it belongs to (the first typed device port on the
+   net, via `network-type`). One index serves two consumers: wires drive
+   schematic wire coloring / LVS, and port docs feed the `:nature` annotation
+   the nyanlib indexer reads. Untyped/isolated nets are nil; the port-nature
+   consumer defaults those to photonic at read time.
+
+   Feeding port-ids alongside wires is behavior-preserving for the wire
+   consumers: a port doc's net type is always either nil (isolated) or equal to
+   the wire/device type already present at its point."
   [{:keys [components]} point-idx]
   (reduce
-   (fn [acc {:keys [wires points]}]
+   (fn [acc {:keys [wires port-ids points]}]
      (let [t (network-type point-idx points)]
-       (reduce #(assoc %1 %2 t) acc wires)))
+       (reduce #(assoc %1 %2 t) acc (concat wires port-ids))))
    {} components))
 
-(def wire-type-index
-  (r/track #(build-wire-type-index @wire-networks @point-index)))
+;; @tags reactive indices
+;; Cached, render-facing form (wire coloring, LVS dots). The commit pipeline
+;; calls build-net-type-index directly on its snapshot instead. See the
+;; `reactive indices` spec.
+(def net-type-index
+  (r/track #(build-net-type-index @wire-networks @point-index)))
 
 ;; --- netlist: fold wire-networks into per-device {port net} --------------
 
@@ -1379,12 +1401,16 @@
                            [pid (nth names i)]))]
     {:devices devices :wires wires :ports ports}))
 
-;; @tags nyancir format
+;; @tags nyancir format, reactive indices
 (defn build-net-annotations
-  "Return {doc-id {:nets …}|{:net …}} with only the docs whose annotation
-   needs to change. Keys of this map drive which docs the pouch/JsAtom swap
-   will touch, so unchanged docs are deliberately omitted."
-  [sch {:keys [devices wires ports]}]
+  "Return {doc-id {:nets …}|{:net …}|{:nature …}} with only the docs whose
+   annotation needs to change. Keys of this map drive which docs the pouch/
+   JsAtom swap will touch, so unchanged docs are deliberately omitted.
+
+   `net-types` is the {doc-id => \"photonic\"|\"electric\"|nil} map from
+   `build-net-type-index`. It is the sole source of a port's `:nature` — nature
+   is derived FROM the net type, never the reverse."
+  [sch {:keys [devices wires ports]} net-types]
   (letfn [(wire-update [id dev]
             (let [desired (get wires id)]
               (when (not= (:net dev) desired)
@@ -1395,14 +1421,16 @@
               (when (not= current desired)
                 {:nets desired})))
           (port-update [id dev]
-            ;; A port doc carries explicit connectivity as {:nets {:P net}} so
-            ;; Livewire (which never writes :nets) and the compile-time nets
-            ;; fallback can resolve what the port exposes. The net name is the
-            ;; port's own component net (usually the port's name).
-            (let [desired (get ports id)
-                  current (get (:nets dev) :P)]
-              (when (and desired (not= current desired))
-                {:nets {:P desired}})))
+            ;; A port doc carries explicit connectivity as {:nets {:P net}} (so
+            ;; Livewire, which never writes :nets, and the compile-time nets
+            ;; fallback can resolve what the port exposes) plus :nature, the type
+            ;; of the net it sits on. Each is diffed independently so a change to
+            ;; one never rewrites the other.
+            (let [net    (get ports id)
+                  nature (or (get net-types id) "photonic")]
+              (cond-> nil
+                (and net (not= (get (:nets dev) :P) net)) (assoc :nets {:P net})
+                (not= (:nature dev) nature)               (assoc :nature nature))))
           (entry [id dev]
             (cond
               (= "wire" (:type dev)) (wire-update id dev)
@@ -2531,14 +2559,14 @@
    [] point-idx))
 
 (def wire-errors
-  (r/track #(build-wire-errors @schematic @point-index @wire-type-index)))
+  (r/track #(build-wire-errors @schematic @point-index @net-type-index)))
 
 (defn point-connection-type
   "Get the connection type at a point from device ports and wire types."
   [x y ids]
   (let [port-types (get-in @point-index [[x y] :types])
         wire-type-set (into #{}
-                            (keep #(get @wire-type-index %))
+                            (keep #(get @net-type-index %))
                             ids)
         all-types (into (or port-types #{}) wire-type-set)]
     (first all-types)))

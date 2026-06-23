@@ -382,11 +382,11 @@
       (is (not= (:P r1-nets) (:N r1-nets)) "P and N are on different floating nets"))))
 
 ;; ---------------------------------------------------------------------------
-;; build-wire-type-index — propagate port types across components
+;; build-net-type-index — propagate port types across components
 ;; ---------------------------------------------------------------------------
-;; Contract: a wire's type is the type of the first typed port at any cell
-;; in its component, or nil if none. All wires in a component share the
-;; resolved type.
+;; Contract: a doc's type is the type of the first typed port at any cell in
+;; its component, or nil if none. All wires AND port docs in a component share
+;; the resolved type.
 
 (deftest wire-type-photonic-propagates
   (testing "a photonic port at one end of a wire → wire is photonic"
@@ -396,16 +396,16 @@
                      (wire "W1" 2 1 3 0))  ; endpoint at (2, 1) photonic, other at (5, 1)
           pt-idx (e/build-point-index schem)
           networks (e/build-wire-networks schem pt-idx)
-          wire-types (e/build-wire-type-index networks pt-idx)]
-      (is (= "photonic" (get wire-types "W1"))))))
+          net-types (e/build-net-type-index networks pt-idx)]
+      (is (= "photonic" (get net-types "W1"))))))
 
 (deftest wire-type-untyped-is-nil
   (testing "a wire with no typed endpoint stays nil"
     (let [schem (sch (wire "W1" 0 0 2 0))
           pt-idx (e/build-point-index schem)
           networks (e/build-wire-networks schem pt-idx)
-          wire-types (e/build-wire-type-index networks pt-idx)]
-      (is (nil? (get wire-types "W1"))))))
+          net-types (e/build-net-type-index networks pt-idx)]
+      (is (nil? (get net-types "W1"))))))
 
 ;; ---------------------------------------------------------------------------
 ;; build-net-annotations — partial update map keyed by doc-id
@@ -418,8 +418,9 @@
 (defn- annotations [schem]
   (let [pt-idx   (e/build-point-index schem)
         networks (e/build-wire-networks schem pt-idx)
-        nets     (e/build-netlist networks)]
-    (e/build-net-annotations schem nets)))
+        nets     (e/build-netlist networks)
+        net-types (e/build-net-type-index networks pt-idx)]
+    (e/build-net-annotations schem nets net-types)))
 
 (deftest annotations-fresh-schematic
   (testing "a fresh schematic with no :nets gets a full update"
@@ -713,6 +714,43 @@
           {:keys [ports]} (e/build-netlist (build-networks schem))]
       (is (= (get ports "in") (get ports "out"))
           "both port docs share the component's single net"))))
+
+;; ---------------------------------------------------------------------------
+;; Port nature — port docs take the nature of their net via the unified index
+;; ---------------------------------------------------------------------------
+;; Contract: build-net-type-index resolves a port doc to its net's type (nil
+;; when untyped/isolated). build-net-annotations writes that onto the port doc
+;; as :nature, defaulting nil to "photonic" (the nyanlib indexer's fallback).
+
+(defn- net-types [schem]
+  (let [pt-idx   (e/build-point-index schem)
+        networks (e/build-wire-networks schem pt-idx)]
+    (e/build-net-type-index networks pt-idx)))
+
+(deftest port-nature-photonic
+  (testing "a port doc on a photonic net resolves photonic"
+    ;; led O port is photonic at (2,1); a port doc sharing that point is on
+    ;; the same network.
+    (let [schem (sch ["LED1" {:type "led" :x 0 :y 0 :transform [1 0 0 1 0 0] :name "LED1"}]
+                     (port-doc "opt" 2 1 "opt"))]
+      (is (= "photonic" (get (net-types schem) "opt")))
+      (is (= "photonic" (get-in (annotations schem) ["opt" :nature]))))))
+
+(deftest port-nature-electric
+  (testing "a port doc on an electric net resolves electric"
+    ;; led P port is electric at (1,0).
+    (let [schem (sch ["LED1" {:type "led" :x 0 :y 0 :transform [1 0 0 1 0 0] :name "LED1"}]
+                     (port-doc "pwr" 1 0 "pwr"))]
+      (is (= "electric" (get (net-types schem) "pwr")))
+      (is (= "electric" (get-in (annotations schem) ["pwr" :nature]))))))
+
+(deftest port-nature-isolated-defaults-photonic
+  (testing "an isolated port doc has nil net type but is annotated photonic"
+    (let [schem (sch (port-doc "lonely" 5 5 "lonely"))]
+      (is (nil? (get (net-types schem) "lonely"))
+          "the index leaves untyped nets nil")
+      (is (= "photonic" (get-in (annotations schem) ["lonely" :nature]))
+          "the annotation defaults nil to photonic"))))
 
 ;; ---------------------------------------------------------------------------
 ;; schematic-airwires — top-level ratsnest layer
