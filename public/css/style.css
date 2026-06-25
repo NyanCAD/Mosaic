@@ -1321,10 +1321,11 @@ g.device.amp text.model-name {
     fill: var(--canvas-text);
 }
 
-g.device.ckt text.port-label,
-g.device.amp text.port-label {
+g.device text.port-label {
     font-size: 0.35em;
     fill: var(--canvas-text-muted);
+    pointer-events: none;
+    user-select: none;
 }
 
 g.device.amp polygon.outline {

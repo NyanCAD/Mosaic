@@ -149,6 +149,49 @@
                  :r (/ grid-size 10)
                  :class port-type}])
 
+(defn selected-port-labels
+  "Render model port names beside a selected instance's port markers, oriented
+   along each port's stem (left/right horizontal, top/bottom head-tilted) and
+   kept upright/unmirrored under the instance transform."
+  [k v locs]
+  (when (and (contains? @selected k) (seq locs))
+    (let [[a0 b0 c0 d0 _ _] (:transform v cm/IV)
+          det (- (* a0 d0) (* b0 c0))
+          stem (* grid-size 0.5)
+          clear 6
+          base (- stem clear)]
+      (into [:g.port-labels]
+            (for [{:keys [x y side name]} locs
+                  :let [mx (* (+ x 0.5) grid-size)
+                        my (* (+ y 0.5) grid-size)
+                        [ux uy] (case side
+                                  :left [-1 0] :right [1 0]
+                                  :top [0 -1] :bottom [0 1] [0 0])
+                        nx (+ (* a0 ux) (* c0 uy))
+                        ny (+ (* b0 ux) (* d0 uy))
+                        horizontal (>= (js/Math.abs nx) (js/Math.abs ny))
+                        visual (if horizontal
+                                 (if (neg? nx) :left :right)
+                                 (if (neg? ny) :top :bottom))
+                        [ra rb rc rd] (if horizontal [1 0 0 1] [0 -1 1 0])
+                        ia (/ d0 det) ib (/ (- b0) det) ic (/ (- c0) det) id (/ a0 det)
+                        pa (+ (* ia ra) (* ic rb)) pb (+ (* ib ra) (* id rb))
+                        pc (+ (* ia rc) (* ic rd)) pd (+ (* ib rc) (* id rd))
+                        e (- mx (+ (* pa mx) (* pc my)))
+                        f (- my (+ (* pb mx) (* pd my)))
+                        tmat (str "matrix(" pa " " pb " " pc " " pd " " e " " f ")")
+                        [anchor along] (case visual
+                                         :right  ["start" (- base)]
+                                         :top    ["start" (- base)]
+                                         :left   ["end" base]
+                                         :bottom ["end" base])]]
+              [:text.port-label {:key (str name)
+                                 :x (+ mx along) :y (- my clear)
+                                 :text-anchor anchor
+                                 :dominant-baseline "auto"
+                                 :transform tmat}
+               name])))))
+
 (defn draw-background [[width height] k v]
   [device (+ 2 (max width height)) k v
    [:rect.tetris {:x grid-size :y grid-size
@@ -607,9 +650,14 @@
   (let [model (:model v)
         ports (get-in @modeldb [(cm/model-key model) :ports])
         [width height] (if ports (cm/port-perimeter ports (:type v)) [1 1])
-        pattern (if ports (cm/port-locations ports (:type v)) [])]
-    (draw-pattern (+ 2 (max width height)) pattern
-                  port k v)))
+        locs (if ports (cm/port-locations ports (:type v)) [])
+        size (+ 2 (max width height))]
+    [device size k v
+     (into [:<>]
+           (for [{:keys [x y type]} locs]
+             ^{:key [x y]} [port (* x grid-size) (* y grid-size) type]))
+     (when (contains? models (:type v))
+       (selected-port-labels k v locs))]))
 
 
 ;; Helper: counter-rotation transform for text that should stay upright
