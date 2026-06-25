@@ -15,21 +15,34 @@ COUCHDB_ADMIN_PASS="${COUCHDB_ADMIN_PASS:-}"
 # Remove trailing slash from URL
 COUCHDB_URL="${COUCHDB_URL%/}"
 
-# Try to fetch existing design document to get _rev
-EXISTING_DOC=$(curl -s -u "$COUCHDB_ADMIN_USER:$COUCHDB_ADMIN_PASS" \
-  "$COUCHDB_URL/models/_design/models" || echo '{}')
+for attempt in 1 2 3; do
+  # Fetch existing design document to get _rev
+  EXISTING_DOC=$(curl -s -u "$COUCHDB_ADMIN_USER:$COUCHDB_ADMIN_PASS" \
+    "$COUCHDB_URL/models/_design/models" || echo '{}')
 
-# Extract _rev if document exists
-REV=$(echo "$EXISTING_DOC" | jq -r '._rev // empty')
+  REV=$(echo "$EXISTING_DOC" | jq -r '._rev // empty')
 
-# Add _rev to design document if it exists
-if [ -n "$REV" ]; then
-  jq "._rev = \"$REV\"" "$DESIGN_DOC" > "$DESIGN_DOC.tmp"
-  mv "$DESIGN_DOC.tmp" "$DESIGN_DOC"
-fi
+  # Merge _rev into the design doc for the upload
+  if [ -n "$REV" ]; then
+    UPLOAD_DOC=$(jq "._rev = \"$REV\"" "$DESIGN_DOC")
+  else
+    UPLOAD_DOC=$(cat "$DESIGN_DOC")
+  fi
 
-# Upload to CouchDB with authentication
-curl -f -X PUT "$COUCHDB_URL/models/_design/models" \
-  -u "$COUCHDB_ADMIN_USER:$COUCHDB_ADMIN_PASS" \
-  -H "Content-Type: application/json" \
-  -d @"$DESIGN_DOC"
+  HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
+    "$COUCHDB_URL/models/_design/models" \
+    -u "$COUCHDB_ADMIN_USER:$COUCHDB_ADMIN_PASS" \
+    -H "Content-Type: application/json" \
+    -d "$UPLOAD_DOC")
+
+  if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
+    echo "Design document uploaded successfully (attempt $attempt)"
+    exit 0
+  elif [ "$HTTP_CODE" = "409" ] && [ "$attempt" -lt 3 ]; then
+    echo "Conflict (409), retrying... (attempt $attempt)"
+    sleep 1
+  else
+    echo "Upload failed with HTTP $HTTP_CODE (attempt $attempt)" >&2
+    exit 1
+  fi
+done

@@ -160,7 +160,7 @@ jobs:
           npx shadow-cljs clj-run nyancad.mosaic.build/release
 
       - name: Upload CouchDB design document
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           COUCHDB_URL: https://api.nyancad.com
           COUCHDB_ADMIN_USER: ${{ secrets.COUCHDB_ADMIN_USER }}
