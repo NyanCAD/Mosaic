@@ -2384,13 +2384,13 @@
      [:a {:title "Delete selected [del]"
           :on-click (fn [_] (delete-selected))}
       [cm/delete]]
-     [:a {:title "Copy selected [ctrl+c]"
+     [:a {:title (str "Copy selected [" cm/mod-key "+c]")
           :on-click (fn [_] (copy))}
       [cm/copyi]]
-     [:a {:title "Cut selected [ctrl+x]"
+     [:a {:title (str "Cut selected [" cm/mod-key "+x]")
           :on-click (fn [_] (cut))}
       [cm/cuti]]
-     [:a {:title "Paste [ctrl+v]"
+     [:a {:title (str "Paste [" cm/mod-key "+v]")
           :on-click (fn [_] (paste))}
       [cm/pastei]]]
     [:div.toolbar-group
@@ -2400,10 +2400,10 @@
      [:a {:title "zoom out [scroll wheel/pinch]"
           :on-click #(button-zoom 1)}
       [cm/zoom-out]]
-     [:a {:title "undo [ctrl+z]"
+     [:a {:title (str "undo [" cm/mod-key "+z]")
           :on-click undo-schematic}
       [cm/undoi]]
-     [:a {:title "redo [ctrl+shift+z]"
+     [:a {:title (str "redo [" cm/mod-key "+shift+z]")
           :on-click redo-schematic}
       [cm/redoi]]]]
    [:div.status
@@ -2705,15 +2705,15 @@
                 #{:arrowdown}  #(move-selected 0 1)
                 #{:arrowleft}  #(move-selected -1 0)
                 #{:arrowright} #(move-selected 1 0)
-                #{:tab} tab-next
-                #{:control :c} copy
-                #{:control :x} cut
-                #{:control :v} paste
-                #{:control :z} undo-schematic
-                #{:control :shift :z} redo-schematic})
+                #{:tab} tab-next})
 
 (def immediate-shortcuts
-  {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))})
+  {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))
+   (hash-set cm/mod-bind :c) copy
+   (hash-set cm/mod-bind :x) cut
+   (hash-set cm/mod-bind :v) paste
+   (hash-set cm/mod-bind :z) undo-schematic
+   (hash-set cm/mod-bind :shift :z) redo-schematic})
 
 
 (defn ^:dev/after-load ^:export  render []

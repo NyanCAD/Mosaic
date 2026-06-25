@@ -26,6 +26,13 @@
    :vscode (extend-type ^js nyancad.mosaic.jsatom/JsAtom reagent.ratom/IReactiveAtom)
    :test nil)
 
+(def mac? (and (exists? js/navigator)
+              (boolean (re-find #"(?i)Mac|iPhone|iPad|iPod" js/navigator.userAgent))))
+
+(def mod-key (if mac? "⌘" "Ctrl"))
+
+(def mod-bind (if mac? :os :control))
+
 (def grid-size 50)
 (def debounce #(goog.functions/debounce % 1000))
 
@@ -1112,11 +1119,11 @@
       [[zoom-in] "Scroll" "Zoom"]]]
 
     [shortcut-table "Actions"
-     [[[undoi] "Ctrl+Z" "Undo"]
-      [[redoi] "Ctrl+Shift+Z" "Redo"]
-      [[copyi] "Ctrl+C" "Copy"]
-      [[cuti] "Ctrl+X" "Cut"]
-      [[pastei] "Ctrl+V" "Paste"]
+     [[[undoi] (str mod-key "+Z") "Undo"]
+      [[redoi] (str mod-key "+Shift+Z") "Redo"]
+      [[copyi] (str mod-key "+C") "Copy"]
+      [[cuti] (str mod-key "+X") "Cut"]
+      [[pastei] (str mod-key "+V") "Paste"]
       [[library] "" "Library Manager"]
       [[history] "" "Snapshot History"]
       [[external-link] "" "Pop Out Notebook"]
