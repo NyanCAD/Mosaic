@@ -94,8 +94,6 @@ async def file_schematic(project_dir: str | Path, schem_id: str) -> dict[str, di
     Returns data in the same format as SchematicBridge.schematic_data,
     suitable for passing directly to inspice_netlist(schem_id, data).
 
-    @tags model identity
-
     For Marimo reactivity, pass a ProjectState from watch_project_dir():
 
         project = watch_project_dir("./my_project")

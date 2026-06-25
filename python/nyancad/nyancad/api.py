@@ -45,8 +45,6 @@ class SchematicAPI(ABC):
         model definition, not the id string, so this stays backend-agnostic.
         Subclasses may override if their data is already complete (e.g. BridgeAPI).
 
-        @tags model identity
-
         Args:
             name: Top-level schematic group name
 
@@ -433,8 +431,6 @@ class FileAPI(SchematicAPI):
 
     async def get_docs(self, name: str) -> tuple[Any, dict[str, dict]]:
         """Get documents for a single group by reading the appropriate file.
-
-        @tags model identity
 
         Args:
             name: ``"models"`` reads models.nyanlib; any other value is a

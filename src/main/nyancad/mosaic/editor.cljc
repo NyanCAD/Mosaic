@@ -84,7 +84,6 @@
 (declare build-wire-split-index build-point-index split-wire point-index net-type-index
          build-wire-networks build-netlist build-net-annotations build-net-type-index)
 
-;; @tags reactive indices
 (defn post-action!
   "Record undo checkpoint, split wires, and annotate :nets/:net after a user
    action. Returns a channel that completes when done.
@@ -1277,7 +1276,6 @@
   [sch]
   (reduce record-device {} sch))
 
-;; @tags reactive indices
 ;; Cached, render-facing form of build-point-index. See the `reactive indices`
 ;; spec for when to deref this track vs. call the builder directly.
 (def point-index (r/track #(build-point-index @schematic)))
@@ -1409,7 +1407,6 @@
        (reduce #(assoc %1 %2 t) acc (concat wires port-ids))))
    {} components))
 
-;; @tags reactive indices
 ;; Cached, render-facing form (wire coloring, LVS dots). The commit pipeline
 ;; calls build-net-type-index directly on its snapshot instead. See the
 ;; `reactive indices` spec.
@@ -1449,7 +1446,6 @@
                            [pid (nth names i)]))]
     {:devices devices :wires wires :ports ports}))
 
-;; @tags nyancir format, reactive indices
 (defn build-net-annotations
   "Return {doc-id {:nets …}|{:net …}|{:nature …}} with only the docs whose
    annotation needs to change. Keys of this map drive which docs the pouch/
