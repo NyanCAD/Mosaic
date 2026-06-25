@@ -1,0 +1,34 @@
+;; clj-kondo configuration for Mosaic
+;;
+;; Mosaic uses shadow-cljs custom reader features (:web, :vscode, :test)
+;; in .cljc files. clj-kondo cannot resolve the #?(...) conditional
+;; requires that dispatch on these features, so symbols introduced by
+;; those requires appear unresolved. The per-namespace overrides below
+;; silence those known false positives while keeping the linter active
+;; for pure .cljs files and namespaces without conditional requires.
+
+{:cljc {:features #{:cljs}}
+
+ :lint-as {reagent.core/with-let clojure.core/let}
+
+ :linters
+ {:unresolved-var {:exclude [nyancad.mosaic.common/IV]}}
+
+ ;; Namespaces whose ns form uses #?(:web ... :vscode ... :test ...)
+ ;; conditional requires — clj-kondo cannot parse these libspecs, so
+ ;; several linters are suppressed per-namespace rather than globally.
+ :config-in-ns
+ {nyancad.mosaic.editor
+  {:linters {:unresolved-symbol {:level :off}
+             :unresolved-var {:level :off}
+             :syntax {:level :off}}}
+  nyancad.mosaic.libman
+  {:linters {:unresolved-symbol {:level :off}
+             :unresolved-var {:level :off}
+             :syntax {:level :off}}}
+  nyancad.mosaic.extension
+  {:linters {:unresolved-symbol {:level :off}
+             :type-mismatch {:level :off}}}
+  nyancad.mosaic.editor.platform-vscode
+  {:linters {:unresolved-symbol {:level :off}
+             :unresolved-var {:level :off}}}}}

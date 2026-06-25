@@ -88,24 +88,25 @@ def watch_project_dir(path: str | Path) -> ProjectState:
     return ProjectState(path, allow_self_loops=True)
 
 
-async def file_schematic(project_dir: str | Path, name: str) -> dict[str, dict]:
+async def file_schematic(project_dir: str | Path, schem_id: str) -> dict[str, dict]:
     """Load schematic data from .nyancir/.nyanlib files.
 
     Returns data in the same format as SchematicBridge.schematic_data,
-    suitable for passing directly to inspice_netlist(name, data).
+    suitable for passing directly to inspice_netlist(schem_id, data).
 
     For Marimo reactivity, pass a ProjectState from watch_project_dir():
 
         project = watch_project_dir("./my_project")
-        data = await file_schematic(project, "schematic")
+        data = await file_schematic(project, "schematic.nyancir")
 
     Args:
         project_dir: Path to project directory (or ProjectState)
-        name: Schematic name (without .nyancir extension)
+        schem_id: Schematic id — its project-relative ``.nyancir`` path,
+            the same id used in ``model`` fields and ``models:`` keys.
 
     Returns:
-        Full schematic dict: {"models": {...}, name: {...}, ...}
+        Full schematic dict: {"models": {...}, schem_id: {...}, ...}
     """
     api = FileAPI(project_dir)
-    _, data = await api.get_all_schem_docs(name)
+    _, data = await api.get_all_schem_docs(schem_id)
     return data

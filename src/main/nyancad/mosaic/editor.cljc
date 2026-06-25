@@ -5,7 +5,6 @@
 (ns nyancad.mosaic.editor
   (:require [reagent.core :as r]
             [reagent.dom.client :as rdc]
-            [shadow.resource :as rc]
             [#?(:web    nyancad.mosaic.editor.platform-web
                 :vscode nyancad.mosaic.editor.platform-vscode
                 :test   nyancad.mosaic.editor.platform-test)
@@ -13,7 +12,7 @@
                      done? syncactive notebook-panel secondary-menu-items
                      open-schematic resolve-symbol-url init-extra! root]]
             [clojure.spec.alpha :as s]
-            [cljs.core.async :refer [go go-loop <!]]
+            [cljs.core.async :refer [go <!]]
             [clojure.math :as math]
             clojure.edn
             clojure.set
@@ -42,7 +41,9 @@
                      ::mouse [0 0]
                      ::mouse-start [0 0]
                      ::notebook-state ::embedded
-                     ::pointer-cache {}}))
+                     ::pointer-cache {}
+                     ::tab-index 0}))
+
 
 (s/def ::zoom (s/coll-of number? :count 4))
 (s/def ::theme (s/nilable #{"light" "dark" "eyesore"}))
@@ -58,7 +59,8 @@
 (s/def ::x number?)
 (s/def ::y number?)
 (s/def ::pointer-cache (s/map-of int? (s/keys :req-un [::x ::y])))
-(s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-state ::pointer-cache]
+(s/def ::tab-index nat-int?)
+(s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-state ::pointer-cache ::tab-index]
                     :opt [::dragging ::staging]))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
@@ -70,6 +72,7 @@
 (defonce delta (r/cursor ui [::delta]))
 (defonce staging (r/cursor ui [::staging]))
 (defonce notebook-state (r/cursor ui [::notebook-state]))
+(defonce tab-index (r/cursor ui [::tab-index]))
 (defonce pointer-cache (r/cursor ui [::pointer-cache]))
 
 ; Model selector popup state
@@ -78,12 +81,17 @@
 
 (defonce undotree (cm/newundotree))
 
-(declare build-wire-split-index build-point-index split-wire point-index wire-type-index
-         build-wire-networks build-netlist build-net-annotations)
+(declare build-wire-split-index build-point-index split-wire point-index net-type-index
+         build-wire-networks build-netlist build-net-annotations build-net-type-index)
 
 (defn post-action!
   "Record undo checkpoint, split wires, and annotate :nets/:net after a user
-   action. Returns a channel that completes when done."
+   action. Returns a channel that completes when done.
+
+   The commit pipeline calls the `build-*` indices directly on a single
+   `@schematic` snapshot rather than derefing the reactive tracks — see the
+   `reactive indices` spec for why (snapshot consistency, freshness across its
+   own splits, independence from reactive timing)."
   []
   (go
     (<! (done? schematic))
@@ -97,7 +105,8 @@
           pt-idx   (build-point-index sch)
           networks (build-wire-networks sch pt-idx)
           nets     (build-netlist networks)
-          updates  (build-net-annotations sch nets)]
+          net-types (build-net-type-index networks pt-idx)
+          updates  (build-net-annotations sch nets net-types)]
       (when (seq updates)
         (swap! schematic (partial merge-with merge) updates)))))
 
@@ -138,6 +147,49 @@
                  :cy (+ y (/ grid-size 2))
                  :r (/ grid-size 10)
                  :class port-type}])
+
+(defn selected-port-labels
+  "Render model port names beside a selected instance's port markers, oriented
+   along each port's stem (left/right horizontal, top/bottom head-tilted) and
+   kept upright/unmirrored under the instance transform."
+  [k v locs]
+  (when (and (contains? @selected k) (seq locs))
+    (let [[a0 b0 c0 d0 _ _] (:transform v cm/IV)
+          det (- (* a0 d0) (* b0 c0))
+          stem (* grid-size 0.5)
+          clear 6
+          base (- stem clear)]
+      (into [:g.port-labels]
+            (for [{:keys [x y side name]} locs
+                  :let [mx (* (+ x 0.5) grid-size)
+                        my (* (+ y 0.5) grid-size)
+                        [ux uy] (case side
+                                  :left [-1 0] :right [1 0]
+                                  :top [0 -1] :bottom [0 1] [0 0])
+                        nx (+ (* a0 ux) (* c0 uy))
+                        ny (+ (* b0 ux) (* d0 uy))
+                        horizontal (>= (js/Math.abs nx) (js/Math.abs ny))
+                        visual (if horizontal
+                                 (if (neg? nx) :left :right)
+                                 (if (neg? ny) :top :bottom))
+                        [ra rb rc rd] (if horizontal [1 0 0 1] [0 -1 1 0])
+                        ia (/ d0 det) ib (/ (- b0) det) ic (/ (- c0) det) id (/ a0 det)
+                        pa (+ (* ia ra) (* ic rb)) pb (+ (* ib ra) (* id rb))
+                        pc (+ (* ia rc) (* ic rd)) pd (+ (* ib rc) (* id rd))
+                        e (- mx (+ (* pa mx) (* pc my)))
+                        f (- my (+ (* pb mx) (* pd my)))
+                        tmat (str "matrix(" pa " " pb " " pc " " pd " " e " " f ")")
+                        [anchor along] (case visual
+                                         :right  ["start" (- base)]
+                                         :top    ["start" (- base)]
+                                         :left   ["end" base]
+                                         :bottom ["end" base])]]
+              [:text.port-label {:key (str name)
+                                 :x (+ mx along) :y (- my clear)
+                                 :text-anchor anchor
+                                 :dominant-baseline "auto"
+                                 :transform tmat}
+               name])))))
 
 (defn draw-background [[width height] k v]
   [device (+ 2 (max width height)) k v
@@ -199,7 +251,7 @@
         pts (if mx
               (str x1 "," y1 " " mx "," my " " x2 "," y2)
               (str x1 "," y1 " " x2 "," y2))
-        wire-type (get @wire-type-index key)]
+        wire-type (get @net-type-index key)]
     [:g.wire {:on-pointer-down #(on-pointer-down-element key %)
               :on-pointer-move #(on-pointer-move-element key %)
               :on-pointer-up on-pointer-up-bg
@@ -391,11 +443,11 @@
    ::elements [[:lines [[[0.5 1.5] [2.5 1.5]]]]]})
 
 ;; bg [1,1], size 3, 150x150px
-;; Ports: (0,1)→px(25,75) left  (1,2)→px(75,125) bottom
-;; Quarter-arc from left port curving down to bottom port
+;; Ports: (0,1)→px(25,75) left  (1,0)→px(75,25) top
+;; Quarter-arc from left port curving up to top port
 (def bend-elements
   {::size 3
-   ::elements [[:path {:d "M25,75 H50 Q75,75 75,100 V125"}]]})
+   ::elements [[:path {:d "M25,75 H50 Q75,75 75,50 V25"}]]})
 
 ;; bg [1,2], size 4, 200x200px
 ;; Ports: (0,1)→px(25,75)  (2,2)→px(125,125)
@@ -597,9 +649,14 @@
   (let [model (:model v)
         ports (get-in @modeldb [(cm/model-key model) :ports])
         [width height] (if ports (cm/port-perimeter ports (:type v)) [1 1])
-        pattern (if ports (cm/port-locations ports (:type v)) [])]
-    (draw-pattern (+ 2 (max width height)) pattern
-                  port k v)))
+        locs (if ports (cm/port-locations ports (:type v)) [])
+        size (+ 2 (max width height))]
+    [device size k v
+     (into [:<>]
+           (for [{:keys [x y type]} locs]
+             ^{:key [x y]} [port (* x grid-size) (* y grid-size) type]))
+     (when (contains? models (:type v))
+       (selected-port-labels k v locs))]))
 
 
 ;; Helper: counter-rotation transform for text that should stay upright
@@ -1219,6 +1276,8 @@
   [sch]
   (reduce record-device {} sch))
 
+;; Cached, render-facing form of build-point-index. See the `reactive indices`
+;; spec for when to deref this track vs. call the builder directly.
 (def point-index (r/track #(build-point-index @schematic)))
 
 ;; --- wire-networks: shared BFS over the wire graph -----------------------
@@ -1323,25 +1382,36 @@
 (def wire-networks
   (r/track #(build-wire-networks @schematic @point-index)))
 
-;; --- wire-type-index: now a fold over wire-networks -----------------------
+;; --- net-type-index: a fold over wire-networks ---------------------------
 
 (defn- network-type
   "First port type encountered at any point in the network, or nil."
   [point-idx points]
   (some #(first (get-in point-idx [% :types])) points))
 
-(defn build-wire-type-index
-  "{wire-id => \"photonic\"|\"electric\"|nil}.
-   Derived from wire-networks + point-index."
+(defn build-net-type-index
+  "{doc-id => \"photonic\"|\"electric\"|nil} for every wire AND port doc, keyed
+   by the type of the net it belongs to (the first typed device port on the
+   net, via `network-type`). One index serves two consumers: wires drive
+   schematic wire coloring / LVS, and port docs feed the `:nature` annotation
+   the nyanlib indexer reads. Untyped/isolated nets are nil; the port-nature
+   consumer defaults those to photonic at read time.
+
+   Feeding port-ids alongside wires is behavior-preserving for the wire
+   consumers: a port doc's net type is always either nil (isolated) or equal to
+   the wire/device type already present at its point."
   [{:keys [components]} point-idx]
   (reduce
-   (fn [acc {:keys [wires points]}]
+   (fn [acc {:keys [wires port-ids points]}]
      (let [t (network-type point-idx points)]
-       (reduce #(assoc %1 %2 t) acc wires)))
+       (reduce #(assoc %1 %2 t) acc (concat wires port-ids))))
    {} components))
 
-(def wire-type-index
-  (r/track #(build-wire-type-index @wire-networks @point-index)))
+;; Cached, render-facing form (wire coloring, LVS dots). The commit pipeline
+;; calls build-net-type-index directly on its snapshot instead. See the
+;; `reactive indices` spec.
+(def net-type-index
+  (r/track #(build-net-type-index @wire-networks @point-index)))
 
 ;; --- netlist: fold wire-networks into per-device {port net} --------------
 
@@ -1377,10 +1447,14 @@
     {:devices devices :wires wires :ports ports}))
 
 (defn build-net-annotations
-  "Return {doc-id {:nets …}|{:net …}} with only the docs whose annotation
-   needs to change. Keys of this map drive which docs the pouch/JsAtom swap
-   will touch, so unchanged docs are deliberately omitted."
-  [sch {:keys [devices wires ports]}]
+  "Return {doc-id {:nets …}|{:net …}|{:nature …}} with only the docs whose
+   annotation needs to change. Keys of this map drive which docs the pouch/
+   JsAtom swap will touch, so unchanged docs are deliberately omitted.
+
+   `net-types` is the {doc-id => \"photonic\"|\"electric\"|nil} map from
+   `build-net-type-index`. It is the sole source of a port's `:nature` — nature
+   is derived FROM the net type, never the reverse."
+  [sch {:keys [devices wires ports]} net-types]
   (letfn [(wire-update [id dev]
             (let [desired (get wires id)]
               (when (not= (:net dev) desired)
@@ -1391,14 +1465,16 @@
               (when (not= current desired)
                 {:nets desired})))
           (port-update [id dev]
-            ;; A port doc carries explicit connectivity as {:nets {:P net}} so
-            ;; Livewire (which never writes :nets) and the compile-time nets
-            ;; fallback can resolve what the port exposes. The net name is the
-            ;; port's own component net (usually the port's name).
-            (let [desired (get ports id)
-                  current (get (:nets dev) :P)]
-              (when (and desired (not= current desired))
-                {:nets {:P desired}})))
+            ;; A port doc carries explicit connectivity as {:nets {:P net}} (so
+            ;; Livewire, which never writes :nets, and the compile-time nets
+            ;; fallback can resolve what the port exposes) plus :nature, the type
+            ;; of the net it sits on. Each is diffed independently so a change to
+            ;; one never rewrites the other.
+            (let [net    (get ports id)
+                  nature (or (get net-types id) "photonic")]
+              (cond-> nil
+                (and net (not= (get (:nets dev) :P) net)) (assoc :nets {:P net})
+                (not= (:nature dev) nature)               (assoc :nature nature))))
           (entry [id dev]
             (cond
               (= "wire" (:type dev)) (wire-update id dev)
@@ -1594,6 +1670,28 @@
                  update :transform g)
           (post-action!)))))
 
+(defn move-selected [dx dy]
+  (if (seq @selected)
+    (do (swap! schematic update-keys @selected
+              #(-> % (update :x + dx) (update :y + dy)))
+        (post-action!))
+    (swap! ui update ::zoom
+           (fn [[x y w h]] [(+ x (* dx grid-size)) (+ y (* dy grid-size)) w h]))))
+
+(defn tab-next []
+  (let [type (or (when-let [s @staging] (:type s))
+                 (when-let [id (first @selected)]
+                   (:type (get @schematic id))))]
+    (when type
+      (when @staging
+        (swap! ui assoc ::staging nil ::tool ::cursor))
+      (let [ids (->> @schematic
+                     (filter (fn [[_ v]] (= type (:type v))))
+                     keys sort vec)
+            n (count ids)]
+        (when (pos? n)
+          (let [idx (swap! tab-index #(mod (inc %) n))]
+            (reset! selected #{(nth ids idx)})))))))
 (defn delete-selected []
   (let [selected (::selected @ui)]
     (swap! ui assoc ::selected #{})
@@ -1750,14 +1848,16 @@
    1-arity: switch to specified tool and clear staging"
   ([]
    (let [uiv @ui]
-     (if (and (::staging uiv) (= (::tool uiv) ::wire))
-       (swap! ui assoc
-              ::dragging nil
-              ::staging nil)
-       (swap! ui assoc
-              ::dragging nil
-              ::tool ::cursor
-              ::staging nil))))
+     (if (or (::staging uiv) (::dragging uiv) (not= (::tool uiv) ::cursor))
+       (if (and (::staging uiv) (= (::tool uiv) ::wire))
+         (swap! ui assoc
+                ::dragging nil
+                ::staging nil)
+         (swap! ui assoc
+                ::dragging nil
+                ::tool ::cursor
+                ::staging nil))
+       (swap! ui assoc ::selected #{}))))
   ([new-tool]
    (swap! ui assoc
           ::dragging nil
@@ -2137,7 +2237,7 @@
 
 (defn model-selector-popup
   "Popup for selecting a device model with tag tree and search"
-  [device-type on-select]
+  [_device-type _on-select]
   (let [selected (r/atom nil)]
     (fn [device-type on-select]
       (let [;; Filter models by device type first
@@ -2361,13 +2461,13 @@
      [:a {:title "Delete selected [del]"
           :on-click (fn [_] (delete-selected))}
       [cm/delete]]
-     [:a {:title "Copy selected [ctrl+c]"
+     [:a {:title (str "Copy selected [" cm/mod-key "+c]")
           :on-click (fn [_] (copy))}
       [cm/copyi]]
-     [:a {:title "Cut selected [ctrl+x]"
+     [:a {:title (str "Cut selected [" cm/mod-key "+x]")
           :on-click (fn [_] (cut))}
       [cm/cuti]]
-     [:a {:title "Paste [ctrl+v]"
+     [:a {:title (str "Paste [" cm/mod-key "+v]")
           :on-click (fn [_] (paste))}
       [cm/pastei]]]
     [:div.toolbar-group
@@ -2377,10 +2477,10 @@
      [:a {:title "zoom out [scroll wheel/pinch]"
           :on-click #(button-zoom 1)}
       [cm/zoom-out]]
-     [:a {:title "undo [ctrl+z]"
+     [:a {:title (str "undo [" cm/mod-key "+z]")
           :on-click undo-schematic}
       [cm/undoi]]
-     [:a {:title "redo [ctrl+shift+z]"
+     [:a {:title (str "redo [" cm/mod-key "+shift+z]")
           :on-click redo-schematic}
       [cm/redoi]]]]
    [:div.status
@@ -2507,14 +2607,14 @@
    [] point-idx))
 
 (def wire-errors
-  (r/track #(build-wire-errors @schematic @point-index @wire-type-index)))
+  (r/track #(build-wire-errors @schematic @point-index @net-type-index)))
 
 (defn point-connection-type
   "Get the connection type at a point from device ports and wire types."
   [x y ids]
   (let [port-types (get-in @point-index [[x y] :types])
         wire-type-set (into #{}
-                            (keep #(get @wire-type-index %))
+                            (keep #(get @net-type-index %))
                             ids)
         all-types (into (or port-types #{}) wire-type-set)]
     (first all-types)))
@@ -2678,14 +2778,19 @@
                 #{:shift :s} (fn [_] (transform-selected #(.rotate % -90)))
                 #{:shift :f} (fn [_] (transform-selected #(.flipY %)))
                 #{:f}        (fn [_] (transform-selected #(.flipX %)))
-                #{:control :c} copy
-                #{:control :x} cut
-                #{:control :v} paste
-                #{:control :z} undo-schematic
-                #{:control :shift :z} redo-schematic})
+                #{:arrowup}    #(move-selected 0 -1)
+                #{:arrowdown}  #(move-selected 0 1)
+                #{:arrowleft}  #(move-selected -1 0)
+                #{:arrowright} #(move-selected 1 0)
+                #{(keyword "`")} tab-next})
 
 (def immediate-shortcuts
-  {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))})
+  {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))
+   (hash-set cm/mod-bind :c) copy
+   (hash-set cm/mod-bind :x) cut
+   (hash-set cm/mod-bind :v) paste
+   (hash-set cm/mod-bind :z) undo-schematic
+   (hash-set cm/mod-bind :shift :z) redo-schematic})
 
 
 (defn ^:dev/after-load ^:export  render []

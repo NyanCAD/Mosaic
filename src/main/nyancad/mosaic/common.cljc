@@ -26,6 +26,13 @@
    :vscode (extend-type ^js nyancad.mosaic.jsatom/JsAtom reagent.ratom/IReactiveAtom)
    :test nil)
 
+(def mac? (and (exists? js/navigator)
+              (boolean (re-find #"(?i)Mac|iPhone|iPad|iPod" js/navigator.userAgent))))
+
+(def mod-key (if mac? "⌘" "Ctrl"))
+
+(def mod-bind (if mac? :os :control))
+
 (def grid-size 50)
 (def debounce #(goog.functions/debounce % 1000))
 
@@ -34,11 +41,11 @@
    Keystrokes update the input immediately; writes to st are debounced.
    valfn: extract display text from atom state  (st → string)
    changefn: write raw text back into atom      (st, string → nil)"
-  [typ props st valfn changefn]
+  [typ _props st valfn changefn]
   (let [int  (r/atom (valfn @st))   ; display text for instant UI feedback
         ext  (r/atom @st)           ; snapshot of st — detects external changes
         dbfn (debounce changefn)]   ; changefn called once per edit, after debounce
-    (fn [typ props st valfn changefn]
+    (fn [_typ props st valfn _changefn]
       (when (not= @ext @st)         ; st changed externally (remote sync, other component)
         (reset! int (valfn @st))    ; re-extract display text
         (reset! ext @st))           ; update snapshot
@@ -910,8 +917,9 @@
 ;; User's workspace list (fetched on demand)
 (defonce user-workspaces (r/atom []))
 
-(defn get-db-name []
+(defn get-db-name
   "Get the database name for current context (workspace or personal library)."
+  []
   (when-let [username (get-current-user)]
     (if current-workspace
       current-workspace                          ; ws-slug
@@ -1108,14 +1116,15 @@
       [[mirror-vertical] "F" "Flip X"]
       [[mirror-horizontal] "Shift+F" "Flip Y"]
       [[delete] "Del" "Delete"]
-      [[zoom-in] "Scroll" "Zoom"]]]
+      [[zoom-in] "Scroll" "Zoom"]
+      [[text] "T" "Text"]]]
 
     [shortcut-table "Actions"
-     [[[undoi] "Ctrl+Z" "Undo"]
-      [[redoi] "Ctrl+Shift+Z" "Redo"]
-      [[copyi] "Ctrl+C" "Copy"]
-      [[cuti] "Ctrl+X" "Cut"]
-      [[pastei] "Ctrl+V" "Paste"]
+     [[[undoi] (str mod-key "+Z") "Undo"]
+      [[redoi] (str mod-key "+Shift+Z") "Redo"]
+      [[copyi] (str mod-key "+C") "Copy"]
+      [[cuti] (str mod-key "+X") "Cut"]
+      [[pastei] (str mod-key "+V") "Paste"]
       [[library] "" "Library Manager"]
       [[history] "" "Snapshot History"]
       [[external-link] "" "Pop Out Notebook"]

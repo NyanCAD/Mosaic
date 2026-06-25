@@ -6,6 +6,7 @@
   "Contract-driven tests for the CouchDB search view helpers."
   (:require [cljs.test :refer [deftest is testing]]
             [goog.object :as gobj]
+            clojure.string
             [nyancad.mosaic.couchdb :as couchdb]))
 
 ;; ---------------------------------------------------------------------------

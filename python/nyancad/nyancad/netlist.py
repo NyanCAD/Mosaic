@@ -447,7 +447,7 @@ def _coerce_settings(raw, accepted=None):
     }
 
 
-def resolve_sax_netlist(recnet, pdk_cells):
+def resolve_sax_netlist(recnet, pdk_cells, model_names=None):
     """Expand hierarchical components in a SAX RecursiveNetlist using PDK cells.
 
     For each component referenced by top-level instances but not already
@@ -459,6 +459,9 @@ def resolve_sax_netlist(recnet, pdk_cells):
     Args:
         recnet: SAX RecursiveNetlist dict (mutated in place).
         pdk_cells: PDK cells module (e.g. ``cspdk.si220.cband.cells``).
+        model_names: Optional set of SAX model names. Components in this set
+            are left as leaf models so SAX can call the model factory with the
+            instance settings.
 
     Returns:
         List of leaf component names that were expanded.
@@ -472,6 +475,7 @@ def resolve_sax_netlist(recnet, pdk_cells):
     top = recnet.get(top_name, {})
     instances = top.get("instances", {})
     sub_netlists = set(recnet.keys()) - {top_name}
+    model_names = set(model_names or ())
 
     leaf_components = sorted(
         {
@@ -489,6 +493,8 @@ def resolve_sax_netlist(recnet, pdk_cells):
     for inst_name, inst_info in instances.items():
         comp = inst_info.get("component", inst_name)
         if comp not in leaf_components:
+            continue
+        if comp in model_names:
             continue
         comp_instances.setdefault(comp, []).append((inst_name, inst_info))
 
