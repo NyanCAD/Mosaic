@@ -270,7 +270,7 @@ jobs:
         run: |
           scp dist/nyancad-*.whl dist/nyancad_server-*.whl deploy@nyancad.com:/tmp/
           ssh deploy@nyancad.com "
-            /opt/nyancad-server/venv/bin/pip install --upgrade /tmp/nyancad-*.whl /tmp/nyancad_server-*.whl && \
+            /opt/nyancad-server/venv/bin/pip install --pre --upgrade /tmp/nyancad-*.whl /tmp/nyancad_server-*.whl && \
             (sudo /bin/systemctl reload nyancad-server || true) && \
             rm /tmp/nyancad-*.whl /tmp/nyancad_server-*.whl
           "
