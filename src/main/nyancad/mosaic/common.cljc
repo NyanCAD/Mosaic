@@ -1101,15 +1101,7 @@
      [:div.component-item
       [device-icon "port"]
       [:kbd "P"]
-      [:span.label "Port"]]
-     [:div.component-item
-      [device-icon "ground"]
-      [:kbd "G"]
-      [:span.label "Ground"]]
-     [:div.component-item
-      [device-icon "supply"]
-      [:kbd "Shift+P"]
-      [:span.label "Supply"]]]
+      [:span.label "Port"]]]
     [:p.hint "Long-press button or Shift+key for alternatives (PMOS, PNP, etc.)"]]
 
    ;; Two column layout for tools
@@ -1125,8 +1117,7 @@
       [[mirror-horizontal] "Shift+F" "Flip Y"]
       [[delete] "Del" "Delete"]
       [[zoom-in] "Scroll" "Zoom"]
-      [[text] "T" "Text area"]
-      [[label] "Shift+T" "Wire label"]]]
+      [[text] "T" "Text"]]]
 
     [shortcut-table "Actions"
      [[[undoi] (str mod-key "+Z") "Undo"]
