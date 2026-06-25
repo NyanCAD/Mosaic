@@ -6,10 +6,17 @@ Usage:
 
 Each argument can be: skip, patch, minor, or major
 
+Package dependencies:
+    nyancad-server bundles the frontend JS and depends on nyancad.
+    - If nyancad or tag is bumped, server is auto-bumped (at least patch).
+    - If nyancad is bumped, the server's nyancad>= pin is updated
+      automatically via bump-my-version config.
+
 Examples:
     ./bump.py patch patch patch   # Bump all by patch
     ./bump.py skip minor skip     # Only bump server by minor
     ./bump.py skip skip major     # Only create a major tag
+    ./bump.py minor skip minor    # Bump nyancad+tag; server auto-patched
 """
 
 import argparse
@@ -22,7 +29,6 @@ ROOT_DIR = Path(__file__).parent.resolve()
 
 
 def run_bump(directory: Path, bump_type: str, name: str) -> bool:
-    """Run bump-my-version in the specified directory."""
     if bump_type == "skip":
         print(f"Skipping {name}")
         return True
@@ -74,6 +80,12 @@ def main():
 
     args = parser.parse_args()
 
+    # nyancad-server bundles the frontend JS and depends on nyancad,
+    # so any frontend or nyancad change requires at least a server patch bump.
+    if args.server == "skip" and (args.nyancad != "skip" or args.tag != "skip"):
+        args.server = "patch"
+        print("Auto-bumping server by patch (bundles frontend)")
+
     if args.dry_run:
         print("Dry run mode - no changes will be made")
         print(f"  nyancad: {args.nyancad}")
@@ -83,7 +95,7 @@ def main():
 
     success = True
 
-    # Bump nyancad package
+    # Bump nyancad package (also updates server's nyancad>= pin via bumpversion config)
     if not run_bump(ROOT_DIR / "python" / "nyancad", args.nyancad, "nyancad"):
         success = False
 

@@ -51,3 +51,8 @@ allow_dirty = true
 filename = "pyproject.toml"
 search = 'version = "{current_version}"'
 replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "../nyancad-server/pyproject.toml"
+search = '"nyancad>={current_version}"'
+replace = '"nyancad>={new_version}"'
