@@ -12,10 +12,9 @@
 ;; Extract parameters like editor.cljs (but for schematic, not notebook)
 (def params (js/URLSearchParams. js/window.location.search))
 (def group (or (.get params "schem") "myschem"))
-(def dbname (or (.get params "db") "schematics"))
 
 ;; Create database and top-level cache for all schematic data
-(defonce db (pouchdb dbname))
+(defonce db (pouchdb (or (cm/get-db-name) "schematics")))
 (defonce schematic-cache (r/atom {group {}, "models" {}})) ; Top-level cache containing all schematics
 
 ;; Individual pouch-atoms using cursors into the main cache
