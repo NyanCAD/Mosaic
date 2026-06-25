@@ -515,7 +515,7 @@ async def _(file_schematic, mo, project, schem_file):
 
 @app.cell
 async def _(inspice_netlist, schem_data, schem_name, simname):
-    _sim = "Spectre" if simname.value == "vacask" else "NgSpice"
+    _sim = simname.value.split("-")[0]
     spice = await inspice_netlist(schem_name, schem_data, sim=_sim)
     print(spice)
     return (spice,)

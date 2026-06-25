@@ -499,7 +499,7 @@ def _(schematic_bridge):
 
 @app.cell
 async def _(inspice_netlist, reader, simname):
-    _sim = "Spectre" if simname.value == "vacask" else "NgSpice"
+    _sim = simname.value.split("-")[0]
     spice = await inspice_netlist(reader.name, reader.schematic_data, sim=_sim)
     print(spice)
     return (spice,)
