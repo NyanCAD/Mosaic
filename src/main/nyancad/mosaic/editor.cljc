@@ -1627,10 +1627,12 @@
           (post-action!)))))
 
 (defn move-selected [dx dy]
-  (when (seq @selected)
-    (swap! schematic update-keys @selected
-           #(-> % (update :x + dx) (update :y + dy)))
-    (post-action!)))
+  (if (seq @selected)
+    (do (swap! schematic update-keys @selected
+              #(-> % (update :x + dx) (update :y + dy)))
+        (post-action!))
+    (swap! ui update ::zoom
+           (fn [[x y w h]] [(+ x (* dx grid-size)) (+ y (* dy grid-size)) w h]))))
 
 (defn tab-next []
   (let [type (or (when-let [s @staging] (:type s))
@@ -1802,14 +1804,16 @@
    1-arity: switch to specified tool and clear staging"
   ([]
    (let [uiv @ui]
-     (if (and (::staging uiv) (= (::tool uiv) ::wire))
-       (swap! ui assoc
-              ::dragging nil
-              ::staging nil)
-       (swap! ui assoc
-              ::dragging nil
-              ::tool ::cursor
-              ::staging nil))))
+     (if (or (::staging uiv) (::dragging uiv) (not= (::tool uiv) ::cursor))
+       (if (and (::staging uiv) (= (::tool uiv) ::wire))
+         (swap! ui assoc
+                ::dragging nil
+                ::staging nil)
+         (swap! ui assoc
+                ::dragging nil
+                ::tool ::cursor
+                ::staging nil))
+       (swap! ui assoc ::selected #{}))))
   ([new-tool]
    (swap! ui assoc
           ::dragging nil
@@ -2734,7 +2738,7 @@
                 #{:arrowdown}  #(move-selected 0 1)
                 #{:arrowleft}  #(move-selected -1 0)
                 #{:arrowright} #(move-selected 1 0)
-                #{:tab} tab-next})
+                #{(keyword "`")} tab-next})
 
 (def immediate-shortcuts
   {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))
