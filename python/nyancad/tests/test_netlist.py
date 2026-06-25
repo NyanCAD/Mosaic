@@ -19,6 +19,7 @@ from nyancad.netlist import (
     kfnetlist_from_nyancad,
     model_key,
     recursive_kfnetlist_from_nyancad,
+    resolve_sax_netlist,
 )
 
 # ---------------------------------------------------------------------------
@@ -1167,6 +1168,73 @@ class TestKfNetlistFromNyancad:
 
         assert list(recnet) == ["top"]
         assert _kf_data(recnet["top"])["instances"]["top_S1"]["component"] == "straight"
+
+
+# ---------------------------------------------------------------------------
+# resolve_sax_netlist — expand non-model factories, preserve model leaves
+# ---------------------------------------------------------------------------
+
+
+class TestResolveSaxNetlist:
+    """resolve_sax_netlist keeps SAX models as leaves and expands only factories."""
+
+    class _Cell:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def get_netlist(self, recursive=True):
+            return {self.name: {"instances": {}, "nets": [], "ports": []}}
+
+    class _Cells:
+        @staticmethod
+        def straight(**_settings):
+            return TestResolveSaxNetlist._Cell("straight")
+
+        @staticmethod
+        def ring(**_settings):
+            return TestResolveSaxNetlist._Cell("ring")
+
+    def test_preserves_model_backed_leaf_component_names(self):
+        recnet = {
+            "top": {
+                "instances": {
+                    "s1": {"component": "straight", "settings": {"length": 10}},
+                    "s2": {"component": "straight", "settings": {"length": 20}},
+                },
+                "nets": [],
+                "ports": [],
+            }
+        }
+
+        resolve_sax_netlist(
+            recnet,
+            self._Cells,
+            model_names={"straight"},
+        )
+
+        assert recnet["top"]["instances"]["s1"]["component"] == "straight"
+        assert recnet["top"]["instances"]["s2"]["component"] == "straight"
+        assert "straight_v0" not in recnet
+        assert "straight_v1" not in recnet
+
+    def test_variant_expands_non_model_cells_with_distinct_settings(self):
+        recnet = {
+            "top": {
+                "instances": {
+                    "r1": {"component": "ring", "settings": {"radius": 5}},
+                    "r2": {"component": "ring", "settings": {"radius": 10}},
+                },
+                "nets": [],
+                "ports": [],
+            }
+        }
+
+        resolve_sax_netlist(recnet, self._Cells, model_names={"straight"})
+
+        assert recnet["top"]["instances"]["r1"]["component"] == "ring_v0"
+        assert recnet["top"]["instances"]["r2"]["component"] == "ring_v1"
+        assert "ring_v0" in recnet
+        assert "ring_v1" in recnet
 
 
 # ---------------------------------------------------------------------------
