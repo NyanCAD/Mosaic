@@ -23,11 +23,11 @@ dependencies = [
     "anywidget>=0.9.0",
     "traitlets",
     "InSpice",
-    'vacask-bin>=0.3.3.dev0; platform_machine != "wasm32"',
     "holoviews",
 ]
 
 [project.optional-dependencies]
+vacask = ['vacask-bin>=0.3.3.dev0']
 test = ["pytest>=7.0", "kfnetlist>=0.1.4"]
 
 [project.urls]
