@@ -933,7 +933,9 @@ class NyanCircuit(NyanCADMixin, Circuit):
         cache_dir.mkdir(exist_ok=True)
         url_hash = hashlib.md5(archive_url.encode()).hexdigest()[:8]  # noqa: S324
         cached_file = cache_dir / f"{url_hash}_{Path(parsed.path).name}"
-        if not cached_file.exists():
+        if not cached_file.exists() and not any(
+            u == archive_url for u, _, _ in self._pending_downloads
+        ):
             self._pending_downloads.append((archive_url, cached_file, entrypoint))
         return (
             (cache_dir / cached_file.stem / entrypoint) if entrypoint else cached_file

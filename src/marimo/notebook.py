@@ -440,7 +440,7 @@ def _(mo):
             "xyce-serial",
             "xyce-parallel",
         ],
-        value="vacask",
+        value="ngspice-shared",
         label="Simulation engine",
     )
     simname
