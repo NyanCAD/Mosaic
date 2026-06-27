@@ -27,7 +27,7 @@ This document contains instructions for developers and maintainers working on th
    ```bash
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install marimo build
+   pip install "marimo<0.23.10" build  # newer marimo ships Pyodide 314, which can't load the bundled libngspice.so
    ```
 
 ## Development Workflow
