@@ -20,7 +20,11 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "marimo>=0.19.0",
+    # Cap below 0.23.10: that release bumped the WASM runtime to Pyodide 314
+    # (emscripten 5.0), whose dynamic-linker no longer resolves the invoke_*
+    # SjLj trampolines that the bundled libngspice-44.2.so (emscripten 3.1.58)
+    # imports, hanging the notebook on ngSpice_Init. 0.23.9 pins Pyodide 0.27.7.
+    "marimo>=0.19.0,<0.23.10",
     "uvicorn[standard]>=0.23.0",
     "nyancad>=0.18.3",
     "httpx>=0.25.0",
