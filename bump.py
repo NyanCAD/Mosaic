@@ -85,6 +85,10 @@ def main():
     if args.server == "skip" and (args.nyancad != "skip" or args.tag != "skip"):
         args.server = "patch"
         print("Auto-bumping server by patch (bundles frontend)")
+    # tag is always required to trigger a CI release
+    if args.tag == "skip":
+        args.tag = "patch"
+        print("Auto-bumping tag by patch (required for CI release)")
 
     if args.dry_run:
         print("Dry run mode - no changes will be made")
