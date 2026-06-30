@@ -60,15 +60,14 @@
 (s/def ::y number?)
 (s/def ::pointer-cache (s/map-of int? (s/keys :req-un [::x ::y])))
 (s/def ::tab-index nat-int?)
-;; Ctrl-drag connectivity. ::stretch is the geometric map
-;; {wire-id -> #{:start :end}} of endpoints that can follow the dragged devices,
-;; computed once at drag-start. ::stretch-on is the live Ctrl state (updated each
-;; move) gating whether the stretch is actually applied, so the user can toggle
-;; connectivity mid-drag.
+;; Ctrl-drag connectivity. ::stretch is {wire-id -> #{:start :end}} of endpoints
+;; that follow the dragged devices: present (the map) while Ctrl is held during a
+;; drag, nil otherwise. It is the single gate — wire-sym and the commit just check
+;; whether it's set. Recomputed on each Ctrl press (rare; selection/schematic are
+;; frozen mid-drag, so the map is stable), hence no separate cache.
 (s/def ::stretch (s/nilable (s/map-of string? set?)))
-(s/def ::stretch-on (s/nilable boolean?))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-state ::pointer-cache ::tab-index]
-                    :opt [::dragging ::staging ::stretch ::stretch-on]))
+                    :opt [::dragging ::staging ::stretch]))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
 
@@ -78,7 +77,6 @@
 (defonce selected (r/cursor ui [::selected]))
 (defonce delta (r/cursor ui [::delta]))
 (defonce stretch (r/cursor ui [::stretch]))
-(defonce stretch-on (r/cursor ui [::stretch-on]))
 (defonce staging (r/cursor ui [::staging]))
 (defonce notebook-state (r/cursor ui [::notebook-state]))
 (defonce tab-index (r/cursor ui [::tab-index]))
@@ -252,11 +250,11 @@
 
 (defn wire-sym [key wire]
   (let [{:keys [x y rx ry variant]} wire
-        ;; Ctrl-drag connectivity: when Ctrl is live (::stretch-on), shift the
-        ;; endpoint(s) flagged in ::stretch by the (rounded) drag delta. @stretch
-        ;; / @delta are only deref'd while Ctrl is held, so toggling Ctrl mid-drag
-        ;; flips the preview and otherwise nothing re-renders on the delta.
-        ends (when @stretch-on (get @stretch key))
+        ;; Ctrl-drag connectivity: if this wire's endpoint(s) are flagged in
+        ;; ::stretch (non-nil only while Ctrl is held during a drag), shift them by
+        ;; the (rounded) drag delta. @delta is only deref'd for flagged wires, so
+        ;; unattached wires don't re-render on the delta during a normal drag.
+        ends (get @stretch key)
         [sdx sdy] (if ends [(math/round (:x @delta 0)) (math/round (:y @delta 0))] [0 0])
         [d1x d1y] (if (:start ends) [sdx sdy] [0 0])
         [d2x d2y] (if (:end ends)   [sdx sdy] [0 0])
@@ -1770,12 +1768,14 @@
   (let [[x y] (cm/viewbox-coord e)
         [xs ys] (::mouse-start @ui)
         dx (- x xs)
-        dy (- y ys)]
-    ;; Update the delta and the live Ctrl state together; ::stretch-on only
-    ;; notifies its watchers when the boolean actually flips.
-    (swap! ui #(-> %
-                   (update ::delta assoc :x dx :y dy)
-                   (assoc ::stretch-on (.-ctrlKey e))))))
+        dy (- y ys)
+        ;; ::stretch is the live gate: the attached-wire map while Ctrl is held,
+        ;; nil otherwise. Recompute only on a fresh Ctrl press (prev nil) — rare,
+        ;; and the map is stable since selection/schematic are frozen mid-drag.
+        prev (::stretch @ui)
+        st (when (.-ctrlKey e)
+             (or prev (connected-wire-ends @schematic @point-index (::selected @ui))))]
+    (swap! ui #(-> % (update ::delta assoc :x dx :y dy) (assoc ::stretch st)))))
 
 (defn drag-wire [^js e]
   (let [[x y] (cm/viewbox-coord e)]
@@ -1917,22 +1917,19 @@
          (swap! ui assoc
                 ::dragging nil
                 ::staging nil
-                ::stretch nil
-                ::stretch-on nil)
+                ::stretch nil)
          (swap! ui assoc
                 ::dragging nil
                 ::tool ::cursor
                 ::staging nil
-                ::stretch nil
-                ::stretch-on nil))
+                ::stretch nil))
        (swap! ui assoc ::selected #{}))))
   ([new-tool]
    (swap! ui assoc
           ::dragging nil
           ::tool new-tool
           ::staging nil
-          ::stretch nil
-          ::stretch-on nil)))
+          ::stretch nil)))
 
 (defonce probechan (js/BroadcastChannel. "probe"))
 (defn probe-element [k]
@@ -1966,17 +1963,9 @@
         ::eraser (eraser-drag k e)
         ::probe (probe-element k)
         (swap! ui (fn [ui]
-                    (let [ui (-> ui
-                                 (update ::selected update-selection)
-                                 (drag-type))]
-                      ;; Always precompute the wires whose endpoints could follow
-                      ;; the dragged devices; whether they actually do is gated
-                      ;; live by ::stretch-on (Ctrl), so the user can change their
-                      ;; mind mid-drag. Seed it from the mousedown Ctrl state.
-                      (assoc ui
-                             ::stretch (connected-wire-ends
-                                        @schematic @point-index (::selected ui))
-                             ::stretch-on (.-ctrlKey e)))))))))
+                    (-> ui
+                        (update ::selected update-selection)
+                        (drag-type))))))))
 
 (defn drag-start-box [e]
   (swap! ui assoc
@@ -2127,7 +2116,7 @@
                           ^{:key k} [draw-pattern size m port k v])
       :else ^{:key k} [(fn [k _v] (println "invalid model for" k))])))
 
-(defn end-ui [bg? selected dx dy stretch?]
+(defn end-ui [bg? selected dx dy]
   (letfn [(clean-selected [ui sch]
             (update ui ::selected
                     (fn [sel]
@@ -2136,16 +2125,15 @@
             (-> ui
                 (assoc ::dragging nil
                        ::delta {:x 0 :y 0 :rx 0 :ry 0}
-                       ::stretch nil
-                       ::stretch-on nil)
+                       ::stretch nil)
                 deselect
                 (clean-selected @schematic)))
           (round-coords [{x :x y :y :as dev}]
             (assoc dev
                    :x (math/round (+ x dx))
                    :y (math/round (+ y dy))))]
-    ;; Gate the commit on the Ctrl state at release, so it matches the preview.
-    (let [st (when stretch? (::stretch @ui))]  ; capture before endfn clears it
+    ;; ::stretch is the live gate, so commit == preview (WYSIWYG).
+    (let [st (::stretch @ui)]                  ; capture before endfn clears it
       (swap! ui endfn)
       (swap! schematic update-keys selected round-coords)
       (when (seq st) (swap! schematic commit-stretch st dx dy))
@@ -2171,7 +2159,6 @@
            ::dragging nil
            ::delta {:x 0 :y 0 :rx 0 :ry 0}
            ::stretch nil
-           ::stretch-on nil
            ::selected (set sel))))
 
 (defn drag-end [e]
@@ -2189,7 +2176,7 @@
           (commit-staged dev)
           (swap! ui assoc ::staging nil ::dragging nil)))
       (= (::tool @ui) ::eraser) (post-action!)
-      :else (end-ui bg? selected dx dy (.-ctrlKey e)))))
+      :else (end-ui bg? selected dx dy))))
 
 (defn add-device [cell [x y] & args]
   (let [kwargs (apply array-map args)
