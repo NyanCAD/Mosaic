@@ -1769,13 +1769,17 @@
         [xs ys] (::mouse-start @ui)
         dx (- x xs)
         dy (- y ys)
-        ;; ::stretch is the live gate: the attached-wire map while Ctrl is held,
-        ;; nil otherwise. Recompute only on a fresh Ctrl press (prev nil) — rare,
-        ;; and the map is stable since selection/schematic are frozen mid-drag.
-        prev (::stretch @ui)
-        st (when (.-ctrlKey e)
-             (or prev (connected-wire-ends @schematic @point-index (::selected @ui))))]
-    (swap! ui #(-> % (update ::delta assoc :x dx :y dy) (assoc ::stretch st)))))
+        ctrl? (.-ctrlKey e)
+        on?   (::stretch @ui)]
+    (swap! ui update ::delta assoc :x dx :y dy)
+    ;; ::stretch is the live gate. Toggle it on the Ctrl edges only: compute the
+    ;; attached-wire map on press (rare, and stable since selection/schematic are
+    ;; frozen mid-drag), drop it on release; leave it untouched in between.
+    (cond
+      (and ctrl? (not on?))
+      (swap! ui assoc ::stretch (connected-wire-ends @schematic @point-index (::selected @ui)))
+      (and (not ctrl?) on?)
+      (swap! ui dissoc ::stretch))))
 
 (defn drag-wire [^js e]
   (let [[x y] (cm/viewbox-coord e)]
