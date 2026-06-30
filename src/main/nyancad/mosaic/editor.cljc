@@ -60,8 +60,11 @@
 (s/def ::y number?)
 (s/def ::pointer-cache (s/map-of int? (s/keys :req-un [::x ::y])))
 (s/def ::tab-index nat-int?)
+;; Alt-drag connectivity: {wire-id -> #{:start :end}} of endpoints that follow
+;; the dragged devices. Present only during an Alt-drag.
+(s/def ::stretch (s/nilable (s/map-of string? set?)))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-state ::pointer-cache ::tab-index]
-                    :opt [::dragging ::staging]))
+                    :opt [::dragging ::staging ::stretch]))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
 
@@ -70,6 +73,7 @@
 (defonce tool (r/cursor ui [::tool]))
 (defonce selected (r/cursor ui [::selected]))
 (defonce delta (r/cursor ui [::delta]))
+(defonce stretch (r/cursor ui [::stretch]))
 (defonce staging (r/cursor ui [::staging]))
 (defonce notebook-state (r/cursor ui [::notebook-state]))
 (defonce tab-index (r/cursor ui [::tab-index]))
@@ -243,10 +247,17 @@
 
 (defn wire-sym [key wire]
   (let [{:keys [x y rx ry variant]} wire
-        x1 (* (+ x 0.5) grid-size)
-        y1 (* (+ y 0.5) grid-size)
-        x2 (* (+ x rx 0.5) grid-size)
-        y2 (* (+ y ry 0.5) grid-size)
+        ;; Alt-drag connectivity: shift the endpoint(s) flagged in ::stretch by
+        ;; the (rounded) drag delta. @delta is only deref'd when this wire is
+        ;; flagged, so unattached wires don't re-render during a normal drag.
+        ends (get @stretch key)
+        [sdx sdy] (if ends [(math/round (:x @delta 0)) (math/round (:y @delta 0))] [0 0])
+        [d1x d1y] (if (:start ends) [sdx sdy] [0 0])
+        [d2x d2y] (if (:end ends)   [sdx sdy] [0 0])
+        x1 (* (+ x d1x 0.5) grid-size)
+        y1 (* (+ y d1y 0.5) grid-size)
+        x2 (* (+ x rx d2x 0.5) grid-size)
+        y2 (* (+ y ry d2y 0.5) grid-size)
         [mx my] (case variant "hv" [x2 y1] "vh" [x1 y2] nil)
         pts (if mx
               (str x1 "," y1 " " mx "," my " " x2 "," y2)
@@ -1280,6 +1291,49 @@
 ;; spec for when to deref this track vs. call the builder directly.
 (def point-index (r/track #(build-point-index @schematic)))
 
+;; --- Alt-drag connectivity: stretch wires attached to dragged devices ----
+
+(defn connected-wire-ends
+  "{wire-id -> #{:start :end}}: non-selected wires whose endpoint sits on a
+   selected device's port. point-index :ports excludes wires, so 'a selected id
+   has a port at this cell' == 'a selected device pin is here'."
+  [sch pt-idx selected]
+  (letfn [(stretched [x y k]
+            (when (some selected (map first (get-in pt-idx [[x y] :ports]))) k))]
+    (into {}
+          (for [[id {:keys [type x y rx ry]}] sch
+                :when (and (= "wire" type) (not (contains? selected id)))
+                :let  [ends (into #{} (remove nil?)
+                                  [(stretched x y :start)
+                                   (stretched (+ x rx) (+ y ry) :end)])]
+                :when (seq ends)]
+            [id ends]))))
+
+(defn stretch-wire
+  "Move the wire's flagged end(s) by (dx,dy). :start moves :x/:y and compensates
+   :rx/:ry so the far end stays put; :end moves :rx/:ry. Variant is preserved.
+   A double-sided wire (#{:start :end}) translates wholesale, as the two :rx/:ry
+   compensations cancel. Rounds the touched fields; rounding untouched integer
+   fields is harmless."
+  [wire ends dx dy]
+  (-> (cond-> wire
+        (:start ends) (-> (update :x + dx) (update :y + dy)
+                          (update :rx - dx) (update :ry - dy))
+        (:end ends)   (-> (update :rx + dx) (update :ry + dy)))
+      (update :x math/round)  (update :y math/round)
+      (update :rx math/round) (update :ry math/round)))
+
+(defn commit-stretch
+  "PAtom merge fn (map-keyed swap): move each wire's flagged end(s) by (dx,dy).
+   Guards on (contains? s id) so conflict retries — which refetch only the
+   still-conflicting subset while the full `stretch` map is re-passed — don't
+   fabricate docs for already-committed ids via a nil `(get s id)`."
+  [sch stretch dx dy]
+  (reduce-kv (fn [s id ends]
+               (cond-> s
+                 (contains? s id) (update id stretch-wire ends dx dy)))
+             sch stretch))
+
 ;; --- wire-networks: shared BFS over the wire graph -----------------------
 
 (def ^:private wire-like #{"wire" "port"})
@@ -1852,17 +1906,20 @@
        (if (and (::staging uiv) (= (::tool uiv) ::wire))
          (swap! ui assoc
                 ::dragging nil
-                ::staging nil)
+                ::staging nil
+                ::stretch nil)
          (swap! ui assoc
                 ::dragging nil
                 ::tool ::cursor
-                ::staging nil))
+                ::staging nil
+                ::stretch nil))
        (swap! ui assoc ::selected #{}))))
   ([new-tool]
    (swap! ui assoc
           ::dragging nil
           ::tool new-tool
-          ::staging nil)))
+          ::staging nil
+          ::stretch nil)))
 
 (defonce probechan (js/BroadcastChannel. "probe"))
 (defn probe-element [k]
@@ -1896,9 +1953,15 @@
         ::eraser (eraser-drag k e)
         ::probe (probe-element k)
         (swap! ui (fn [ui]
-                    (-> ui
-                        (update ::selected update-selection)
-                        (drag-type))))))))
+                    (let [ui (-> ui
+                                 (update ::selected update-selection)
+                                 (drag-type))]
+                      ;; Alt held: precompute the wires whose endpoints follow the
+                      ;; dragged devices. Drives both the preview and the commit.
+                      (cond-> ui
+                        (.-altKey e)
+                        (assoc ::stretch (connected-wire-ends
+                                          @schematic @point-index (::selected ui)))))))))))
 
 (defn drag-start-box [e]
   (swap! ui assoc
@@ -2057,16 +2120,19 @@
           (endfn [ui]
             (-> ui
                 (assoc ::dragging nil
-                       ::delta {:x 0 :y 0 :rx 0 :ry 0})
+                       ::delta {:x 0 :y 0 :rx 0 :ry 0}
+                       ::stretch nil)
                 deselect
                 (clean-selected @schematic)))
           (round-coords [{x :x y :y :as dev}]
             (assoc dev
                    :x (math/round (+ x dx))
                    :y (math/round (+ y dy))))]
-    (swap! ui endfn)
-    (swap! schematic update-keys selected round-coords)
-    (post-action!)))
+    (let [st (::stretch @ui)]                 ; capture before endfn clears it
+      (swap! ui endfn)
+      (swap! schematic update-keys selected round-coords)
+      (when (seq st) (swap! schematic commit-stretch st dx dy))
+      (post-action!))))
 
 (defn drag-end-box []
   (let [[x y] (::mouse-start @ui)
@@ -2087,6 +2153,7 @@
     (swap! ui assoc
            ::dragging nil
            ::delta {:x 0 :y 0 :rx 0 :ry 0}
+           ::stretch nil
            ::selected (set sel))))
 
 (defn drag-end [e]
