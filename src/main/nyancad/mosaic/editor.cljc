@@ -1649,7 +1649,12 @@
 
 (defn commit-staged [dev]
   (let [named (update dev :name (fnil identity (make-name (:type dev))))
-        id (str group sep (:name named))
+        ;; Port devices (ground, supply, labels) keep a fixed/constant display
+        ;; :name, so it can't double as a unique id the way "R1", "C1", etc.
+        ;; do for other device types. Give ports their own numbered id instead,
+        ;; matching the scheme paste already uses for pasted port devices.
+        id-name (if (= "port" (:type named)) (make-name "port") (:name named))
+        id (str group sep id-name)
         model-def (when (:model named)
                     (get @modeldb (cm/model-key (:model named))))
         defaults (cm/model-prop-defaults model-def)
