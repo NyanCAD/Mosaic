@@ -60,8 +60,14 @@
 (s/def ::y number?)
 (s/def ::pointer-cache (s/map-of int? (s/keys :req-un [::x ::y])))
 (s/def ::tab-index nat-int?)
+;; Ctrl-drag connectivity. ::stretch is {wire-id -> #{:start :end}} of endpoints
+;; that follow the dragged devices: present (the map) while Ctrl is held during a
+;; drag, nil otherwise. It is the single gate — the staging preview and the commit
+;; check whether it's set. Recomputed on each Ctrl press (rare; selection/schematic
+;; are frozen mid-drag, so the map is stable), hence no separate cache.
+(s/def ::stretch (s/nilable (s/map-of string? set?)))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-state ::pointer-cache ::tab-index]
-                    :opt [::dragging ::staging]))
+                    :opt [::dragging ::staging ::stretch]))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
 
@@ -1280,6 +1286,65 @@
 ;; spec for when to deref this track vs. call the builder directly.
 (def point-index (r/track #(build-point-index @schematic)))
 
+;; --- Alt-drag connectivity: stretch wires attached to dragged devices ----
+
+(defn connected-wire-ends
+  "{wire-id -> #{:start :end}}: non-selected wires whose endpoint sits on a
+   selected device's port. point-index :ports excludes wires, so 'a selected id
+   has a port at this cell' == 'a selected device pin is here'."
+  [sch pt-idx selected]
+  (letfn [(stretched [x y k]
+            (when (some selected (map first (get-in pt-idx [[x y] :ports]))) k))]
+    (into {}
+          (for [[id {:keys [type x y rx ry]}] sch
+                :when (and (= "wire" type) (not (contains? selected id)))
+                :let  [ends (into #{} (remove nil?)
+                                  [(stretched x y :start)
+                                   (stretched (+ x rx) (+ y ry) :end)])]
+                :when (seq ends)]
+            [id ends]))))
+
+(defn stretch-wire
+  "Move the wire's flagged end(s) by (dx,dy), unrounded (callers round on commit).
+   :start moves :x/:y and compensates :rx/:ry so the far end stays put; :end moves
+   :rx/:ry. A double-sided wire (#{:start :end}) translates wholesale, as the two
+   :rx/:ry compensations cancel.
+
+   Keeping wires orthogonal: a cardinal (axis-aligned) straight bent off-axis
+   becomes an hv/vh elbow that keeps the non-dragged end pointing in its original
+   direction — a fixed choice that never flips mid-drag. Real diagonals (drawn
+   with Ctrl) and existing elbows are left as-is."
+  [{:keys [variant] :as wire} ends dx dy]
+  (let [cardinal?   (and (#{nil "d"} variant)
+                         (or (zero? (:rx wire)) (zero? (:ry wire))))
+        horiz?      (zero? (:ry wire))                  ; original orientation
+        drag-start? (and (:start ends) (not (:end ends)))
+        w (cond-> wire
+            (:start ends) (-> (update :x + dx) (update :y + dy)
+                              (update :rx - dx) (update :ry - dy))
+            (:end ends)   (-> (update :rx + dx) (update :ry + dy)))]
+    (cond-> w
+      (and cardinal? (not (zero? (:rx w))) (not (zero? (:ry w))))
+      (assoc :variant (if (not= horiz? drag-start?) "hv" "vh")))))
+
+(defn commit-stretch
+  "PAtom merge fn (map-keyed swap): move each wire's flagged end(s) by (dx,dy) and
+   snap to the grid. A stretch that collapses a wire onto a single cell deletes it
+   (nil tombstone) — like `same-tile?` refuses zero-length wires when drawing; the
+   coincident ports stay connected via the shared cell, so nothing disconnects.
+   Guards on (contains? s id) so conflict retries — which refetch only the still-
+   conflicting subset while the full `stretch` map is re-passed — don't fabricate
+   docs for already-committed ids via a nil `(get s id)`."
+  [sch stretch dx dy]
+  (reduce-kv (fn [s id ends]
+               (if (contains? s id)
+                 (let [w (-> (stretch-wire (get s id) ends dx dy)
+                             (update :x math/round)  (update :y math/round)
+                             (update :rx math/round) (update :ry math/round))]
+                   (assoc s id (when-not (and (zero? (:rx w)) (zero? (:ry w))) w)))
+                 s))
+             sch stretch))
+
 ;; --- wire-networks: shared BFS over the wire graph -----------------------
 
 (def ^:private wire-like #{"wire" "port"})
@@ -1648,7 +1713,10 @@
                     (+ y (/ h 2)))))
 
 (defn commit-staged [dev]
-  (let [named (update dev :name (fnil identity (make-name (:type dev))))
+  (let [;; Snap to grid on drop (staged x/y follow the cursor unrounded). Wire
+        ;; staging is already integer, so this is a no-op there.
+        dev (-> dev (update :x math/round) (update :y math/round))
+        named (update dev :name (fnil identity (make-name (:type dev))))
         ;; Port devices (ground, supply, labels) keep a fixed/constant display
         ;; :name, so it can't double as a unique id the way "R1", "C1", etc.
         ;; do for other device types. Give ports their own numbered id instead,
@@ -1715,8 +1783,18 @@
   (let [[x y] (cm/viewbox-coord e)
         [xs ys] (::mouse-start @ui)
         dx (- x xs)
-        dy (- y ys)]
-    (swap! delta assoc :x dx :y dy)))
+        dy (- y ys)
+        ctrl? (.-ctrlKey e)
+        on?   (::stretch @ui)]
+    (swap! ui update ::delta assoc :x dx :y dy)
+    ;; ::stretch is the live gate. Toggle it on the Ctrl edges only: compute the
+    ;; attached-wire map on press (rare, and stable since selection/schematic are
+    ;; frozen mid-drag), drop it on release; leave it untouched in between.
+    (cond
+      (and ctrl? (not on?))
+      (swap! ui assoc ::stretch (connected-wire-ends @schematic @point-index (::selected @ui)))
+      (and (not ctrl?) on?)
+      (swap! ui dissoc ::stretch))))
 
 (defn drag-wire [^js e]
   (let [[x y] (cm/viewbox-coord e)]
@@ -1744,8 +1822,10 @@
   (let [[x y] (cm/viewbox-coord e)
         bg (get-in models [(:type @staging) ::bg])
         [width height] (when (vector? bg) bg)
-        xm (math/round (- x (or width 0) 0.5))
-        ym (math/round (- y (or height 0) 0.5))]
+        ;; Unrounded: the placement ghost follows the cursor smoothly, like the
+        ;; drag ghost; commit-staged rounds so it snaps to the grid on drop.
+        xm (- x (or width 0) 0.5)
+        ym (- y (or height 0) 0.5)]
     (swap! staging assoc :x xm :y ym)))
 
 (defn wire-drag [e]
@@ -1857,17 +1937,20 @@
        (if (and (::staging uiv) (= (::tool uiv) ::wire))
          (swap! ui assoc
                 ::dragging nil
-                ::staging nil)
+                ::staging nil
+                ::stretch nil)
          (swap! ui assoc
                 ::dragging nil
                 ::tool ::cursor
-                ::staging nil))
+                ::staging nil
+                ::stretch nil))
        (swap! ui assoc ::selected #{}))))
   ([new-tool]
    (swap! ui assoc
           ::dragging nil
           ::tool new-tool
-          ::staging nil)))
+          ::staging nil
+          ::stretch nil)))
 
 (defonce probechan (js/BroadcastChannel. "probe"))
 (defn probe-element [k]
@@ -2062,16 +2145,20 @@
           (endfn [ui]
             (-> ui
                 (assoc ::dragging nil
-                       ::delta {:x 0 :y 0 :rx 0 :ry 0})
+                       ::delta {:x 0 :y 0 :rx 0 :ry 0}
+                       ::stretch nil)
                 deselect
                 (clean-selected @schematic)))
           (round-coords [{x :x y :y :as dev}]
             (assoc dev
                    :x (math/round (+ x dx))
                    :y (math/round (+ y dy))))]
-    (swap! ui endfn)
-    (swap! schematic update-keys selected round-coords)
-    (post-action!)))
+    ;; ::stretch is the live gate, so commit == preview (WYSIWYG).
+    (let [st (::stretch @ui)]                  ; capture before endfn clears it
+      (swap! ui endfn)
+      (swap! schematic update-keys selected round-coords)
+      (when (seq st) (swap! schematic commit-stretch st dx dy))
+      (post-action!))))
 
 (defn drag-end-box []
   (let [[x y] (::mouse-start @ui)
@@ -2092,6 +2179,7 @@
     (swap! ui assoc
            ::dragging nil
            ::delta {:x 0 :y 0 :rx 0 :ry 0}
+           ::stretch nil
            ::selected (set sel))))
 
 (defn drag-end [e]
@@ -2678,10 +2766,13 @@
          dr ::dragging
          v ::staging
          tool ::tool
-         {x :x y :y} ::delta
+         st ::stretch
+         {x :x y :y :or {x 0 y 0}} ::delta
          [sx sy] ::mouse-start} @ui
-        vx (* grid-size (math/round x))
-        vy (* grid-size (math/round y))]
+        ;; Unrounded: the staged ghost follows the cursor smoothly; the grid
+        ;; lines show where it lands. Commit rounds (round-coords / commit-stretch).
+        vx (* grid-size x)
+        vy (* grid-size y)]
     (cond
       ;; Only render staging when actively placing a device or drawing a wire
       (and v (or (= tool ::device)
@@ -2695,10 +2786,20 @@
                      :y (* (min sy (+ sy y)) grid-size)
                      :width (abs (* x grid-size))
                      :height (abs (* y grid-size))}]
-      (and sel dr) [:g.staging {:style {:transform (str "translate(" vx "px, " vy "px)")}}
-                    [schematic-elements
-                     (let [schem @schematic]
-                       (map #(vector % (get schem %)) sel))]])))
+      (and sel dr)
+      [:<>
+       ;; Selected devices ride one uniform translate.
+       [:g.staging {:style {:transform (str "translate(" vx "px, " vy "px)")}}
+        [schematic-elements
+         (let [schem @schematic]
+           (map #(vector % (get schem %)) sel))]]
+       ;; Ctrl-drag: attached wires are ghosted with only their flagged end moved,
+       ;; so they can't ride the group translate — render them displaced instead.
+       (when st
+         (into [:g.staging]
+               (for [[id ends] st
+                     :let [w (stretch-wire (get @schematic id) ends x y)]]
+                 ^{:key id} [wire-sym id w])))])))
 
 (defn- theme-attrs
   "CSS classes for the current manual theme. :root:has() rules in
