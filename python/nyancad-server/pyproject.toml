@@ -24,7 +24,7 @@ dependencies = [
     # (emscripten 5.0), whose dynamic-linker no longer resolves the invoke_*
     # SjLj trampolines that the bundled libngspice-44.2.so (emscripten 3.1.58)
     # imports, hanging the notebook on ngSpice_Init. 0.23.9 pins Pyodide 0.27.7.
-    "marimo>=0.19.0,<0.23.10",
+    "marimo>=0.19.0,<0.23.14",
     "uvicorn[standard]>=0.23.0",
     "nyancad>=0.18.5",
     "httpx>=0.25.0",
