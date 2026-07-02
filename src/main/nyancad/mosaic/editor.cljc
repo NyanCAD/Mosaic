@@ -1647,6 +1647,35 @@
                     (+ x (/ w 2))
                     (+ y (/ h 2)))))
 
+;; @tags mosaic viewport zoom
+(defn fit-viewbox
+  [bx by bw bh container-w container-h]
+  (let [pad 0.1
+        pw (* bw pad) ph (* bh pad)
+        cx (- bx pw) cy (- by ph)
+        cw (+ bw (* 2 pw)) ch (+ bh (* 2 ph))
+        cw (max cw grid-size) ch (max ch grid-size)
+        content-ar (/ cw ch)
+        container-ar (/ container-w container-h)]
+    (if (> container-ar content-ar)
+      (let [new-w (* ch container-ar)
+            dx (/ (- new-w cw) 2)]
+        [(- cx dx) cy new-w ch])
+      (let [new-h (/ cw container-ar)
+            dy (/ (- new-h ch) 2)]
+        [cx (- cy dy) cw new-h]))))
+
+;; @tags mosaic viewport zoom
+(defn zoom-to-fit []
+  (when-let [^js svg (js/document.querySelector ".mosaic-canvas")]
+    (when-let [^js el (.querySelector svg ".schematic-content")]
+      (let [bbox (.getBBox el)
+            bw (.-width bbox) bh (.-height bbox)]
+        (when (and (pos? bw) (pos? bh))
+          (let [vb (fit-viewbox (.-x bbox) (.-y bbox) bw bh
+                                (.-clientWidth svg) (.-clientHeight svg))]
+            (reset! ui (assoc @ui ::zoom vb))))))))
+
 (defn commit-staged [dev]
   (let [named (update dev :name (fnil identity (make-name (:type dev))))
         ;; Port devices (ground, supply, labels) keep a fixed/constant display
@@ -2482,6 +2511,9 @@
      [:a {:title "zoom out [scroll wheel/pinch]"
           :on-click #(button-zoom 1)}
       [cm/zoom-out]]
+     [:a {:title "zoom to fit [Home]"
+          :on-click #(zoom-to-fit)}
+      [cm/zoom-fit]]
      [:a {:title (str "undo [" cm/mod-key "+z]")
           :on-click undo-schematic}
       [cm/undoi]]
@@ -2748,9 +2780,10 @@
               :y (* -500 grid-size)
               :width (* 1000 grid-size)
               :height (* 1000 grid-size)}]
-      [schematic-elements @schematic]
-      [schematic-airwires]
-      [schematic-dots]
+      [:g.schematic-content
+       [schematic-elements @schematic]
+       [schematic-airwires]
+       [schematic-dots]]
       [tool-elements]]]
     [notebook-panel notebook-state]]
    [cm/contextmenu]
@@ -2787,7 +2820,8 @@
                 #{:arrowdown}  #(move-selected 0 1)
                 #{:arrowleft}  #(move-selected -1 0)
                 #{:arrowright} #(move-selected 1 0)
-                #{(keyword "`")} tab-next})
+                #{(keyword "`")} tab-next
+                #{:home} zoom-to-fit})
 
 (def immediate-shortcuts
   {#{(keyword " ")} (fn [] (swap! ui #(assoc % ::tool ::pan ::prev-tool (::tool %))))
