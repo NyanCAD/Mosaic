@@ -975,11 +975,6 @@ g.device {
     -webkit-user-select: none;
 }
 
-g.staging,
-g.toolstaging g.device {
-    transition: all 70ms ease-out;
-}
-
 @media (hover: none) {
     .device g.toolstaging {
         display: none;
