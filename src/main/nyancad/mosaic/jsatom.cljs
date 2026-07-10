@@ -18,6 +18,14 @@
 
 (defonce vscode (js/acquireVsCodeApi))
 
+(defn injected-version
+  "Read a host document version from a hidden input the extension injects,
+   defaulting to 1 when the input is absent or unparseable so the self-echo
+   guard degrades to its old behaviour rather than breaking."
+  [id]
+  (let [v (some-> (js/document.getElementById id) .-value (js/parseInt 10))]
+    (if (and (number? v) (not (js/isNaN v))) v 1)))
+
 (defn json-atom
   "Create a JsAtom from a JSON document string, tagged with a group name.
    Listens for update messages from the VSCode extension host,

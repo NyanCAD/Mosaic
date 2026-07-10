@@ -3,7 +3,7 @@
 ; SPDX-License-Identifier: MPL-2.0
 
 (ns nyancad.mosaic.editor.platform-vscode
-  (:require [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request!]]
+  (:require [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request! injected-version]]
             [nyancad.mosaic.common :as cm]
             [reagent.core :as r]
             [reagent.dom.client :as rdc]
@@ -15,14 +15,6 @@
 (def done? jsatom/done?)
 
 ;; --- State ---
-
-(defn- injected-version
-  "Read a host document version injected into a hidden input, defaulting to 1
-   when absent or unparseable so the self-echo guard degrades to its old
-   behaviour rather than breaking."
-  [id]
-  (let [v (some-> (js/document.getElementById id) .-value (js/parseInt 10))]
-    (if (or (nil? v) (js/isNaN v)) 1 v)))
 
 (def group (.-value (js/document.getElementById "group")))
 (defonce schematic (json-atom "schematic"

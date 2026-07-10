@@ -16,14 +16,10 @@
             reagent.ratom))
 
 (defn value->js
-  "Convert a Clojure value to the JS value jsonc/modify expects, where
-   js/undefined means \"delete this key\".
-
-   Only nil deletes. The historical `(or (clj->js value) js/undefined)` also
-   collapsed boolean `false` to js/undefined (0 and \"\" happen to survive,
-   since they are truthy under ClojureScript's `or`), silently deleting a key
-   whenever a field was set to false — see write-false-survives in
-   jsatom_test. clj->js of false/0/\"\" round-trips correctly through jsonc."
+  "Convert a Clojure value to the JS value jsonc/modify expects. Only nil maps to
+   js/undefined (delete the key); everything else — including false, 0 and \"\" —
+   round-trips through clj->js. (A prior `(or (clj->js v) js/undefined)` collapsed
+   boolean false to a delete; see falsy-values-survive in jsatom_test.)"
   [value]
   (if (nil? value) js/undefined (clj->js value)))
 
@@ -47,23 +43,22 @@
    seq of [path value] pairs to emit as edit messages. Mirrors the set/map/
    coll/scalar dispatch in the original pouch-swap!."
   [x data]
-  (cond
-    (set? x)  (map (fn [k] [[k] (get data k)]) x)
-    (map? x)  (map (fn [k] [[k] (get data k)]) (keys x))
-    (coll? x) [[x (get-in data x)]]
-    :else     [[[x] (get data x)]]))
+  (let [entry (fn [k] [[k] (get data k)])]
+    (cond
+      (set? x)  (map entry x)
+      (map? x)  (map entry (keys x))
+      (coll? x) [[x (get-in data x)]]
+      :else     [[[x] (get data x)]])))
 
 (defn apply-echo
-  "Apply a host->webview \"update\" message to the webview's {:doc :version}.
-   Only applies when the incoming version is strictly greater than the current
-   one (the version guard). Returns
-   {:applied? bool :doc <string> :version <n> :cache <state>}."
-  [{:keys [doc version]} ^js incoming]
+  "Apply a host->webview \"update\" message to the webview's current document
+   string and version. Returns {:doc :version :cache} when the incoming version
+   is strictly greater than the current one (the version guard), else nil."
+  [doc version ^js incoming]
   (let [incoming-version (.-version incoming)]
-    (if (> incoming-version version)
+    (when (> incoming-version version)
       (let [doc' (jsonc/applyEdits doc (.-update incoming))]
-        {:applied? true :doc doc' :version incoming-version :cache (doc->state doc')})
-      {:applied? false :doc doc :version version})))
+        {:doc doc' :version incoming-version :cache (doc->state doc')}))))
 
 (defn- pouch-swap! [^js ja f x & args]
   (let [old @(.-cache ja)
@@ -119,12 +114,10 @@
                     (when (= (.-group msg) group)
                       (case (.-type msg)
                         "update"
-                        (let [{:keys [applied?] :as result}
-                              (apply-echo {:doc @document :version @version} msg)]
-                          (when applied?
-                            (reset! document (:doc result))
-                            (reset! version  (:version result))
-                            (reset! cache    (:cache result))))
+                        (when-let [res (apply-echo @document @version msg)]
+                          (reset! document (:doc res))
+                          (reset! version  (:version res))
+                          (reset! cache    (:cache res)))
 
                         "resync"
                         (let [text (.-text msg)]

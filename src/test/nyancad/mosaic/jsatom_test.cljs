@@ -68,30 +68,35 @@
          (protocol/make-json-atom "schematic" doc cache post! init-version)]
      {:bus bus :host host :cache cache :ja ja :receive! receive!})))
 
+(defn- apply-ops-to-host!
+  "Apply already-validated bridge ops to a real TextDocument, sorted descending
+   by offset so original-relative offsets stay valid (VSCode/jsonc apply edits
+   against the pre-edit document). Returns [new-doc new-version]."
+  [^js doc ops]
+  (let [sorted  (sort-by (fn [op] (.offsetAt doc (.-start ^js (:range op)))) > ops)
+        changes (into-array (map (fn [op] #js{:range (:range op) :text (:content op)}) sorted))
+        new-ver (inc (.-version doc))]
+    [(.update lsp/TextDocument doc changes new-ver) new-ver]))
+
 (defn- host-apply!
   "Mirror of extension.cljc/create-atom-channel's edit-queue + change-forward:
-   validate via the shared bridge, apply to the real TextDocument (descending by
-   offset so original-relative offsets stay valid), then enqueue the host->webview
-   echo tagged with the new document version. Returns :applied or :rejected."
+   validate via the shared bridge, apply to the real TextDocument, then enqueue
+   the host->webview echo tagged with the new document version. On reject, mirror
+   the extension by enqueueing an authoritative resync snapshot."
   [h ^js msg]
   (let [^js doc @(:host h)
         ops     (bridge/build-edit-ops (LspDoc. doc) (.-update msg))]
     (if (= bridge/rejected ops)
-      ;; mirror extension.cljc: on reject, send an authoritative resync snapshot
-      (do (swap! (:bus h) conj
-                 {:dir :webview
-                  :msg #js{:type "resync" :group (.-group msg)
-                           :version (.-version doc) :text (.getText doc)}})
-          :rejected)
-      (let [sorted  (sort-by (fn [op] (.offsetAt doc (.-start ^js (:range op)))) > ops)
-            changes (into-array (map (fn [op] #js{:range (:range op) :text (:content op)}) sorted))
-            new-ver (inc (.-version doc))]
-        (reset! (:host h) (.update lsp/TextDocument doc changes new-ver))
+      (swap! (:bus h) conj
+             {:dir :webview
+              :msg #js{:type "resync" :group (.-group msg)
+                       :version (.-version doc) :text (.getText doc)}})
+      (let [[doc' new-ver] (apply-ops-to-host! doc ops)]
+        (reset! (:host h) doc')
         (swap! (:bus h) conj
                {:dir :webview
                 :msg #js{:type "update" :group (.-group msg)
-                         :version new-ver :update (.-update msg)}})
-        :applied))))
+                         :version new-ver :update (.-update msg)}})))))
 
 (defn- external-edit!
   "Simulate an edit from outside the webview (user typing, another editor): replace
@@ -194,35 +199,18 @@
     (is (valid-json? (host-text h)))
     (is (not (contains? (doc->state (host-text h)) "C1")))))
 
-;; Falsy values: probe whether false / 0 / "" survive or get deleted.
+;; Falsy values: only nil should delete a key; false / 0 / "" must survive.
 ;; (Avoid :x/:y, which doc->state backfills and would mask a lost key.)
-(deftest write-false-survives
-  (let [h (make-harness (doc1))]
-    (swap! (:ja h) assoc-in ["R1" :mirror] false)
-    (drain! h)
-    (is (valid-json? (host-text h)))
-    (is (contains? (get (doc->state (host-text h)) "R1") :mirror)
-        "writing false must not delete the key")
-    (is (= false (get-in (doc->state (host-text h)) ["R1" :mirror])))
-    (is (converged? h))))
-
-(deftest write-zero-survives
-  (let [h (make-harness (doc1))]
-    (swap! (:ja h) assoc-in ["R1" :rotation] 0)
-    (drain! h)
-    (is (contains? (get (doc->state (host-text h)) "R1") :rotation)
-        "writing 0 must not delete the key")
-    (is (= 0 (get-in (doc->state (host-text h)) ["R1" :rotation])))
-    (is (converged? h))))
-
-(deftest write-empty-string-survives
-  (let [h (make-harness (doc1))]
-    (swap! (:ja h) assoc-in ["R1" :label] "")
-    (drain! h)
-    (is (contains? (get (doc->state (host-text h)) "R1") :label)
-        "writing \"\" must not delete the key")
-    (is (= "" (get-in (doc->state (host-text h)) ["R1" :label])))
-    (is (converged? h))))
+(deftest falsy-values-survive
+  (doseq [[k v] [[:mirror false] [:rotation 0] [:label ""]]]
+    (testing (str "writing " (pr-str v) " must not delete the key")
+      (let [h (make-harness (doc1))]
+        (swap! (:ja h) assoc-in ["R1" k] v)
+        (drain! h)
+        (is (valid-json? (host-text h)))
+        (is (contains? (get (doc->state (host-text h)) "R1") k))
+        (is (= v (get-in (doc->state (host-text h)) ["R1" k])))
+        (is (converged? h))))))
 
 ;; ---------------------------------------------------------------------------
 ;; 2. Batched-edit stacking
@@ -412,10 +400,8 @@
             (let [^js d @host
                   ops   (bridge/build-edit-ops (LspDoc. d) (.-update msg))]
               (when-not (= bridge/rejected ops)
-                (let [sorted  (sort-by (fn [op] (.offsetAt d (.-start ^js (:range op)))) > ops)
-                      changes (into-array (map (fn [op] #js{:range (:range op) :text (:content op)}) sorted))
-                      new-ver (inc (.-version d))]
-                  (reset! host (.update lsp/TextDocument d changes new-ver))
+                (let [[d' new-ver] (apply-ops-to-host! d ops)]
+                  (reset! host d')
                   (receive! #js{:type "update" :group "schematic"
                                 :version new-ver :update (.-update msg)}))))
             (put! done-ch :ok)

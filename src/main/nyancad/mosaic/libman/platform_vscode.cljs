@@ -6,7 +6,7 @@
   "JsAtom-backed platform module for the library manager (VS Code deployment)."
   (:require [reagent.core :as r]
             [reagent.dom.client :as rdc]
-            [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request!]]
+            [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request! injected-version]]
             [nyancad.mosaic.common :as cm]
             [nyancad.hipflask.util :refer [json->clj]]
             [cljs.core.async :refer [go <!]]))
@@ -16,13 +16,6 @@
 (defonce root (rdc/create-root (.querySelector js/document ".mosaic-app.mosaic-libman")))
 
 ;; --- State ---
-
-(defn- injected-version
-  "Read a host document version injected into a hidden input, defaulting to 1
-   when absent or unparseable."
-  [id]
-  (let [v (some-> (js/document.getElementById id) .-value (js/parseInt 10))]
-    (if (or (nil? v) (js/isNaN v)) 1 v)))
 
 (defonce modeldb (json-atom "models"
                    (js/decodeURIComponent (.-value (js/document.getElementById "document")))
