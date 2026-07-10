@@ -1033,6 +1033,34 @@ class TestKfNetlistFromNyancad:
             {"instance": "top_S1", "port": "o1"},
         ] in data["nets"]
 
+    def test_prefers_unique_logical_name_over_prefixed_doc_key(self):
+        schem = {
+            "top": {
+                "top:X7": {
+                    "_id": "top:X7",
+                    "type": "mmi2x2",
+                    "name": "X7",
+                    "model": "mmi2x2",
+                    "nets": {"o1": "n_in", "o2": "n_out"},
+                },
+                "top:IN": {
+                    "type": "port",
+                    "name": "in",
+                    "attached_port": {"component_id": "top:X7", "port_name": "o1"},
+                },
+            },
+            "models": {
+                "models:mmi2x2": {"name": "mmi2x2", "ports": []},
+            },
+        }
+
+        netlist = kfnetlist_from_nyancad("top", schem)
+        data = _kf_data(netlist)
+
+        assert "X7" in data["instances"]
+        assert "top_X7" not in data["instances"]
+        assert [{"name": "in"}, {"instance": "X7", "port": "o1"}] in data["nets"]
+
     def test_uses_model_name_without_needing_layout(self):
         schem = {
             "top": {

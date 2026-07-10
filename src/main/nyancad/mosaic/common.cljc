@@ -617,6 +617,7 @@
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
 (def zoom-out (r/adapt-react-class icons/ZoomOut))
+(def zoom-fit (r/adapt-react-class icons/ArrowsFullscreen))
 (def redoi (r/adapt-react-class icons/Arrow90degRight))
 (def undoi (r/adapt-react-class icons/Arrow90degLeft))
 (def rotatecw (r/adapt-react-class icons/ArrowClockwise))
@@ -1117,7 +1118,8 @@
       [[mirror-horizontal] "Shift+F" "Flip Y"]
       [[delete] "Del" "Delete"]
       [[zoom-in] "Scroll" "Zoom"]
-      [[text] "T" "Text"]]]
+      [[text] "T" "Text"]
+      [[zoom-fit] "Home" "Zoom to fit"]]]
 
     [shortcut-table "Actions"
      [[[undoi] (str mod-key "+Z") "Undo"]

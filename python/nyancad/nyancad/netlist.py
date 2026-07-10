@@ -280,7 +280,7 @@ def kf_component_name(dev_id, dev, models):
     return model["name"]
 
 
-def invert_kf_nets(components, port_devices):
+def invert_kf_nets(components, port_devices, instance_ids=None):
     """Build ``{net_name: {"inst": [...], "ports": [...]}}`` from Mosaic nets.
 
     Port markers resolve via the same precedence as the converter: a
@@ -312,7 +312,12 @@ def invert_kf_nets(components, port_devices):
                 # Synthesize a net (keyed by the port name) joining the top
                 # port with its attached instance port.
                 bucket = out.setdefault(port_name_str, {"inst": [], "ports": []})
-                member = (_safe_ident(str(cid)), str(pn))
+                member = (
+                    instance_ids.get(str(cid), _safe_ident(str(cid)))
+                    if instance_ids
+                    else _safe_ident(str(cid)),
+                    str(pn),
+                )
                 if member not in bucket["inst"]:
                     bucket["inst"].append(member)
                 if port_name_str not in bucket["ports"]:
@@ -335,6 +340,69 @@ def _safe_ident(name):
     return re.sub(r"[^A-Za-z0-9_]", "_", name)
 
 
+def _dedupe_instance_ident(candidate, used):
+    base = candidate or "inst"
+    unique = base
+    suffix = 2
+    while unique in used:
+        unique = f"{base}_{suffix}"
+        suffix += 1
+    used.add(unique)
+    return unique
+
+
+def _kf_instance_id_map(docs):
+    """Choose stable kfnetlist instance IDs for Mosaic device docs.
+
+    Prefer the user-visible ``name`` when it is unique and already a valid
+    identifier so schematic netlists line up with layout extraction names.
+    Fall back to a sanitized document key and de-duplicate collisions.
+    """
+    components = [
+        (str(dev_id), dev)
+        for dev_id, dev in docs.items()
+        if dev.get("type") not in STRUCTURAL_TYPES
+    ]
+
+    valid_name_counts = {}
+    for _dev_id, dev in components:
+        name = dev.get("name")
+        if isinstance(name, str) and VALID_IDENT_RE.fullmatch(name):
+            valid_name_counts[name] = valid_name_counts.get(name, 0) + 1
+
+    used = set()
+    instance_ids = {}
+
+    for dev_id, dev in components:
+        name = dev.get("name")
+        if not (
+            isinstance(name, str)
+            and VALID_IDENT_RE.fullmatch(name)
+            and valid_name_counts.get(name) == 1
+            and not VALID_IDENT_RE.fullmatch(dev_id)
+        ):
+            continue
+        chosen = _dedupe_instance_ident(name, used)
+        instance_ids[dev_id] = chosen
+        raw_id = dev.get("_id")
+        if raw_id:
+            instance_ids[str(raw_id)] = chosen
+        instance_ids[_safe_ident(dev_id)] = chosen
+
+    for dev_id, dev in components:
+        if dev_id in instance_ids:
+            continue
+        fallback = _safe_ident(dev_id)
+        chosen = _dedupe_instance_ident(fallback, used)
+        instance_ids[dev_id] = chosen
+        raw_id = dev.get("_id")
+        if raw_id:
+            instance_ids[str(raw_id)] = chosen
+        instance_ids[fallback] = chosen
+
+    return instance_ids
+
+
 def kfnetlist_from_nyancad(name, schem, *, kcl="PDK"):
     """Build a ``kfnetlist.Netlist`` directly from Mosaic ``nets``.
 
@@ -345,6 +413,7 @@ def kfnetlist_from_nyancad(name, schem, *, kcl="PDK"):
 
     docs = schem.get(name, {})
     models = schem.get("models", {})
+    instance_ids = _kf_instance_id_map(docs)
 
     components = []
     port_devices = {}
@@ -352,7 +421,7 @@ def kfnetlist_from_nyancad(name, schem, *, kcl="PDK"):
         if dev.get("type") == "port":
             port_devices[str(dev.get("name") or dev_id)] = dev
         elif dev.get("type") not in STRUCTURAL_TYPES:
-            components.append((_safe_ident(dev_id), dev))
+            components.append((instance_ids[str(dev_id)], dev))
 
     netlist = Netlist()
     for dev_id, dev in components:
@@ -368,7 +437,7 @@ def kfnetlist_from_nyancad(name, schem, *, kcl="PDK"):
     for port_name in sorted(port_devices):
         top_ports[port_name] = netlist.create_port(str(port_name))
 
-    net_map = invert_kf_nets(components, port_devices)
+    net_map = invert_kf_nets(components, port_devices, instance_ids=instance_ids)
     for net_name in sorted(net_map):
         members = [
             *(top_ports[port] for port in net_map[net_name]["ports"]),
