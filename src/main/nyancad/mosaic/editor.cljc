@@ -1525,22 +1525,37 @@
                                     (or (not= "wire" (:type dev))
                                         (= seg-corner (wire-corner dev))))
                                  shared)))
-        wires (loop [w wirename
-                     [[x1 y1] & [[x2 y2] & _ :as other]] ordered
-                     schem {}]
-                (if other
-                  (let [seg-corner (case variant
-                                     "hv" [x2 y1]
-                                     "vh" [x1 y2]
-                                     nil)]
-                    (recur (name (gensym wirename)) other
-                           (if (shared-device? [x1 y1] [x2 y2] seg-corner)
-                             schem
-                             (assoc schem w
-                                    {:type "wire" :transform cm/IV :variant variant
-                                     :x x1 :y y1 :rx (- x2 x1) :ry (- y2 y1)}))))
-                  schem))]
-    (swap! schematic (partial merge-with merge) wires)))
+        ;; Surviving segments, in path order. Drop any segment already bridged
+        ;; by a device (or a co-cornered wire) — those points are connected
+        ;; without a wire of our own.
+        kept (for [[[x1 y1] [xn yn]] (partition 2 1 ordered)
+                   :let [seg-corner (case variant
+                                      "hv" [xn y1]
+                                      "vh" [x1 yn]
+                                      nil)]
+                   :when (not (shared-device? [x1 y1] [xn yn] seg-corner))]
+               {:type "wire" :transform cm/IV :variant variant
+                :x x1 :y y1 :rx (- xn x1) :ry (- yn y1)})
+        ;; Segment ids must be DETERMINISTIC across clients. When two peers
+        ;; (or two tabs) split the same wire while syncing to a shared remote,
+        ;; a `gensym` id is minted independently on each, so the tail segments
+        ;; land as *distinct* documents that both survive replication —
+        ;; leaving duplicate/overlapping wires. Deriving each id from the wire
+        ;; id and the segment's start cell makes both peers emit the same
+        ;; documents, so CouchDB conflict resolution converges them to one.
+        ;;
+        ;; The first surviving segment reuses the original id: it keeps the
+        ;; wire's :name and, crucially, consumes the original document. (The
+        ;; old loop only reused the id for segment 0, so when that segment was
+        ;; dropped the original was never rewritten and lingered at full length
+        ;; alongside the new pieces — a double wire even without syncing.)
+        seg-id (fn [{sx :x sy :y}] (str wirename "-split-" sx "-" sy))
+        additions (zipmap (cons wirename (map seg-id (rest kept))) kept)]
+    (if (seq kept)
+      (swap! schematic (partial merge-with merge) additions)
+      ;; Every segment was redundant: the whole wire is subsumed by devices,
+      ;; so remove it rather than leaving it floating.
+      (swap! schematic dissoc wirename))))
 
 
 (def last-coord (atom [0 0]))

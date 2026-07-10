@@ -506,6 +506,71 @@
       (is (empty? splits)))))
 
 ;; ---------------------------------------------------------------------------
+;; split-wire — the mutation that rewrites a wire into its pieces
+;; ---------------------------------------------------------------------------
+;; Contract: split a wire at the given cells into consecutive segments.
+;;   - The first surviving segment reuses the original id (so its :name and
+;;     document identity carry over); the rest get ids DERIVED from the wire
+;;     id + segment start cell, never a fresh gensym — so two clients splitting
+;;     the same wire while syncing produce identical documents that converge
+;;     under replication instead of duplicating.
+;;   - No original wire is ever left behind at full length.
+
+(defn- split-once
+  "Reset the shared schematic to `schem`, split `wirename` at its crossing
+   points, and return the resulting schematic map."
+  [schem wirename]
+  (reset! pform/schematic schem)
+  (let [pt-idx (e/build-point-index schem)
+        coords (get (e/build-wire-split-index schem pt-idx) wirename)]
+    (e/split-wire wirename coords pt-idx)
+    @pform/schematic))
+
+(deftest split-wire-reuses-original-and-adds-deterministic-tail
+  (testing "W1 crossing R1.N at (1,2) splits into original id + one derived id"
+    ;; R1 at (0,0): N at (1,2). W1 from (0,2)→(3,2) passes through (1,2).
+    (let [schem (sch (resistor "R1" 0 0)
+                     (wire "W1" 0 2 3 0))
+          result (split-once schem "W1")
+          wires  (into {} (filter (fn [[_ v]] (= "wire" (:type v))) result))]
+      (is (= 2 (count wires)) "exactly two segments, no duplicates")
+      (is (contains? wires "W1") "original id reused for the first segment")
+      (testing "first segment is (0,2)→(1,2)"
+        (is (= [0 2 1 0] ((juxt :x :y :rx :ry) (get wires "W1")))))
+      (testing "tail segment (1,2)→(3,2) has an id derived from the wire + start cell"
+        (let [tail (first (dissoc wires "W1"))]
+          (is (= "W1-split-1-2" (key tail)))
+          (is (= [1 2 2 0] ((juxt :x :y :rx :ry) (val tail)))))))))
+
+(deftest split-wire-is-deterministic-across-runs
+  (testing "splitting the same wire twice yields identical ids (convergent under sync)"
+    ;; Two independent clients both see W1 crossing R1.N and split it. The
+    ;; resulting document ids MUST match so replication merges them instead of
+    ;; accumulating duplicate tail wires. A gensym-based id would differ here.
+    (let [schem (sch (resistor "R1" 0 0)
+                     (resistor "R2" 0 4)  ; N at (1,6) — a second crossing
+                     (wire "W1" 0 2 5 0)) ; passes (1,2)=R1.N and ... only (1,2)
+          run1 (split-once schem "W1")
+          run2 (split-once schem "W1")
+          wire-ids (fn [m] (set (for [[k v] m :when (= "wire" (:type v))] k)))]
+      (is (= (wire-ids run1) (wire-ids run2))
+          "segment ids are identical across independent splits")
+      (is (contains? (wire-ids run1) "W1")
+          "original id is among them"))))
+
+(deftest split-wire-no-leftover-full-wire
+  (testing "the full-length original never survives alongside the pieces"
+    (let [schem (sch (resistor "R1" 0 0)
+                     (wire "W1" 0 2 3 0))
+          result (split-once schem "W1")]
+      ;; The rewritten W1 must be a piece (rx 1), not the original span (rx 3).
+      (is (= 1 (:rx (get result "W1")))
+          "W1 was shortened to its first segment, not left at full length")
+      (is (every? #(<= (abs (:rx %)) 2)
+                  (for [[_ v] result :when (= "wire" (:type v))] v))
+          "no surviving wire spans the whole original length"))))
+
+;; ---------------------------------------------------------------------------
 ;; Photonic model-defined ports
 ;; ---------------------------------------------------------------------------
 ;; Contract: when a photonic builtin has model ports in @modeldb,
