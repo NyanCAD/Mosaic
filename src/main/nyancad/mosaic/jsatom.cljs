@@ -6,75 +6,32 @@
   "Reactive atom backed by a VSCode text document buffer.
    Uses jsonc-parser to apply edits and sync state with the extension host.
    Top-level keys are strings (matching PouchDB format), inner values use keyword keys.
-   Each JsAtom has a group field for message routing in multi-atom webviews."
-  (:require ["jsonc-parser" :as jsonc]
-            [nyancad.mosaic.jsatom.util :refer [doc->state]]
-            [cljs.core.async :refer [go put! promise-chan]]
-            reagent.ratom))
+   Each JsAtom has a group field for message routing in multi-atom webviews.
+
+   The edit protocol itself (JsAtom, edit generation, echo application) lives in
+   nyancad.mosaic.jsatom.protocol so it can be unit-tested under the :test build
+   without js/window or js/acquireVsCodeApi. This namespace keeps only the
+   VSCode-specific wiring: the acquireVsCodeApi transport, the window message
+   listener, and the read-file request/response channel."
+  (:require [nyancad.mosaic.jsatom.protocol :as protocol]
+            [cljs.core.async :refer [go put! promise-chan]]))
 
 (defonce vscode (js/acquireVsCodeApi))
-
-(defn- pouch-swap! [^js ja f x & args]
-  (let [old @(.-cache ja)
-        data (apply f old x args)]
-    (when-let [v (.-validator ja)]
-      (when-not (v data)
-        (throw (ex-info "Validator rejected reference state" {:val data}))))
-    (reset! (.-cache ja) data)
-    (let [grp (.-group ja)
-          msg (fn [path value]
-                (swap! (.-version ja) inc)
-                (let [update (jsonc/modify @(.-document ja)
-                                           (clj->js path)
-                                           (or (clj->js value) js/undefined)
-                                           #js{:formattingOptions #js{:tabSize 2 :insertSpaces true}})]
-                  (doseq [up update]
-                    (set! (.-oldcontent ^js up)
-                          (subs @(.-document ja)
-                                (.-offset up)
-                                (+ (.-offset up) (.-length up)))))
-                  (.postMessage vscode #js{:type "update" :group grp :update update})
-                  (swap! (.-document ja) jsonc/applyEdits update)))]
-      (cond
-        (set? x) (doseq [k x] (msg [k] (get data k)))
-        (map? x) (doseq [k (keys x)] (msg [k] (get data k)))
-        (coll? x) (msg x (get-in data x))
-        :else (msg [x] (get data x))))))
-
-(deftype JsAtom [group document version cache ^:mutable validator]
-  IAtom
-
-  IDeref
-  (-deref [_this] @cache)
-
-  ISwap
-  (-swap! [_a _f]         (throw (js/Error "JsAtom assumes first argument is a key")))
-  (-swap! [a f x]        (pouch-swap! a f x))
-  (-swap! [a f x y]      (pouch-swap! a f x y))
-  (-swap! [a f x y more] (apply pouch-swap! a f x y more))
-
-  IWatchable
-  (-notify-watches [_this old new] (-notify-watches cache old new))
-  (-add-watch [this key f]         (-add-watch cache key (fn [key _ old new] (f key this old new))))
-  (-remove-watch [_this key]       (-remove-watch cache key)))
 
 (defn json-atom
   "Create a JsAtom from a JSON document string, tagged with a group name.
    Listens for update messages from the VSCode extension host,
-   filtering by group to support multiple atoms in one webview."
+   filtering by group to support multiple atoms in one webview.
+   `init-version` is the host document's VSCode version at load time, so the
+   self-echo guard stays in lockstep with the host (defaults to 1)."
   ([group doc] (json-atom group doc (atom {})))
-  ([group doc cache]
-   (reset! cache (doc->state doc))
-   (let [ja (JsAtom. group (atom doc) (atom 1) cache nil)]
+  ([group doc cache] (json-atom group doc cache 1))
+  ([group doc cache init-version]
+   (let [{:keys [atom receive!]}
+         (protocol/make-json-atom group doc cache #(.postMessage vscode %) init-version)]
      (.addEventListener js/window "message"
-       (fn [^js event]
-         (when (and (= (.. event -data -type) "update")
-                    (= (.. event -data -group) group)
-                    (> (.. event -data -version) @(.-version ja)))
-           (swap! (.-document ja) jsonc/applyEdits (.. event -data -update))
-           (reset! (.-version ja) (.. event -data -version))
-           (reset! cache (doc->state @(.-document ja))))))
-     ja)))
+       (fn [^js event] (receive! (.-data event))))
+     atom)))
 
 ;; --- Request/response for read-file messages ---
 

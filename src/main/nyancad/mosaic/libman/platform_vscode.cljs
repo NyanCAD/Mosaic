@@ -17,9 +17,17 @@
 
 ;; --- State ---
 
+(defn- injected-version
+  "Read a host document version injected into a hidden input, defaulting to 1
+   when absent or unparseable."
+  [id]
+  (let [v (some-> (js/document.getElementById id) .-value (js/parseInt 10))]
+    (if (or (nil? v) (js/isNaN v)) 1 v)))
+
 (defonce modeldb (json-atom "models"
                    (js/decodeURIComponent (.-value (js/document.getElementById "document")))
-                   (r/atom {})))
+                   (r/atom {})
+                   (injected-version "document-version")))
 
 (defonce syncactive (r/atom false))
 (defonce remotemodeldb (r/atom {}))

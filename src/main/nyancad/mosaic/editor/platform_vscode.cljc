@@ -16,16 +16,26 @@
 
 ;; --- State ---
 
+(defn- injected-version
+  "Read a host document version injected into a hidden input, defaulting to 1
+   when absent or unparseable so the self-echo guard degrades to its old
+   behaviour rather than breaking."
+  [id]
+  (let [v (some-> (js/document.getElementById id) .-value (js/parseInt 10))]
+    (if (or (nil? v) (js/isNaN v)) 1 v)))
+
 (def group (.-value (js/document.getElementById "group")))
 (defonce schematic (json-atom "schematic"
                     (js/decodeURIComponent (.-value (js/document.getElementById "document")))
-                    (r/atom {})))
+                    (r/atom {})
+                    (injected-version "document-version")))
 (set-validator! schematic
                 #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
 ;; Secondary modeldb atom — initialized from models.nyanlib injected by extension
 (defonce modeldb (json-atom "models"
                    (js/decodeURIComponent (.-value (js/document.getElementById "models")))
-                   (r/atom {})))
+                   (r/atom {})
+                   (injected-version "models-version")))
 (defonce snapshots (r/atom {}))
 (defonce simulations (r/atom (sorted-map)))
 (defonce local (r/atom {}))
