@@ -20,11 +20,10 @@
    fix."
   (:require [cljs.test :refer [deftest is testing async]]
             ["vscode-languageserver-textdocument" :as lsp]
-            ["jsonc-parser" :as jsonc]
             [nyancad.mosaic.jsatom.protocol :as protocol]
             [nyancad.mosaic.jsatom.bridge :as bridge]
             [nyancad.mosaic.jsatom.util :refer [doc->state]]
-            [cljs.core.async :refer [go go-loop chan <! >! put! close! timeout]]))
+            [cljs.core.async :refer [go go-loop chan <! put! close! timeout]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Host document — real TextDocument behind the IHostDocument protocol
@@ -37,7 +36,6 @@
   (-get-text-range [_ range]     (.getText doc range)))
 
 (defn- host-text [h] (.getText ^js @(:host h)))
-(defn- host-version [h] (.-version ^js @(:host h)))
 
 (defn- valid-json?
   "Strict JSON validity (not the lenient jsonc parse) — catches corruption
