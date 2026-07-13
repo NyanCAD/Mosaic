@@ -2397,13 +2397,13 @@
 
 (defn paste []
   (let [devmap (->> (get-in @local [(str "local" sep "clipboard") :data])
-                    (group-by :type)
-                    (map (fn [[typ devices]]
-                           (map (fn [name dev]
-                                  (let [id (str group sep name)
-                                        display-name (if (= typ "port") (:name dev) name)]
+                    (group-by #(cm/initial (:type %)))
+                    (map (fn [[_prefix devices]]
+                           (map (fn [nam dev]
+                                  (let [id (str group sep nam)
+                                        display-name (if (= (:type dev) "port") (:name dev) nam)]
                                     [id (assoc dev :name display-name)]))
-                                (make-names typ)
+                                (make-names (:type (first devices)))
                                 devices)))
                     (into {} cat))]
     (go
