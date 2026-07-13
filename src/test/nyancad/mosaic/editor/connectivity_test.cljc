@@ -101,6 +101,18 @@
     (let [[_ body] (e/wire-locations {:x 0 :y 0 :rx 2 :ry 2 :variant "vh"})]
       (is (contains? (set body) [0 2]) "corner at (0, 2)"))))
 
+(deftest wire-locations-hv-degenerate-no-corner
+  (testing "hv with ry=0: corner coincides with endpoint, must not appear in body"
+    (let [[_ body] (e/wire-locations {:x 0 :y 0 :rx 3 :ry 0 :variant "hv"})]
+      (is (not (contains? (set body) [3 0]))
+          "degenerate corner at endpoint must be excluded from body"))))
+
+(deftest wire-locations-vh-degenerate-no-corner
+  (testing "vh with rx=0: corner coincides with endpoint, must not appear in body"
+    (let [[_ body] (e/wire-locations {:x 0 :y 0 :rx 0 :ry 3 :variant "vh"})]
+      (is (not (contains? (set body) [0 3]))
+          "degenerate corner at endpoint must be excluded from body"))))
+
 ;; ---------------------------------------------------------------------------
 ;; wire-corner — corner cell of an elbow wire, nil otherwise
 ;; ---------------------------------------------------------------------------
@@ -569,6 +581,29 @@
       (is (every? #(<= (abs (:rx %)) 2)
                   (for [[_ v] result :when (= "wire" (:type v))] v))
           "no surviving wire spans the whole original length"))))
+
+(deftest split-wire-hv-segment-survives-resplit
+  (testing "an hv wire split into a segment with ry=0 must not be re-flagged"
+    ;; Reproduce the reported bug: V1 at (8,4), GND port at (8,6), R2 at (5,3).
+    ;; Draw hv wire from V1.N (9,6) to R2.N (6,5) — passes through GND at (8,6).
+    ;; First split is correct. On the second post-action!, the shortened W1
+    ;; (rx=-1 ry=0 variant hv) must NOT be flagged for self-splitting.
+    (let [schem (sch ["V1" {:type "vsource" :x 8 :y 4 :transform [1 0 0 1 0 0] :name "V1"}]
+                     (port-doc "P1" 8 6 "GND")
+                     (resistor "R2" 5 3)
+                     ["W1" {:type "wire" :x 9 :y 6 :rx -3 :ry -1 :variant "hv"}])
+          result (split-once schem "W1")
+          wires  (into {} (filter (fn [[_ v]] (= "wire" (:type v))) result))]
+      (is (= 2 (count wires)) "first split produces two segments")
+      (is (contains? wires "W1") "original id reused")
+      (is (= {:x 9 :y 6 :rx -1 :ry 0} (select-keys (get wires "W1") [:x :y :rx :ry]))
+          "W1 is the shortened head segment")
+      ;; Now simulate the second post-action! with the already-split schematic.
+      ;; The shortened W1 must NOT appear in the wire-split-index.
+      (let [pt-idx2 (e/build-point-index result)
+            splits2 (e/build-wire-split-index result pt-idx2)]
+        (is (not (contains? splits2 "W1"))
+            "shortened W1 must not be re-flagged for splitting at its own endpoint")))))
 
 ;; ---------------------------------------------------------------------------
 ;; Photonic model-defined ports

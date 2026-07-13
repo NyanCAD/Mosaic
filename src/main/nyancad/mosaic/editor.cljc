@@ -1078,15 +1078,16 @@
                     (iterate #(+ % (cm/sign width)) start))))
 
 (defn wire-locations [{:keys [x y rx ry variant]}]
-  (let [x2 (+ x rx) y2 (+ y ry)]
+  (let [x2 (+ x rx) y2 (+ y ry)
+        elbow? (and (not (zero? rx)) (not (zero? ry)))]
     [[[x y] [x2 y2]]  ; conn: start and end
      (case variant
        "hv" (concat (map #(vector % y) (exrange x rx))     ; horizontal leg
-                    [[x2 y]]                               ; corner
-                    (map #(vector x2 %) (exrange y ry)))   ; vertical leg
-       "vh" (concat (map #(vector x %) (exrange y ry))     ; vertical leg
-                    [[x y2]]                               ; corner
-                    (map #(vector % y2) (exrange x rx)))   ; horizontal leg
+                    (when elbow? [[x2 y]])                  ; corner (only for real bends)
+                    (map #(vector x2 %) (exrange y ry)))    ; vertical leg
+       "vh" (concat (map #(vector x %) (exrange y ry))      ; vertical leg
+                    (when elbow? [[x y2]])                   ; corner (only for real bends)
+                    (map #(vector % y2) (exrange x rx)))     ; horizontal leg
        ;; "d" or nil: straight or diagonal
        (cond
          (zero? rx) (map #(vector x %) (exrange y ry))     ; vertical
@@ -1536,19 +1537,6 @@
                    :when (not (shared-device? [x1 y1] [xn yn] seg-corner))]
                {:type "wire" :transform cm/IV :variant variant
                 :x x1 :y y1 :rx (- xn x1) :ry (- yn y1)})
-        ;; Segment ids must be DETERMINISTIC across clients. When two peers
-        ;; (or two tabs) split the same wire while syncing to a shared remote,
-        ;; a `gensym` id is minted independently on each, so the tail segments
-        ;; land as *distinct* documents that both survive replication —
-        ;; leaving duplicate/overlapping wires. Deriving each id from the wire
-        ;; id and the segment's start cell makes both peers emit the same
-        ;; documents, so CouchDB conflict resolution converges them to one.
-        ;;
-        ;; The first surviving segment reuses the original id: it keeps the
-        ;; wire's :name and, crucially, consumes the original document. (The
-        ;; old loop only reused the id for segment 0, so when that segment was
-        ;; dropped the original was never rewritten and lingered at full length
-        ;; alongside the new pieces — a double wire even without syncing.)
         seg-id (fn [{sx :x sy :y}] (str wirename "-split-" sx "-" sy))
         additions (zipmap (cons wirename (map seg-id (rest kept))) kept)]
     (if (seq kept)
@@ -1858,13 +1846,11 @@
         (same-tile? dev) (swap! ui assoc ; the dragged wire stayed at the same tile, exit
                                 ::staging nil
                                 ::dragging nil)
-        on-port (go (<! (commit-staged dev)) ; the wire landed on a port or wire, commit and exit
-                    (swap! ui assoc
-                           ::staging nil
-                           ::dragging nil))
-        :else (go
-                (<! (commit-staged dev)) ; commit and start new segment
-                (add-wire-segment [x y]))))))
+        on-port (do (swap! ui assoc ::staging nil ::dragging nil)
+                    (commit-staged dev))
+        :else (do (swap! ui assoc ::dragging nil)
+                  (go (<! (commit-staged dev))
+                      (add-wire-segment [x y])))))))
 
 (defn select-connected []
   (let [schem @schematic
@@ -2153,6 +2139,7 @@
           (commit-staged dev)
           (swap! ui assoc ::staging nil ::dragging nil)))
       (= (::tool @ui) ::eraser) (post-action!)
+      (= (::tool @ui) ::wire) nil
       :else (end-ui bg? selected dx dy))))
 
 (defn add-device [cell [x y] & args]
