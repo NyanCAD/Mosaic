@@ -101,6 +101,18 @@
     (let [[_ body] (e/wire-locations {:x 0 :y 0 :rx 2 :ry 2 :variant "vh"})]
       (is (contains? (set body) [0 2]) "corner at (0, 2)"))))
 
+(deftest wire-locations-hv-degenerate-no-corner
+  (testing "hv with ry=0: corner coincides with endpoint, must not appear in body"
+    (let [[_ body] (e/wire-locations {:x 0 :y 0 :rx 3 :ry 0 :variant "hv"})]
+      (is (not (contains? (set body) [3 0]))
+          "degenerate corner at endpoint must be excluded from body"))))
+
+(deftest wire-locations-vh-degenerate-no-corner
+  (testing "vh with rx=0: corner coincides with endpoint, must not appear in body"
+    (let [[_ body] (e/wire-locations {:x 0 :y 0 :rx 0 :ry 3 :variant "vh"})]
+      (is (not (contains? (set body) [0 3]))
+          "degenerate corner at endpoint must be excluded from body"))))
+
 ;; ---------------------------------------------------------------------------
 ;; wire-corner — corner cell of an elbow wire, nil otherwise
 ;; ---------------------------------------------------------------------------
@@ -504,6 +516,94 @@
           pt-idx (e/build-point-index schem)
           splits (e/build-wire-split-index schem pt-idx)]
       (is (empty? splits)))))
+
+;; ---------------------------------------------------------------------------
+;; split-wire — the mutation that rewrites a wire into its pieces
+;; ---------------------------------------------------------------------------
+;; Contract: split a wire at the given cells into consecutive segments.
+;;   - The first surviving segment reuses the original id (so its :name and
+;;     document identity carry over); the rest get ids DERIVED from the wire
+;;     id + segment start cell, never a fresh gensym — so two clients splitting
+;;     the same wire while syncing produce identical documents that converge
+;;     under replication instead of duplicating.
+;;   - No original wire is ever left behind at full length.
+
+(defn- split-once
+  "Reset the shared schematic to `schem`, split `wirename` at its crossing
+   points, and return the resulting schematic map."
+  [schem wirename]
+  (reset! pform/schematic schem)
+  (let [pt-idx (e/build-point-index schem)
+        coords (get (e/build-wire-split-index schem pt-idx) wirename)]
+    (e/split-wire wirename coords pt-idx)
+    @pform/schematic))
+
+(deftest split-wire-reuses-original-and-adds-deterministic-tail
+  (testing "W1 crossing R1.N at (1,2) splits into original id + one derived id"
+    ;; R1 at (0,0): N at (1,2). W1 from (0,2)→(3,2) passes through (1,2).
+    (let [schem (sch (resistor "R1" 0 0)
+                     (wire "W1" 0 2 3 0))
+          result (split-once schem "W1")
+          wires  (into {} (filter (fn [[_ v]] (= "wire" (:type v))) result))]
+      (is (= 2 (count wires)) "exactly two segments, no duplicates")
+      (is (contains? wires "W1") "original id reused for the first segment")
+      (testing "first segment is (0,2)→(1,2)"
+        (is (= [0 2 1 0] ((juxt :x :y :rx :ry) (get wires "W1")))))
+      (testing "tail segment (1,2)→(3,2) has an id derived from the wire + start cell"
+        (let [tail (first (dissoc wires "W1"))]
+          (is (= "W1-split-1-2" (key tail)))
+          (is (= [1 2 2 0] ((juxt :x :y :rx :ry) (val tail)))))))))
+
+(deftest split-wire-is-deterministic-across-runs
+  (testing "splitting the same wire twice yields identical ids (convergent under sync)"
+    ;; Two independent clients both see W1 crossing R1.N and split it. The
+    ;; resulting document ids MUST match so replication merges them instead of
+    ;; accumulating duplicate tail wires. A gensym-based id would differ here.
+    (let [schem (sch (resistor "R1" 0 0)
+                     (resistor "R2" 0 4)  ; N at (1,6) — a second crossing
+                     (wire "W1" 0 2 5 0)) ; passes (1,2)=R1.N and ... only (1,2)
+          run1 (split-once schem "W1")
+          run2 (split-once schem "W1")
+          wire-ids (fn [m] (set (for [[k v] m :when (= "wire" (:type v))] k)))]
+      (is (= (wire-ids run1) (wire-ids run2))
+          "segment ids are identical across independent splits")
+      (is (contains? (wire-ids run1) "W1")
+          "original id is among them"))))
+
+(deftest split-wire-no-leftover-full-wire
+  (testing "the full-length original never survives alongside the pieces"
+    (let [schem (sch (resistor "R1" 0 0)
+                     (wire "W1" 0 2 3 0))
+          result (split-once schem "W1")]
+      ;; The rewritten W1 must be a piece (rx 1), not the original span (rx 3).
+      (is (= 1 (:rx (get result "W1")))
+          "W1 was shortened to its first segment, not left at full length")
+      (is (every? #(<= (abs (:rx %)) 2)
+                  (for [[_ v] result :when (= "wire" (:type v))] v))
+          "no surviving wire spans the whole original length"))))
+
+(deftest split-wire-hv-segment-survives-resplit
+  (testing "an hv wire split into a segment with ry=0 must not be re-flagged"
+    ;; Reproduce the reported bug: V1 at (8,4), GND port at (8,6), R2 at (5,3).
+    ;; Draw hv wire from V1.N (9,6) to R2.N (6,5) — passes through GND at (8,6).
+    ;; First split is correct. On the second post-action!, the shortened W1
+    ;; (rx=-1 ry=0 variant hv) must NOT be flagged for self-splitting.
+    (let [schem (sch ["V1" {:type "vsource" :x 8 :y 4 :transform [1 0 0 1 0 0] :name "V1"}]
+                     (port-doc "P1" 8 6 "GND")
+                     (resistor "R2" 5 3)
+                     ["W1" {:type "wire" :x 9 :y 6 :rx -3 :ry -1 :variant "hv"}])
+          result (split-once schem "W1")
+          wires  (into {} (filter (fn [[_ v]] (= "wire" (:type v))) result))]
+      (is (= 2 (count wires)) "first split produces two segments")
+      (is (contains? wires "W1") "original id reused")
+      (is (= {:x 9 :y 6 :rx -1 :ry 0} (select-keys (get wires "W1") [:x :y :rx :ry]))
+          "W1 is the shortened head segment")
+      ;; Now simulate the second post-action! with the already-split schematic.
+      ;; The shortened W1 must NOT appear in the wire-split-index.
+      (let [pt-idx2 (e/build-point-index result)
+            splits2 (e/build-wire-split-index result pt-idx2)]
+        (is (not (contains? splits2 "W1"))
+            "shortened W1 must not be re-flagged for splitting at its own endpoint")))))
 
 ;; ---------------------------------------------------------------------------
 ;; Photonic model-defined ports

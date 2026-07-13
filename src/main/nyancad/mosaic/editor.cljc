@@ -1078,15 +1078,16 @@
                     (iterate #(+ % (cm/sign width)) start))))
 
 (defn wire-locations [{:keys [x y rx ry variant]}]
-  (let [x2 (+ x rx) y2 (+ y ry)]
+  (let [x2 (+ x rx) y2 (+ y ry)
+        elbow? (and (not (zero? rx)) (not (zero? ry)))]
     [[[x y] [x2 y2]]  ; conn: start and end
      (case variant
        "hv" (concat (map #(vector % y) (exrange x rx))     ; horizontal leg
-                    [[x2 y]]                               ; corner
-                    (map #(vector x2 %) (exrange y ry)))   ; vertical leg
-       "vh" (concat (map #(vector x %) (exrange y ry))     ; vertical leg
-                    [[x y2]]                               ; corner
-                    (map #(vector % y2) (exrange x rx)))   ; horizontal leg
+                    (when elbow? [[x2 y]])                  ; corner (only for real bends)
+                    (map #(vector x2 %) (exrange y ry)))    ; vertical leg
+       "vh" (concat (map #(vector x %) (exrange y ry))      ; vertical leg
+                    (when elbow? [[x y2]])                   ; corner (only for real bends)
+                    (map #(vector % y2) (exrange x rx)))     ; horizontal leg
        ;; "d" or nil: straight or diagonal
        (cond
          (zero? rx) (map #(vector x %) (exrange y ry))     ; vertical
@@ -1525,22 +1526,24 @@
                                     (or (not= "wire" (:type dev))
                                         (= seg-corner (wire-corner dev))))
                                  shared)))
-        wires (loop [w wirename
-                     [[x1 y1] & [[x2 y2] & _ :as other]] ordered
-                     schem {}]
-                (if other
-                  (let [seg-corner (case variant
-                                     "hv" [x2 y1]
-                                     "vh" [x1 y2]
-                                     nil)]
-                    (recur (name (gensym wirename)) other
-                           (if (shared-device? [x1 y1] [x2 y2] seg-corner)
-                             schem
-                             (assoc schem w
-                                    {:type "wire" :transform cm/IV :variant variant
-                                     :x x1 :y y1 :rx (- x2 x1) :ry (- y2 y1)}))))
-                  schem))]
-    (swap! schematic (partial merge-with merge) wires)))
+        ;; Surviving segments, in path order. Drop any segment already bridged
+        ;; by a device (or a co-cornered wire) — those points are connected
+        ;; without a wire of our own.
+        kept (for [[[x1 y1] [xn yn]] (partition 2 1 ordered)
+                   :let [seg-corner (case variant
+                                      "hv" [xn y1]
+                                      "vh" [x1 yn]
+                                      nil)]
+                   :when (not (shared-device? [x1 y1] [xn yn] seg-corner))]
+               {:type "wire" :transform cm/IV :variant variant
+                :x x1 :y y1 :rx (- xn x1) :ry (- yn y1)})
+        seg-id (fn [{sx :x sy :y}] (str wirename "-split-" sx "-" sy))
+        additions (zipmap (cons wirename (map seg-id (rest kept))) kept)]
+    (if (seq kept)
+      (swap! schematic (partial merge-with merge) additions)
+      ;; Every segment was redundant: the whole wire is subsumed by devices,
+      ;; so remove it rather than leaving it floating.
+      (swap! schematic dissoc wirename))))
 
 
 (def last-coord (atom [0 0]))
@@ -1843,13 +1846,11 @@
         (same-tile? dev) (swap! ui assoc ; the dragged wire stayed at the same tile, exit
                                 ::staging nil
                                 ::dragging nil)
-        on-port (go (<! (commit-staged dev)) ; the wire landed on a port or wire, commit and exit
-                    (swap! ui assoc
-                           ::staging nil
-                           ::dragging nil))
-        :else (go
-                (<! (commit-staged dev)) ; commit and start new segment
-                (add-wire-segment [x y]))))))
+        on-port (do (swap! ui assoc ::staging nil ::dragging nil)
+                    (commit-staged dev))
+        :else (do (swap! ui assoc ::dragging nil)
+                  (go (<! (commit-staged dev))
+                      (add-wire-segment [x y])))))))
 
 (defn select-connected []
   (let [schem @schematic
@@ -2138,6 +2139,7 @@
           (commit-staged dev)
           (swap! ui assoc ::staging nil ::dragging nil)))
       (= (::tool @ui) ::eraser) (post-action!)
+      (= (::tool @ui) ::wire) nil
       :else (end-ui bg? selected dx dy))))
 
 (defn add-device [cell [x y] & args]
