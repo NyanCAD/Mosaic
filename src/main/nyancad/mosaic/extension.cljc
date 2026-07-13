@@ -9,6 +9,7 @@
             ["path" :as path]
             ["child_process" :as cp]
             [clojure.string :as str]
+            [nyancad.mosaic.jsatom.bridge :as bridge]
             [cljs.core.async :refer [go go-loop <! >! chan put! promise-chan]]
             [cljs.core.async.interop :refer-macros [<p!]]))
 
@@ -71,31 +72,26 @@
   [^js document]
   (.getText document))
 
+(deftype VscodeDoc [^js document]
+  bridge/IHostDocument
+  (-position-at    [_ offset]    (.positionAt document offset))
+  (-make-range     [_ start end] (vscode/Range. start end))
+  (-get-text-range [_ range]     (.getText document range)))
+
 (defn- apply-updates
   "Validate oldcontent and apply JSON edit operations to a VSCode WorkspaceEdit.
    Returns true if all edits were valid and added, false if rejected.
-   Extracted from go-loop so ^js hints survive (go macro strips them)."
+   Extracted from go-loop so ^js hints survive (go macro strips them).
+   The oldcontent validation + range computation is shared with the jsatom
+   test harness via nyancad.mosaic.jsatom.bridge/build-edit-ops."
   [^js document ^js edit updates]
-  (let [ops (mapv (fn [^js up]
-                    (let [offset (.-offset up)
-                          length (.-length up)
-                          content (.-content up)
-                          old-content (.-oldcontent up)
-                          start (.positionAt document offset)
-                          end (.positionAt document (+ offset (if old-content
-                                                                (.-length old-content)
-                                                                length)))
-                          range (vscode/Range. start end)]
-                      (when (or (nil? old-content)
-                                (= old-content (.getText document range)))
-                        {:range range :content (or content "")})))
-                  updates)]
-    (if (every? some? ops)
+  (let [ops (bridge/build-edit-ops (VscodeDoc. document) updates)]
+    (if (= bridge/rejected ops)
+      (do (js/console.log "Rejected edit batch: content mismatch")
+          false)
       (do (doseq [{:keys [range content]} ops]
             (.replace edit (.-uri document) range content))
-          true)
-      (do (js/console.log "Rejected edit batch: content mismatch")
-          false))))
+          true))))
 
 ;; ---------------------------------------------------------------------------
 ;; Atom channel — bidirectional sync between a TextDocument and a JsAtom
@@ -108,12 +104,20 @@
    Returns {:edit-queue chan, :disposable disposable}."
   [^js webview ^js document group]
   (let [edit-queue (chan 32)]
-    ;; Process edit queue with oldcontent validation
+    ;; Process edit queue with oldcontent validation. On rejection the webview
+    ;; has already advanced its optimistic state, so send it an authoritative
+    ;; resync snapshot instead of silently dropping the edit — otherwise the
+    ;; webview stays diverged from the document (see rejected-batch-resyncs).
     (go-loop []
       (when-let [update (<! edit-queue)]
         (let [edit (vscode/WorkspaceEdit.)]
-          (when (apply-updates document edit update)
-            (<p! (.. vscode/workspace (applyEdit edit)))))
+          (if (apply-updates document edit update)
+            (<p! (.. vscode/workspace (applyEdit edit)))
+            (.postMessage webview
+              #js{:type "resync"
+                  :group group
+                  :version (.-version document)
+                  :text (.getText document)})))
         (recur)))
     ;; Forward TextDocument changes as incremental edits
     (let [disposable
@@ -240,8 +244,10 @@
 
 (defn- get-html
   "Generate webview HTML for the schematic editor.
-   models-content is the initial JSON string from models.nyanlib."
-  [^js document ^js webview models-content]
+   models-content is the initial JSON string from models.nyanlib.
+   The document/models version inputs seed the webview JsAtoms' self-echo
+   guard so it stays in lockstep with the host document versions."
+  [^js document ^js webview models-content models-version]
   (let [out-uri (fn [file]
                   (.asWebviewUri webview (uri-join bundle-uri file)))
         nonce (get-nonce)
@@ -260,8 +266,10 @@
 </head>
 <body>
   <input type=\"hidden\" id=\"document\" value=\"" (js/encodeURIComponent (.getText document)) "\">
+  <input type=\"hidden\" id=\"document-version\" value=\"" (.-version document) "\">
   <input type=\"hidden\" id=\"group\" value=\"" (uri-basename (.-uri document) ".nyancir") "\">
   <input type=\"hidden\" id=\"models\" value=\"" (js/encodeURIComponent models-content) "\">
+  <input type=\"hidden\" id=\"models-version\" value=\"" models-version "\">
   <div class=\"mosaic-app mosaic-editor\"></div>
   <script nonce=\"" nonce "\" src=\"" (out-uri "shared.js") "\"></script>
   <script nonce=\"" nonce "\" src=\"" (out-uri "editor.js") "\"></script>
@@ -289,6 +297,7 @@
 </head>
 <body>
   <input type=\"hidden\" id=\"document\" value=\"" (js/encodeURIComponent (.getText document)) "\">
+  <input type=\"hidden\" id=\"document-version\" value=\"" (.-version document) "\">
   <div class=\"mosaic-app mosaic-libman\"></div>
   <script nonce=\"" nonce "\" src=\"" (out-uri "shared.js") "\"></script>
   <script nonce=\"" nonce "\" src=\"" (out-uri "libman.js") "\"></script>
@@ -419,7 +428,7 @@
                 (set! (.-options webview)
                       #js{:enableScripts true
                           :localResourceRoots #js[bundle-uri]})
-                (set! (.-html webview) (get-html document webview models-content))
+                (set! (.-html webview) (get-html document webview models-content (.-version nyanlib-doc)))
 
                 ;; Create atom channels for schematic and models documents
                 (let [schem-ch (create-atom-channel webview document "schematic")

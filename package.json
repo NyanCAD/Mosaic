@@ -5,7 +5,8 @@
   "devDependencies": {
     "@vscode/vsce": "^3.9.2",
     "pouchdb-adapter-memory": "^9.0.0",
-    "shadow-cljs": "^3.4.11"
+    "shadow-cljs": "^3.4.11",
+    "vscode-languageserver-textdocument": "^1.0.12"
   },
   "dependencies": {
     "bootstrap-icons": "^1.11.2",

@@ -3,7 +3,7 @@
 ; SPDX-License-Identifier: MPL-2.0
 
 (ns nyancad.mosaic.editor.platform-vscode
-  (:require [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request!]]
+  (:require [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request! injected-version]]
             [nyancad.mosaic.common :as cm]
             [reagent.core :as r]
             [reagent.dom.client :as rdc]
@@ -19,13 +19,15 @@
 (def group (.-value (js/document.getElementById "group")))
 (defonce schematic (json-atom "schematic"
                     (js/decodeURIComponent (.-value (js/document.getElementById "document")))
-                    (r/atom {})))
+                    (r/atom {})
+                    (injected-version "document-version")))
 (set-validator! schematic
                 #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
 ;; Secondary modeldb atom — initialized from models.nyanlib injected by extension
 (defonce modeldb (json-atom "models"
                    (js/decodeURIComponent (.-value (js/document.getElementById "models")))
-                   (r/atom {})))
+                   (r/atom {})
+                   (injected-version "models-version")))
 (defonce snapshots (r/atom {}))
 (defonce simulations (r/atom (sorted-map)))
 (defonce local (r/atom {}))

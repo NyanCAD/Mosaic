@@ -6,7 +6,7 @@
   "JsAtom-backed platform module for the library manager (VS Code deployment)."
   (:require [reagent.core :as r]
             [reagent.dom.client :as rdc]
-            [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request!]]
+            [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request! injected-version]]
             [nyancad.mosaic.common :as cm]
             [nyancad.hipflask.util :refer [json->clj]]
             [cljs.core.async :refer [go <!]]))
@@ -19,7 +19,8 @@
 
 (defonce modeldb (json-atom "models"
                    (js/decodeURIComponent (.-value (js/document.getElementById "document")))
-                   (r/atom {})))
+                   (r/atom {})
+                   (injected-version "document-version")))
 
 (defonce syncactive (r/atom false))
 (defonce remotemodeldb (r/atom {}))
