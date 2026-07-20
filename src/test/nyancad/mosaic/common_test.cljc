@@ -10,6 +10,7 @@
    are hand-computed from the contract — not copied from the current CLJS
    output."
   (:require [cljs.test :refer [deftest is testing]]
+            [nyancad.mosaic.test-dommatrix]
             [nyancad.mosaic.common :as cm]))
 
 ;; ---------------------------------------------------------------------------
@@ -484,3 +485,63 @@
       ;; After fully redoing, the current state should be the last one we did.
       ;; Peek via undo-state (or an extra redo stays put):
       (is (= {:x 3} (cm/redo ut))))))
+
+;; ---------------------------------------------------------------------------
+;; World-frame flips — flip-x, flip-y
+;; ---------------------------------------------------------------------------
+;;
+;; Contract: `flip-x`/`flip-y` mirror a transform about the screen's
+;; vertical/horizontal axis by *pre-multiplying* the reflection, so the flip
+;; axis does not "rotate" with the device. A rotation of 90° is the matrix
+;; [0 1 -1 0 0 0]; a local-frame (post-multiply) flip of that rotation would
+;; give [0 -1 -1 0 0 0], which these tests reject. `flip-x`/`flip-y`/`rotate-cw`
+;; operate on DOMMatrix values; `via-mat` threads a `[a b c d e f]` vector
+;; through a DOMMatrix and back via `cm/transform-vec` so the assertions read in
+;; transform-vector form.
+
+(defn- via-mat [mat-fn v]
+  (cm/transform-vec (mat-fn (js/DOMMatrixReadOnly. (clj->js v)))))
+
+(deftest flip-x-mirrors-about-vertical-axis
+  (testing "identity flips to diag(-1, 1)"
+    (is (= [-1 0 0 1 0 0] (via-mat cm/flip-x [1 0 0 1 0 0]))))
+  (testing "pre-multiplies (world frame), so rotate-90 then flip-x is world-mirrored"
+    (is (= [0 1 1 0 0 0] (via-mat cm/flip-x [0 1 -1 0 0 0])))
+    ;; Not the local-frame (post-multiply) result:
+    (is (not= [0 -1 -1 0 0 0] (via-mat cm/flip-x [0 1 -1 0 0 0]))))
+  (testing "negates the x column including translation"
+    (is (= [-1 0 0 1 -10 20] (via-mat cm/flip-x [1 0 0 1 10 20]))))
+  (testing "applying the same flip twice is the identity"
+    (is (= [0 1 -1 0 0 0]
+           (via-mat cm/flip-x (via-mat cm/flip-x [0 1 -1 0 0 0]))))))
+
+(deftest flip-y-mirrors-about-horizontal-axis
+  (testing "identity flips to diag(1, -1)"
+    (is (= [1 0 0 -1 0 0] (via-mat cm/flip-y [1 0 0 1 0 0]))))
+  (testing "pre-multiplies (world frame) for a rotated transform"
+    (is (= [0 -1 -1 0 0 0] (via-mat cm/flip-y [0 1 -1 0 0 0]))))
+  (testing "negates the y column including translation"
+    (is (= [1 0 0 -1 10 -20] (via-mat cm/flip-y [1 0 0 1 10 20]))))
+  (testing "applying the same flip twice is the identity"
+    (is (= [0 1 -1 0 0 0]
+           (via-mat cm/flip-y (via-mat cm/flip-y [0 1 -1 0 0 0]))))))
+
+(defn- round6 [v] (mapv #(/ (js/Math.round (* 1e6 %)) 1e6) v))
+
+(deftest rotate-cw-is-world-frame
+  (testing "identity rotates 90° clockwise"
+    (is (= [0 1 -1 0 0 0] (round6 (via-mat cm/rotate-cw [1 0 0 1 0 0])))))
+  (testing "pre-multiplies (world frame), so it stays clockwise even when the
+            transform is flipped — the flip+rotate 'backwards' bug"
+    (is (= [0 -1 -1 0 0 0] (round6 (via-mat cm/rotate-cw [-1 0 0 1 0 0]))))
+    ;; Not the local-frame (post-multiply) result, which reverses under a mirror:
+    (is (not= [0 1 1 0 0 0] (round6 (via-mat cm/rotate-cw [-1 0 0 1 0 0])))))
+  (testing "clockwise then counter-clockwise returns to identity"
+    (is (= [1 0 0 1 0 0]
+           (round6 (via-mat cm/rotate-ccw (via-mat cm/rotate-cw [1 0 0 1 0 0])))))))
+
+(deftest rotate-ccw-is-world-frame
+  (testing "identity rotates 90° counter-clockwise"
+    (is (= [0 -1 1 0 0 0] (round6 (via-mat cm/rotate-ccw [1 0 0 1 0 0])))))
+  (testing "pre-multiplies (world frame) even when flipped"
+    (is (= [0 1 1 0 0 0] (round6 (via-mat cm/rotate-ccw [-1 0 0 1 0 0]))))))

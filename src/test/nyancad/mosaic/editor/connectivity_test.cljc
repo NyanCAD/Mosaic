@@ -17,6 +17,7 @@
      device origin (x0, y0), the result is P at (x0+1, y0) and N at (x0+1, y0+2);
      body cell is (x0+1, y0+1)."
   (:require [cljs.test :refer [deftest is testing]]
+            [nyancad.mosaic.test-dommatrix]
             [nyancad.mosaic.editor :as e]
             [nyancad.mosaic.editor.platform-test :as pform]))
 
@@ -617,6 +618,89 @@
   [id type model-id x y]
   [id {:type type :model model-id :x x :y y
        :transform [1 0 0 1 0 0] :name id}])
+
+(defn- port-label-texts [hiccup]
+  (->> (tree-seq #(or (seq? %) (vector? %)) seq hiccup)
+       (filter #(and (vector? %) (= :text.port-label (first %))))
+       (map last)))
+
+(defn- port-label-transforms [hiccup]
+  (->> (tree-seq #(or (seq? %) (vector? %)) seq hiccup)
+       (filter #(and (vector? %) (= :text.port-label (first %))))
+       (map #(:transform (second %)))))
+
+(deftest selected-port-labels-render-only-when-selected
+  (testing "selected photonic model ports get outside SVG text labels"
+    (let [dev {:type "straight" :model "test.straight"
+               :x 0 :y 0 :transform [1 0 0 1 0 0] :name "S1"}
+          locs [{:name "o1" :side :left :type "photonic" :x 0 :y 1}
+                {:name "o2" :side :right :type "photonic" :x 2 :y 1}]]
+      (try
+        (swap! e/ui assoc ::e/selected #{})
+        (is (nil? (e/selected-port-labels "S1" dev locs))
+            "unselected devices keep port labels hidden")
+        (swap! e/ui assoc ::e/selected #{"S1"})
+        (is (= ["o1" "o2"]
+               (port-label-texts (e/selected-port-labels "S1" dev locs)))
+            "selected devices label each model port")
+        (finally
+          (swap! e/ui assoc ::e/selected #{}))))))
+
+(deftest selected-port-labels-stay-upright-under-transform
+  (testing "label transform, composed with the instance transform, is always an
+            upright/unmirrored orientation (identity or a -90° head-tilt) — never
+            mirrored or upside-down, per invariant 9"
+    (let [locs [{:name "o1" :side :left :type "photonic" :x 0 :y 1}
+                {:name "o2" :side :right :type "photonic" :x 2 :y 1}]
+          round4 (fn [x] (/ (js/Math.round (* 1e4 x)) 1e4))]
+      (try
+        (swap! e/ui assoc ::e/selected #{"S1"})
+        (doseq [tf [[1 0 0 1 0 0]     ; identity
+                    [0 1 -1 0 0 0]    ; rotate 90
+                    [-1 0 0 -1 0 0]   ; rotate 180
+                    [0 -1 1 0 0 0]    ; rotate 270
+                    [-1 0 0 1 0 0]    ; flip x
+                    [1 0 0 -1 0 0]    ; flip y
+                    [0 1 1 0 0 0]]]   ; rotate + flip
+          (let [dev {:type "straight" :model "test.straight"
+                     :x 0 :y 0 :transform tf :name "S1"}
+                m (js/DOMMatrixReadOnly. (clj->js tf))]
+            (doseq [ts (port-label-transforms (e/selected-port-labels "S1" dev locs))]
+              ;; instance transform ∘ label transform = the on-screen orientation;
+              ;; label = inverse(M)·R so this collapses to R for every M.
+              (let [c (.multiply m (js/DOMMatrixReadOnly. ts))
+                    lin (mapv round4 [(.-a c) (.-b c) (.-c c) (.-d c)])]
+                (is (or (= [1 0 0 1] lin) (= [0 -1 1 0] lin))
+                    (str "transform " tf " → on-screen linear " lin))))))
+        (finally
+          (swap! e/ui assoc ::e/selected #{}))))))
+
+(deftest designator-lands-top-right-and-upright
+  (testing "device-name transform places the origin at the screen-space
+            top-right bbox corner (+ outward pad) and cancels the instance
+            transform so text is upright/unmirrored in all 8 orientations"
+    ;; all 8 orthogonal (det ±1) integer transforms: 4 rotations × optional flip
+    (let [orientations [[1 0 0 1 0 0] [0 1 -1 0 0 0] [-1 0 0 -1 0 0] [0 -1 1 0 0 0]
+                        [-1 0 0 1 0 0] [1 0 0 -1 0 0] [0 1 1 0 0 0] [0 -1 -1 0 0 0]]
+          g 50 size 4 half 2 w 1 h 2   ; a ring-single-shaped 1×2 bbox
+          corners [[(- (+ 1 w) half) (- 1 half)] [(- 1 half) (- 1 half)]
+                   [(- 1 half) (- (+ 1 h) half)] [(- (+ 1 w) half) (- (+ 1 h) half)]]]
+      (doseq [[a b c d :as tf] orientations]
+        (let [screen (map (fn [[x y]] [(+ (* a x) (* c y)) (+ (* b x) (* d y))]) corners)
+              [sx sy] (apply max-key (fn [[x y]] (- x y)) screen)
+              m (js/DOMMatrixReadOnly. (clj->js tf))
+              tm (e/designator-transform tf size w h)
+              n (.multiply m tm)]   ; on-screen linear = M · tm
+          (is (= [1 0 0 1]
+                 (mapv #(js/Math.round %) [(.-a n) (.-b n) (.-c n) (.-d n)]))
+              (str tf " → upright/unmirrored"))
+          ;; anchor origin (tm.e, tm.f), screen offset from tile centre = M·(o − C)
+          (let [ox (- (.-e tm) (* g half))
+                oy (- (.-f tm) (* g half))
+                asx (+ (* a ox) (* c oy))
+                asy (+ (* b ox) (* d oy))]
+            (is (< (js/Math.abs (- asx (* g (+ sx 0.1)))) 1e-6) (str tf " anchor x"))
+            (is (< (js/Math.abs (- asy (* g (- sy 0.15)))) 1e-6) (str tf " anchor y"))))))))
 
 (deftest photonic-model-ports-override-port-names
   (testing "straight with model ports uses model port names, not builtin '1'/'2'"

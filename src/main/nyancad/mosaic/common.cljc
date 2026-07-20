@@ -234,6 +234,40 @@
   [(.-a obj) (.-b obj) (.-c obj) (.-d obj) (.-e obj) (.-f obj)])
 (defn point [x y] (.fromPoint js/DOMPointReadOnly (clj->js {:x x :y y})))
 
+;; @tags editor flip transform composition
+(defn flip-x
+  "World-frame horizontal flip: pre-multiply `m` by the vertical-axis reflection
+   diag(-1, 1) so the mirror is applied about the screen's vertical axis
+   regardless of `m`'s current rotation. `.multiply` post-multiplies, so the
+   reflection is the receiver and `m` the argument. Takes and returns a
+   DOMMatrix, for use with `transform-selected`."
+  [m]
+  (.multiply (js/DOMMatrixReadOnly. #js [-1 0 0 1 0 0]) m))
+
+;; @tags editor flip transform composition
+(defn flip-y
+  "World-frame vertical flip: pre-multiply `m` by the horizontal-axis reflection
+   diag(1, -1). See `flip-x`."
+  [m]
+  (.multiply (js/DOMMatrixReadOnly. #js [1 0 0 -1 0 0]) m))
+
+;; @tags editor flip transform composition
+(defn rotate-cw
+  "World-frame 90° clockwise rotation: pre-multiply `m` by rotate(90) so the
+   on-screen direction is consistent regardless of `m`'s current mirror. A
+   local-frame (post-multiply) rotation reverses under a reflection — the flip
+   plus rotate bug — which this avoids. Takes and returns a DOMMatrix, for use
+   with `transform-selected`."
+  [m]
+  (.multiply (.rotate (js/DOMMatrixReadOnly.) 90) m))
+
+;; @tags editor flip transform composition
+(defn rotate-ccw
+  "World-frame 90° counter-clockwise rotation: pre-multiply by rotate(-90).
+   See `rotate-cw`."
+  [m]
+  (.multiply (.rotate (js/DOMMatrixReadOnly.) -90) m))
+
 ;; Top-level values and extensions that touch browser APIs at load time.
 ;; Both :web and :vscode run in a DOM context, so we fall through to the
 ;; implicit :cljs branch for them. :test runs under Node and gets inert
