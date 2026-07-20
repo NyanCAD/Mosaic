@@ -1910,9 +1910,22 @@
   (and (= "pen" (.-pointerType e))
        (= 5 (.-button e))))
 
+(defn normalize-wheel-delta
+  "Normalize wheel deltaY to pixels, clamp to ±300"
+  [e]
+  (let [dy (.-deltaY e)
+        mode (.-deltaMode e)
+        scaled (case mode
+                 1 (* dy 16)   ; DOM_DELTA_LINE
+                 2 (* dy 100)  ; DOM_DELTA_PAGE
+                 dy)]           ; DOM_DELTA_PIXEL
+    (-> scaled (max -300) (min 300))))
+
 (defn scroll-zoom [e]
-  (let [[x y] (cm/viewbox-coord e)]
-    (zoom-schematic (cm/sign (.-deltaY e)) (* x grid-size) (* y grid-size))))
+  (let [[x y] (cm/viewbox-coord e)
+        dy (normalize-wheel-delta e)
+        direction (-> (/ dy 50) (max -1) (min 1))]
+    (zoom-schematic direction (* x grid-size) (* y grid-size))))
 
 (defn button-zoom [dir]
   (let [[x y w h] (::zoom @ui)]
