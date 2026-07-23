@@ -419,3 +419,29 @@
           (is (= "C1x" (get-in (doc->state (host-text h)) ["C1" :name])))
           (close! to-host)
           (done))))))
+
+;; ---------------------------------------------------------------------------
+;; 6. Validator rejection — ex-info on done?, cache and host unchanged
+;; ---------------------------------------------------------------------------
+;; Contract (spec invariant 2 & 5): when the validator rejects, the write is
+;; aborted (cache unchanged, no host post), and the ex-info lands on the
+;; done? channel as a value — it never propagates synchronously to the caller.
+
+(deftest validator-rejection-puts-ex-info-on-done
+  (testing "a rejecting validator aborts the write; done? carries the ex-info"
+    (async done
+      (let [h  (make-harness (doc1))
+            ja ^js (:ja h)]
+        (set! (.-validator ja) (constantly false))
+        (swap! ja assoc-in ["R1" :name] "R99")
+        (go
+          (let [result (<! (.-done? ja))]
+            (is (instance? js/Error result)
+                (str "done? should carry the ex-info, got: " (pr-str result)))
+            (is (= "R1" (get-in @ja ["R1" :name]))
+                "cache must keep the pre-write value")
+            (is (= "R1" (get-in (doc->state (host-text h)) ["R1" :name]))
+                "host document must keep the pre-write value")
+            (is (empty? @(:bus h))
+                "no host message should be queued for the rejected write")
+            (done)))))))

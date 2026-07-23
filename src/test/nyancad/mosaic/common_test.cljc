@@ -769,3 +769,17 @@
     (let [t (cm/user->screen [0 0 1000 800] {:left 30 :top 70 :width 500 :height 400})]
       (is (= {:x 30.0 :y 70.0 :width 25.0 :height 25.0}
              (cm/rect->screen t {:x 0 :y 0 :width 50 :height 50}))))))
+
+;; ---------------------------------------------------------------------------
+;; alert — returns nil so validator or-short-circuit is falsey on rejection
+;; ---------------------------------------------------------------------------
+;; Contract (spec "validator function"): cm/alert fires the modal as a side
+;; effect and returns nil, so #(or (s/valid? ::spec %) (cm/alert ...)) returns
+;; falsey when the spec fails. reset! returns its new value (a truthy Hiccup
+;; vector); if alert returned that, the validator would never reject.
+
+(deftest alert-returns-nil
+  (testing "alert returns nil even though reset! returns the new value"
+    (let [ret (cm/alert "test message")]
+      (is (nil? ret) "alert must return nil so validators see a falsey rejection"))
+    (is (some? @cm/modal-content) "modal-content should have been set as a side effect")))

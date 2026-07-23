@@ -1977,9 +1977,8 @@
         with-props (if defaults
                      (update named :props #(merge defaults %))
                      named)]
-    (when (s/valid? :nyancad.mosaic.common/device with-props)
-      (swap! schematic assoc id with-props)
-      (post-action!))))
+    (swap! schematic assoc id with-props)
+    (post-action!)))
 
 (defn transform-selected [tf]
   (let [f (comp transform-vec tf transform)

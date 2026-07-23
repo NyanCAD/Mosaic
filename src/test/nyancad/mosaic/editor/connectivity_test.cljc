@@ -482,7 +482,6 @@
         (is (= 2 (count new-nets))
             "both ports still have nets")))))
 
-;; @tags validator semantics
 (deftest annotations-dangling-wire-gets-nil-net-and-validates
   (testing "a previously-connected wire whose port got deleted receives {:net nil} and the merged schematic stays spec-valid"
     (let [schem  (sch ["W1" {:type "wire" :x 1 :y 2 :rx 0 :ry 2

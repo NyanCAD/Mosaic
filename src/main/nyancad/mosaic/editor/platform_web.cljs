@@ -20,10 +20,10 @@
 (defonce db (pouchdb (or (cm/get-db-name) "schematics")))
 (defonce schematic (pouch-atom db group (r/atom {})))
 (set-validator! schematic
-                #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
+                #(or (s/valid? :nyancad.mosaic.common/schematic %) (cm/alert (s/explain-str :nyancad.mosaic.common/schematic %))))
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
 (set-validator! modeldb
-                #(or (s/valid? :nyancad.mosaic.common/modeldb %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/modeldb %))))
+                #(or (s/valid? :nyancad.mosaic.common/modeldb %) (cm/alert (s/explain-str :nyancad.mosaic.common/modeldb %))))
 (defonce snapshots (pouch-atom db (str group "$snapshots") (r/atom {})))
 (defonce simulations (pouch-atom db (str group "$result") (r/atom (sorted-map))))
 (defonce watcher (watch-changes db schematic modeldb snapshots simulations))

@@ -27,8 +27,8 @@
 ;; --- State ---
 
 (defonce modeldb (pouch-atom db "models" (r/atom {})))
-(set-validator! (.-cache modeldb)
-                #(or (s/valid? :nyancad.mosaic.common/modeldb %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/modeldb %))))
+(set-validator! modeldb
+                #(or (s/valid? :nyancad.mosaic.common/modeldb %) (cm/alert (s/explain-str :nyancad.mosaic.common/modeldb %))))
 (defonce watcher (watch-changes db modeldb))
 
 (defonce syncactive (r/atom false))

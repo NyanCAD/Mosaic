@@ -14,7 +14,7 @@
    VSCode-specific wiring: the acquireVsCodeApi transport, the window message
    listener, and the read-file request/response channel."
   (:require [nyancad.mosaic.jsatom.protocol :as protocol]
-            [cljs.core.async :refer [go put! promise-chan]]))
+            [cljs.core.async :refer [put! promise-chan]]))
 
 (defonce vscode (js/acquireVsCodeApi))
 
@@ -65,8 +65,8 @@
     ch))
 
 (defn done?
-  "Returns a channel that completes immediately.
-   JsAtom edits are synchronous, so there is never anything to wait for.
-   This matches the hipflask/done? API so editor code can use done? uniformly."
-  [_ja]
-  (go nil))
+  "Returns the channel for the latest mutation on this JsAtom. Carries the
+    new cache value on success or the ex-info on validator rejection. Matches
+   the hipflask/done? API so editor code can chain writes uniformly."
+  [^js ja]
+  (.-done? ja))

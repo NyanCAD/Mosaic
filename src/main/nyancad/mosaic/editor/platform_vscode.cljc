@@ -18,16 +18,21 @@
 
 (def group (.-value (js/document.getElementById "group")))
 (defonce schematic (json-atom "schematic"
-                    (js/decodeURIComponent (.-value (js/document.getElementById "document")))
-                    (r/atom {})
-                    (injected-version "document-version")))
-(set-validator! schematic
-                #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
+                     (js/decodeURIComponent (.-value (js/document.getElementById "document")))
+                     (r/atom {})
+                     (injected-version "document-version")))
+;; If the initial document is invalid, clear the cache before registering
+;; the validator so set-validator!'s re-validation passes. The validator's
+;; cm/alert side effect has already fired on the check. JS is single-threaded
+;; so the check-then-clear-then-set sequence is race-free.
+(let [v #(or (s/valid? :nyancad.mosaic.common/schematic %) (cm/alert (s/explain-str :nyancad.mosaic.common/schematic %)))]
+  (when-not (v @schematic) (reset! (.-cache schematic) {}))
+  (set-validator! schematic v))
 ;; Secondary modeldb atom — initialized from models.nyanlib injected by extension
 (defonce modeldb (json-atom "models"
-                   (js/decodeURIComponent (.-value (js/document.getElementById "models")))
-                   (r/atom {})
-                   (injected-version "models-version")))
+                    (js/decodeURIComponent (.-value (js/document.getElementById "models")))
+                    (r/atom {})
+                    (injected-version "models-version")))
 (defonce snapshots (r/atom {}))
 (defonce simulations (r/atom (sorted-map)))
 (defonce local (r/atom {}))
