@@ -35,14 +35,15 @@
   (first (make-names base)))
 
 (defonce ui (r/atom {::zoom [0 0 500 500]
-                     ::theme nil
-                     ::tool ::cursor
-                     ::selected #{}
-                     ::mouse [0 0]
-                     ::mouse-start [0 0]
-                     ::notebook-state ::embedded
-                     ::pointer-cache {}
-                     ::tab-index 0}))
+                      ::theme nil
+                      ::tool ::cursor
+                      ::selected #{}
+                      ::mouse [0 0]
+                      ::mouse-start [0 0]
+                      ::notebook-state ::embedded
+                      ::pointer-cache {}
+                      ::tab-index 0
+                      ::paste-staging nil}))
 
 
 (s/def ::zoom (s/coll-of number? :count 4))
@@ -66,8 +67,9 @@
 ;; check whether it's set. Recomputed on each Ctrl press (rare; selection/schematic
 ;; are frozen mid-drag, so the map is stable), hence no separate cache.
 (s/def ::stretch (s/nilable (s/map-of string? set?)))
+(s/def ::paste-staging (s/nilable (s/map-of string? map?)))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-state ::pointer-cache ::tab-index]
-                    :opt [::dragging ::staging ::stretch]))
+                    :opt [::dragging ::staging ::stretch ::paste-staging]))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
 
@@ -629,11 +631,24 @@
                [:path {:d "M75,55 A35,35 0 0,1 75,95"}]
                [:path {:d "M84,49 A45,45 0 0,1 84,101"}]]})
 
+(defn device-dims
+  "Return [width height] of a device doc's render footprint — the tetris rect
+   dimensions, before the 2-tile padding added by the `device` renderer.
+   Electrical builtins read `::bg` from the static `models` map; subcircuit and
+   photonic devices with a `:model` read ports from `@modeldb` via
+   `cm/port-perimeter`; everything else falls back to `[1 1]` (size 3)."
+  [dev]
+  (let [model-entry (get models (:type dev))
+        bg (::bg model-entry)]
+    (cond
+      (and (vector? bg) (= (count bg) 2)) bg
+      (:model dev) (let [ports (get-in @modeldb [(cm/model-key (:model dev)) :ports])]
+                     (if (seq ports) (cm/port-perimeter ports (:type dev)) [1 1]))
+      :else [1 1])))
+
 (defn- photonic-sym
   [builtin-elements k v]
-  (let [model (:model v)
-        ports (when model (get-in @modeldb [(cm/model-key model) :ports]))
-        [width height] (if (seq ports) (cm/port-perimeter ports (:type v)) [1 1])
+  (let [[width height] (device-dims v)
         new-size (+ 2 (max width height))
         {orig-size ::size, elements ::elements} builtin-elements
         delta (- new-size orig-size)
@@ -646,10 +661,7 @@
                    (map render-element elements))]))))
 
 (defn circuit-shape [k v]
-  (let [model (:model v)
-        ports (get-in @modeldb [(cm/model-key model) :ports])
-        size (if ports (cm/port-perimeter ports (:type v)) [1 1])]
-    (draw-background size k v)))
+  (draw-background (device-dims v) k v))
 
 (defn circuit-conn [k v]
   (let [model (:model v)
@@ -1715,7 +1727,6 @@
                     (+ x (/ w 2))
                     (+ y (/ h 2)))))
 
-;; @tags mosaic viewport zoom
 (defn fit-viewbox
   [bx by bw bh container-w container-h]
   (let [pad 0.1
@@ -1733,7 +1744,6 @@
             dy (/ (- new-h ch) 2)]
         [cx (- cy dy) cw new-h]))))
 
-;; @tags mosaic viewport zoom
 (defn zoom-to-fit []
   (when-let [^js svg (js/document.querySelector ".mosaic-canvas")]
     (when-let [^js el (.querySelector svg ".schematic-content")]
@@ -1957,30 +1967,45 @@
              (into sel newsel)))
           (reset! selected sel))))))
 
+(defn- keep-existing
+  "Filter a selection set to ids still present in the schematic, dropping
+  orphans (e.g. pasted ids from a cancelled paste that were never inserted)."
+  [sel sch]
+  (into #{} (filter #(contains? sch %)) sel))
+
 (defn cancel
   "Cancel current operation and optionally switch to a new tool.
    0-arity: default behavior (keep wire tool if drawing wire, else cursor)
-   1-arity: switch to specified tool and clear staging"
+   1-arity: switch to specified tool and clear staging
+
+   Also resets ::delta to zero and cleans ::selected against @schematic so a
+   cancelled drag (paste or move) can't leak its pointer offset onto the
+   next selection — without the ::delta reset, click-to-reselect after Esc
+   flows to drag-end → end-ui, which applies the stale cursor-at-Esc −
+   centroid offset to the newly selected instance."
   ([]
    (let [uiv @ui]
      (if (or (::staging uiv) (::dragging uiv) (not= (::tool uiv) ::cursor))
-       (if (and (::staging uiv) (= (::tool uiv) ::wire))
+       (let [tool (if (and (::staging uiv) (= (::tool uiv) ::wire)) ::wire ::cursor)]
          (swap! ui assoc
                 ::dragging nil
+                ::tool tool
                 ::staging nil
-                ::stretch nil)
-         (swap! ui assoc
-                ::dragging nil
-                ::tool ::cursor
-                ::staging nil
-                ::stretch nil))
+                ::stretch nil
+                ::paste-staging nil
+                ::delta {:x 0 :y 0 :rx 0 :ry 0}
+                ::selected (keep-existing (::selected uiv) @schematic)))
        (swap! ui assoc ::selected #{}))))
   ([new-tool]
-   (swap! ui assoc
-          ::dragging nil
-          ::tool new-tool
-          ::staging nil
-          ::stretch nil)))
+   (let [uiv @ui]
+     (swap! ui assoc
+            ::dragging nil
+            ::tool new-tool
+            ::staging nil
+            ::stretch nil
+            ::paste-staging nil
+            ::delta {:x 0 :y 0 :rx 0 :ry 0}
+            ::selected (keep-existing (::selected uiv) @schematic)))))
 
 (defonce probechan (js/BroadcastChannel. "probe"))
 (defn probe-element [k]
@@ -2169,9 +2194,7 @@
 
 (defn end-ui [bg? selected dx dy]
   (letfn [(clean-selected [ui sch]
-            (update ui ::selected
-                    (fn [sel]
-                      (into #{} (filter #(contains? sch %)) sel)))) (deselect [ui] (if bg? (assoc ui ::selected #{}) ui))
+            (update ui ::selected #(keep-existing % sch))) (deselect [ui] (if bg? (assoc ui ::selected #{}) ui))
           (endfn [ui]
             (-> ui
                 (assoc ::dragging nil
@@ -2212,6 +2235,23 @@
            ::stretch nil
            ::selected (set sel))))
 
+(defn commit-paste [staged dx dy]
+  (letfn [(round-coords [{x :x y :y :as dev}]
+            (assoc dev
+                   :x (math/round (+ x dx))
+                   :y (math/round (+ y dy))))]
+    (let [placed (into {} (map (fn [[k v]] [k (round-coords v)]) staged))]
+      (swap! ui assoc
+             ::dragging nil
+             ::delta {:x 0 :y 0 :rx 0 :ry 0}
+             ::stretch nil
+             ::paste-staging nil
+             ::selected (set (keys placed)))
+      (go
+        (swap! schematic into placed)
+        (<! (done? schematic))
+        (post-action!)))))
+
 (defn drag-end [e]
   (.stopPropagation e)
   (let [bg? (= (.-target e) (.-currentTarget e))
@@ -2228,6 +2268,7 @@
           (swap! ui assoc ::staging nil ::dragging nil)))
       (= (::tool @ui) ::eraser) (post-action!)
       (= (::tool @ui) ::wire) nil
+      (::paste-staging @ui) (commit-paste (::paste-staging @ui) dx dy)
       :else (end-ui bg? selected dx dy))))
 
 (defn add-device [cell [x y] & args]
@@ -2475,6 +2516,48 @@
            #(or (:template %) effective-default)
            (fn [st v] (swap! st assoc :template v) (post-action!))]]]))))
 
+(defn doc-center
+  "Visual center of a single device doc in grid coordinates — the tetris rect
+  center `[:x + 1 + w/2, :y + 1 + h/2]`, which is where `add-device` places a
+  device and what `draw-background` renders. Uses `device-dims` for the
+  `[w h]` lookup. Wires center on their segment midpoint. Ports/text (which
+  render at size 1 via `port-sym`, not through `draw-background`) center on
+  their origin tile."
+  [dev]
+  (if (= (:type dev) "wire")
+    [(+ (:x dev) (/ (:rx dev 0) 2) 0.5)
+     (+ (:y dev) (/ (:ry dev 0) 2) 0.5)]
+    (let [model-entry (get models (:type dev))
+          bg (::bg model-entry)]
+      (cond
+        (and (vector? bg) (= (count bg) 2))
+        (let [[w h] bg]
+          [(+ (:x dev) 1 (/ w 2))
+           (+ (:y dev) 1 (/ h 2))])
+
+        (:model dev)
+        (let [[w h] (device-dims dev)]
+          [(+ (:x dev) 1 (/ w 2))
+           (+ (:y dev) 1 (/ h 2))])
+
+        (nil? (::conn model-entry))
+        [(+ (:x dev) 1.5) (+ (:y dev) 1.5)]
+
+        :else
+        [(+ (:x dev) 0.5) (+ (:y dev) 0.5)]))))
+
+(defn clipboard-centroid
+  "Mean of the visual centers (see `doc-center`) of a sequence of device docs.
+  Returns [0 0] for an empty sequence so paste is a no-op rather than a
+  divide-by-zero. The centroid anchors the paste drag — see `paste`."
+  [docs]
+  (let [n (count docs)]
+    (if (zero? n)
+      [0 0]
+      (let [centers (map doc-center docs)]
+        [(/ (reduce + (map first centers)) n)
+         (/ (reduce + (map second centers)) n)]))))
+
 (defn copy []
   (let [sel @selected
         sch @schematic
@@ -2486,7 +2569,12 @@
   (delete-selected))
 
 (defn paste []
-  (let [devmap (->> (get-in @local [(str "local" sep "clipboard") :data])
+  (let [docs (get-in @local [(str "local" sep "clipboard") :data])
+        [mx my] (::mouse @ui)
+        [cx cy] (clipboard-centroid docs)
+        dx (math/round (- mx cx))
+        dy (math/round (- my cy))
+        devmap (->> docs
                     (group-by #(cm/initial (:type %)))
                     (map (fn [[_prefix devices]]
                            (map (fn [nam dev]
@@ -2496,13 +2584,13 @@
                                 (make-names (:type (first devices)))
                                 devices)))
                     (into {} cat))]
-    (go
-      (swap! schematic into devmap)
-      (<! (done? schematic))
+    (when (seq docs)
       (swap! ui assoc
              ::dragging ::device
-             ::selected (set (keys devmap)))
-      (post-action!))))
+             ::selected (set (keys devmap))
+             ::mouse-start [cx cy]
+             ::delta {:x dx :y dy :rx 0 :ry 0}
+             ::paste-staging devmap))))
 
 (defn device-active
   ([cell]
@@ -2793,7 +2881,7 @@
                    :mismatch "Type mismatch: incompatible domains meet"
                    :fork "Photonic fork: waveguides cannot branch")]
          [:circle {:cx (/ icon-size 2) :cy (/ icon-size 2) :r (/ icon-size 3) :fill "white"}]
-          [cm/exclamation-diamond {:size icon-size}]]))]))
+         [cm/exclamation-diamond {:size icon-size}]]))]))
 
 (defn tool-elements []
   (let [{sel ::selected
@@ -2801,6 +2889,7 @@
          v ::staging
          tool ::tool
          st ::stretch
+         paste-staging ::paste-staging
          {x :x y :y :or {x 0 y 0}} ::delta
          [sx sy] ::mouse-start} @ui
         ;; Unrounded: the staged ghost follows the cursor smoothly; the grid
@@ -2820,6 +2909,9 @@
                      :y (* (min sy (+ sy y)) grid-size)
                      :width (abs (* x grid-size))
                      :height (abs (* y grid-size))}]
+      (and paste-staging (= dr ::device))
+      [:g.staging {:style {:transform (str "translate(" vx "px, " vy "px)")}}
+       [schematic-elements paste-staging]]
       (and sel dr)
       [:<>
        ;; Selected devices ride one uniform translate.
@@ -2892,23 +2984,35 @@
    [cm/contextmenu]
    [cm/modal]])
 
-(def shortcuts {#{:c} #(add-device "capacitor" (::mouse @ui))
-                #{:r} #(add-device "resistor" (::mouse @ui))
-                #{:l} #(add-device "inductor" (::mouse @ui))
-                #{:d} #(add-device "diode" (::mouse @ui))
-                #{:v} #(add-device "vsource" (::mouse @ui))
-                #{:i} #(add-device "isource" (::mouse @ui))
-                #{:m} #(add-device "nmos" (::mouse @ui))
-                #{:shift :m} #(add-device "pmos" (::mouse @ui))
-                #{:b} #(add-device "npn" (::mouse @ui))
-                #{:shift :b} #(add-device "pnp" (::mouse @ui))
-                #{:x} #(add-device "ckt" (::mouse @ui))
-                #{:a} #(add-device "amp" (::mouse @ui))
-                #{:p} #(add-device "port" (::mouse @ui))
-                #{:g} #(add-gnd (::mouse @ui))
-                #{:shift :p} #(add-supply (::mouse @ui))
-                #{:t} #(add-device "text" (::mouse @ui))
-                #{:shift :t} #(add-label (::mouse @ui))
+(defn- unless-active
+  "Wrap a keyup shortcut so it no-ops while a drag or paste-staging is
+  active. Suppresses the device-placement shortcuts (V/I/P/G/T/Shift+T/
+  Shift+P) during a drag or paste: the Cmd+V paste fires on keydown, so
+  releasing Cmd before V leaves V's keyup with no modifier and would
+  otherwise match the plain #{:v} vsource binding, spawning a voltage
+  source mid-paste. Also prevents placing a device mid-drag generally."
+  [f]
+  (fn [& args]
+    (when-not (or (::dragging @ui) (::paste-staging @ui))
+      (apply f args))))
+
+(def shortcuts {#{:c} (unless-active #(add-device "capacitor" (::mouse @ui)))
+                #{:r} (unless-active #(add-device "resistor" (::mouse @ui)))
+                #{:l} (unless-active #(add-device "inductor" (::mouse @ui)))
+                #{:d} (unless-active #(add-device "diode" (::mouse @ui)))
+                #{:v} (unless-active #(add-device "vsource" (::mouse @ui)))
+                #{:i} (unless-active #(add-device "isource" (::mouse @ui)))
+                #{:m} (unless-active #(add-device "nmos" (::mouse @ui)))
+                #{:shift :m} (unless-active #(add-device "pmos" (::mouse @ui)))
+                #{:b} (unless-active #(add-device "npn" (::mouse @ui)))
+                #{:shift :b} (unless-active #(add-device "pnp" (::mouse @ui)))
+                #{:x} (unless-active #(add-device "ckt" (::mouse @ui)))
+                #{:a} (unless-active #(add-device "amp" (::mouse @ui)))
+                #{:p} (unless-active #(add-device "port" (::mouse @ui)))
+                #{:g} (unless-active #(add-gnd (::mouse @ui)))
+                #{:shift :p} (unless-active #(add-supply (::mouse @ui)))
+                #{:t} (unless-active #(add-device "text" (::mouse @ui)))
+                #{:shift :t} (unless-active #(add-label (::mouse @ui)))
                 #{:backspace} delete-selected
                 #{:delete} delete-selected
                 #{:w} #(cancel ::wire)
