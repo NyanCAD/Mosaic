@@ -17,6 +17,7 @@
      device origin (x0, y0), the result is P at (x0+1, y0) and N at (x0+1, y0+2);
      body cell is (x0+1, y0+1)."
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.spec.alpha :as s]
             [nyancad.mosaic.test-dommatrix]
             [nyancad.mosaic.editor :as e]
             [nyancad.mosaic.editor.platform-test :as pform]))
@@ -480,6 +481,22 @@
             "stale values replaced")
         (is (= 2 (count new-nets))
             "both ports still have nets")))))
+
+;; @tags validator semantics
+(deftest annotations-dangling-wire-gets-nil-net-and-validates
+  (testing "a previously-connected wire whose port got deleted receives {:net nil} and the merged schematic stays spec-valid"
+    (let [schem  (sch ["W1" {:type "wire" :x 1 :y 2 :rx 0 :ry 2
+                             :name "middle" :net "middle"}])
+          a      (annotations schem)]
+      (testing "the wire-update emits {:net nil} because W1 is now dangling"
+        (is (= {:net nil} (get a "W1"))))
+      (testing "applying the annotation leaves the wire doc spec-valid"
+        (let [applied (reduce-kv (fn [s id upd] (update s id merge upd))
+                                 schem a)
+              w1      (get applied "W1")]
+          (is (nil? (:net w1)))
+          (is (s/valid? :nyancad.mosaic.common/schematic applied)
+              "schematic with a nil :net on a dangling wire must validate"))))))
 
 ;; ---------------------------------------------------------------------------
 ;; build-wire-split-index — split wires where they cross another endpoint

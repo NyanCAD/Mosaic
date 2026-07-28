@@ -369,7 +369,7 @@
 ;; Port-name keys are keywords in the in-memory representation (round-trip
 ;; through json->clj keywordizes object keys); net-name values are strings.
 (s/def ::nets (s/map-of keyword? string?))
-(s/def ::net string?)
+(s/def ::net (s/nilable string?))
 
 (defmulti device-spec :type)
 ;; Components require a :name — the schematic renders by name and the
