@@ -235,7 +235,6 @@
   [(.-a obj) (.-b obj) (.-c obj) (.-d obj) (.-e obj) (.-f obj)])
 (defn point [x y] (.fromPoint js/DOMPointReadOnly (clj->js {:x x :y y})))
 
-;; @tags editor flip transform composition
 (defn flip-x
   "World-frame horizontal flip: pre-multiply `m` by the vertical-axis reflection
    diag(-1, 1) so the mirror is applied about the screen's vertical axis
@@ -245,14 +244,12 @@
   [m]
   (.multiply (js/DOMMatrixReadOnly. #js [-1 0 0 1 0 0]) m))
 
-;; @tags editor flip transform composition
 (defn flip-y
   "World-frame vertical flip: pre-multiply `m` by the horizontal-axis reflection
    diag(1, -1). See `flip-x`."
   [m]
   (.multiply (js/DOMMatrixReadOnly. #js [1 0 0 -1 0 0]) m))
 
-;; @tags editor flip transform composition
 (defn rotate-cw
   "World-frame 90° clockwise rotation: pre-multiply `m` by rotate(90) so the
    on-screen direction is consistent regardless of `m`'s current mirror. A
@@ -262,7 +259,6 @@
   [m]
   (.multiply (.rotate (js/DOMMatrixReadOnly.) 90) m))
 
-;; @tags editor flip transform composition
 (defn rotate-ccw
   "World-frame 90° counter-clockwise rotation: pre-multiply by rotate(-90).
    See `rotate-cw`."
@@ -998,6 +994,46 @@
    @modal-content])
 
 (defonce context-content (r/atom {:x 0 :y 0 :body nil}))
+
+(def overlay-margin
+  "Gap in px kept between a floating overlay and the viewport edge, and between
+   the selection toolbar and the geometry it anchors to."
+  8)
+
+(defn union-rect
+  "Smallest rect containing every rect in `rects`, each `{:x :y :width :height}`.
+   Returns nil for an empty sequence."
+  [rects]
+  (when (seq rects)
+    (let [left (apply min (map :x rects))
+          top (apply min (map :y rects))
+          right (apply max (map #(+ (:x %) (:width %)) rects))
+          bottom (apply max (map #(+ (:y %) (:height %)) rects))]
+      {:x left :y top :width (- right left) :height (- bottom top)})))
+
+(defn inset-rect
+  "Shrink `rect` by `d` on every side."
+  [{:keys [x y width height]} d]
+  {:x (+ x d) :y (+ y d)
+   :width (- width (* 2 d)) :height (- height (* 2 d))})
+
+(defn user->screen
+  "Scale `:k` and offsets `:dx`/`:dy` mapping SVG user units to viewport px for
+   the viewBox `[vx vy vw vh]` drawn into the canvas box `{:left :top :width
+   :height}` under `xMidYMid meet` — the tighter axis sets the scale and the
+   slack is split evenly. Derived from state rather than read back off the DOM,
+   so it is current in the render that changed the viewBox."
+  [[vx vy vw vh] {:keys [left top width height]}]
+  (let [k (min (/ width vw) (/ height vh))]
+    {:k k
+     :dx (+ left (/ (- width (* vw k)) 2) (* (- vx) k))
+     :dy (+ top (/ (- height (* vh k)) 2) (* (- vy) k))}))
+
+(defn rect->screen
+  "Map a rect from SVG user units to viewport px through a `user->screen`."
+  [{:keys [k dx dy]} {:keys [x y width height]}]
+  {:x (+ (* x k) dx) :y (+ (* y k) dy)
+   :width (* width k) :height (* height k)})
 
 (defn contextmenu []
   (let [{:keys [:x :y :body]} @context-content]

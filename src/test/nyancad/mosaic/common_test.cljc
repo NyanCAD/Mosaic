@@ -545,3 +545,136 @@
     (is (= [0 -1 1 0 0 0] (round6 (via-mat cm/rotate-ccw [1 0 0 1 0 0])))))
   (testing "pre-multiplies (world frame) even when flipped"
     (is (= [0 1 1 0 0 0] (round6 (via-mat cm/rotate-ccw [-1 0 0 1 0 0]))))))
+
+;; ---------------------------------------------------------------------------
+;; union-rect — bounding rect of a selection
+;; ---------------------------------------------------------------------------
+;;
+;; Contract (spec "mosaic selection toolbar"): reduce `{:x :y :width :height}`
+;; rects to the smallest rect containing all of them, nil for nothing. Rects
+;; arrive in SVG user units from the tile math in selection-anchor-rect, so
+;; coordinates may be negative and are not integers in general.
+
+(deftest union-rect-of-nothing-is-nil
+  (testing "empty or nil input has no bounding rect"
+    (is (nil? (cm/union-rect [])))
+    (is (nil? (cm/union-rect nil)))))
+
+(deftest union-rect-of-one-is-itself
+  (testing "a single rect is its own bounding rect"
+    (is (= {:x 10 :y 20 :width 30 :height 40}
+           (cm/union-rect [{:x 10 :y 20 :width 30 :height 40}])))))
+
+(deftest union-rect-spans-disjoint-rects
+  (testing "spans from the left/top-most edge to the right/bottom-most edge"
+    ;; left edge 0, top edge 0, right edge 90+10=100, bottom edge 40+10=50
+    (is (= {:x 0 :y 0 :width 100 :height 50}
+           (cm/union-rect [{:x 0 :y 0 :width 10 :height 10}
+                           {:x 90 :y 40 :width 10 :height 10}]))))
+  (testing "order of the inputs does not matter"
+    (is (= (cm/union-rect [{:x 0 :y 0 :width 10 :height 10}
+                           {:x 90 :y 40 :width 10 :height 10}])
+           (cm/union-rect [{:x 90 :y 40 :width 10 :height 10}
+                           {:x 0 :y 0 :width 10 :height 10}])))))
+
+(deftest union-rect-keeps-the-enclosing-rect
+  (testing "a rect fully inside another does not grow the result"
+    (is (= {:x 0 :y 0 :width 100 :height 100}
+           (cm/union-rect [{:x 0 :y 0 :width 100 :height 100}
+                           {:x 25 :y 25 :width 10 :height 10}])))))
+
+(deftest union-rect-handles-negative-coordinates
+  (testing "content left of / above the viewport origin still bounds correctly"
+    ;; left -50, top -20, right 0+5=5, bottom 0+5=5
+    (is (= {:x -50 :y -20 :width 55 :height 25}
+           (cm/union-rect [{:x -50 :y -20 :width 10 :height 10}
+                           {:x 0 :y 0 :width 5 :height 5}])))))
+
+;; ---------------------------------------------------------------------------
+;; inset-rect — tile rect to tetris body rect
+;; ---------------------------------------------------------------------------
+;;
+;; Contract (spec "mosaic selection toolbar"): shrink a rect by the same amount
+;; on all four sides. The toolbar insets the selection's tile rect by half a
+;; grid cell, in user units, so the bar clears the port circles at any zoom.
+
+(deftest inset-rect-shrinks-on-every-side
+  (testing "both edges of each axis move in, so the size drops by twice d"
+    (is (= {:x 35 :y 45 :width 30 :height 80}
+           (cm/inset-rect {:x 10 :y 20 :width 80 :height 130} 25))))
+  (testing "an inset of zero is the identity"
+    (is (= {:x 10 :y 20 :width 80 :height 130}
+           (cm/inset-rect {:x 10 :y 20 :width 80 :height 130} 0))))
+  (testing "half a grid cell is what the toolbar uses"
+    ;; a single 4-cell tile at the origin: 200x200 user units -> 150x150 body
+    (is (= {:x 25 :y 25 :width 150 :height 150}
+           (cm/inset-rect {:x 0 :y 0 :width 200 :height 200}
+                          (/ cm/grid-size 2))))))
+
+;; ---------------------------------------------------------------------------
+;; user->screen — viewBox to viewport pixels
+;; ---------------------------------------------------------------------------
+;;
+;; Contract (spec "mosaic selection toolbar"): the scale and offset the browser
+;; applies for `xMidYMid meet` — the tighter axis sets the scale, the leftover
+;; slack on the other axis is split evenly, and the viewBox origin shifts to
+;; the canvas box's origin. Derived from ::zoom and the canvas box rather than
+;; read back off the DOM, so it is current in the render that changed ::zoom.
+
+(deftest user->screen-matches-the-box-when-aspect-ratios-agree
+  (testing "no letterboxing: scale is the plain ratio and the origin lines up"
+    ;; 1000x800 viewBox into a 500x400 box at the viewport origin -> k = 0.5
+    (is (= {:k 0.5 :dx 0.0 :dy 0.0}
+           (cm/user->screen [0 0 1000 800]
+                            {:left 0 :top 0 :width 500 :height 400}))))
+  (testing "the canvas box offset carries straight into dx/dy"
+    (is (= {:k 0.5 :dx 30.0 :dy 70.0}
+           (cm/user->screen [0 0 1000 800]
+                            {:left 30 :top 70 :width 500 :height 400})))))
+
+(deftest user->screen-pans-with-the-viewbox-origin
+  (testing "a viewBox scrolled right moves content left by origin times scale"
+    ;; vx = 100 at k = 0.5 -> dx = -50
+    (is (= {:k 0.5 :dx -50.0 :dy -25.0}
+           (cm/user->screen [100 50 1000 800]
+                            {:left 0 :top 0 :width 500 :height 400})))))
+
+(deftest user->screen-letterboxes-the-slack-axis
+  (testing "a box wider than the viewBox centres the content horizontally"
+    ;; k = min(1000/1000, 400/800) = 0.5; slack = 1000 - 1000·0.5 = 500, halved
+    (is (= {:k 0.5 :dx 250.0 :dy 0.0}
+           (cm/user->screen [0 0 1000 800]
+                            {:left 0 :top 0 :width 1000 :height 400}))))
+  (testing "a box taller than the viewBox centres the content vertically"
+    ;; k = min(500/1000, 800/800) = 0.5; slack = 800 - 800·0.5 = 400, halved
+    (is (= {:k 0.5 :dx 0.0 :dy 200.0}
+           (cm/user->screen [0 0 1000 800]
+                            {:left 0 :top 0 :width 500 :height 800})))))
+
+;; ---------------------------------------------------------------------------
+;; rect->screen — user-unit rect through a user->screen
+;; ---------------------------------------------------------------------------
+;;
+;; Contract (spec "mosaic selection toolbar"): positions scale and translate,
+;; sizes only scale. The canvas transform has no rotation, so a rect stays a
+;; rect.
+
+(deftest rect->screen-scales-sizes-and-translates-positions
+  (testing "position takes the offset, size does not"
+    (is (= {:x 120 :y 90 :width 60 :height 80}
+           (cm/rect->screen {:k 2 :dx 100 :dy 50}
+                            {:x 10 :y 20 :width 30 :height 40}))))
+  (testing "an identity transform leaves the rect untouched"
+    (is (= {:x 10 :y 20 :width 30 :height 40}
+           (cm/rect->screen {:k 1 :dx 0 :dy 0}
+                            {:x 10 :y 20 :width 30 :height 40}))))
+  (testing "a panned canvas can push the rect off-viewport"
+    (is (= {:x -95 :y -40 :width 15 :height 20}
+           (cm/rect->screen {:k 0.5 :dx -100 :dy -50}
+                            {:x 10 :y 20 :width 30 :height 40})))))
+
+(deftest rect->screen-composes-with-user->screen
+  (testing "a tile at the viewBox origin lands at the canvas box origin"
+    (let [t (cm/user->screen [0 0 1000 800] {:left 30 :top 70 :width 500 :height 400})]
+      (is (= {:x 30.0 :y 70.0 :width 25.0 :height 25.0}
+             (cm/rect->screen t {:x 0 :y 0 :width 50 :height 50}))))))

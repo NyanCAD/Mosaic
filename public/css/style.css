@@ -254,6 +254,65 @@ html {
     list-style-type: none;
 }
 
+/* Carries the selection's screen rect so the bar can be placed against it in
+   CSS. Invisible and inert — it exists only to be an anchor.
+
+   The z-index lives here, not on the bar: position: fixed makes this element a
+   stacking context, so a z-index on the bar inside it could never lift the bar
+   over .content (z-index 1), and both would paint behind the canvas. 999 keeps
+   the bar below .contextmenu/.modal (1000), so the properties popup the
+   Parameters button opens draws over the bar rather than under it. */
+.mosaic-app .selection-anchor {
+    position: fixed;
+    z-index: 999;
+    pointer-events: none;
+    anchor-name: --selection;
+}
+
+.mosaic-app .selection-toolbar {
+    /* Percentage translate resolves against the bar's own border box, so this
+       centres it and lifts it clear of the anchor without anyone measuring it.
+       Baseline path: no flip, no viewport clamp. */
+    position: absolute;
+    left: 50%;
+    top: 0;
+    transform: translate(-50%, calc(-100% - 8px));
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    padding: 0 0.25em;
+    border-radius: 7px;
+    white-space: nowrap;
+}
+
+/* Where anchor positioning exists, hand the flip and the viewport clamp to the
+   browser: anchor-center keeps the bar inside its containing block, and
+   flip-block drops it under the selection when there is no room above. */
+@supports (position-area: block-start) {
+    .mosaic-app .selection-toolbar {
+        position: fixed;
+        left: auto;
+        top: auto;
+        transform: none;
+        position-anchor: --selection;
+        position-area: block-start;
+        justify-self: anchor-center;
+        position-try-fallbacks: flip-block;
+        margin: 8px;
+    }
+}
+
+.mosaic-app .selection-toolbar .toolbar-group {
+    display: flex;
+    align-items: center;
+}
+
+.mosaic-app .selection-toolbar .toolbar-group + .toolbar-group {
+    border-left: 1px solid var(--color-border);
+    margin-left: 0.25em;
+    padding-left: 0.25em;
+}
+
 /* Model selector popup */
 .mosaic-app .model-selector-popup {
     min-width: 500px;
@@ -690,11 +749,18 @@ html {
     flex-direction: column;
 }
 
-.mosaic-container .menu {
-    grid-row: 1;
-    background-color: var(--color-surface);
+/* Lightweight floating chrome shared by the menu bar, the devicetray and the
+   selection toolbar — surface background, subtle shadow, light hairline border.
+   Distinct from .window, the heavier popup/panel styling. Radius and padding
+   stay per-element. */
+.mosaic-container .chrome-float {
+    background: var(--color-surface);
     box-shadow: 0px 0px 8px #00000008;
     border: 0.5px solid var(--color-border-light);
+}
+
+.mosaic-container .menu {
+    grid-row: 1;
     z-index: 2;
     display: flex;
     justify-content: space-between;
@@ -751,9 +817,6 @@ html {
     position: absolute;
     top: 25px;
     left: 25px;
-    background: var(--color-surface) 0% 0% no-repeat padding-box;
-    box-shadow: 0px 0px 8px #00000008;
-    border: 0.5px solid var(--color-border-light);
     border-radius: 15px;
     display: flex;
     flex-direction: column;
