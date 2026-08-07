@@ -27,11 +27,12 @@
 ;; No DOM in Node — render is never called from tests.
 (def root nil)
 
+(defonce settled-write (go nil))
 (defn done?
   "Match the JsAtom/pouch-atom contract: returns a channel. Nothing to
    synchronize in tests, so close immediately."
   [_atom]
-  (go nil))
+  settled-write)
 
 ;; UI hooks — no-ops in tests.
 (defn notebook-panel [_state] nil)

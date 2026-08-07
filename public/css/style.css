@@ -898,6 +898,12 @@ html {
     fill: var(--color-text);
 }
 
+.mosaic-container .chrome [aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: 0.45;
+    pointer-events: none;
+}
+
 
 .mosaic-container .chrome a:hover,
 .mosaic-container .chrome button:hover {
