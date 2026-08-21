@@ -227,9 +227,10 @@
         val (get v idx)]
     (and (vector? val) (= xy (kf val)))))
 
-(defn transform [[a b c d e f]]
-  (.fromMatrix js/DOMMatrixReadOnly
-               #js {:a a, :b b, :c c, :d d, :e e, :f f}))
+(defn transform
+  "Convert a six-number wire transform into a composable DOMMatrix."
+  [matrix]
+  (js/DOMMatrixReadOnly. (clj->js matrix)))
 (defn transform-vec [obj]
   [(.-a obj) (.-b obj) (.-c obj) (.-d obj) (.-e obj) (.-f obj)])
 (defn point [x y] (.fromPoint js/DOMPointReadOnly (clj->js {:x x :y y})))

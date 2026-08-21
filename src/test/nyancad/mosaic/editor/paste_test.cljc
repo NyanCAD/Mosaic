@@ -21,6 +21,8 @@
    Each deftest states what the function SHOULD do, with expected values
    hand-computed from the contract — not copied from CLJS output."
   (:require [cljs.test :refer [deftest is testing]]
+            [nyancad.mosaic.test-dommatrix]
+            [nyancad.mosaic.common :as cm]
             [nyancad.mosaic.editor :as e]
             [nyancad.mosaic.editor.platform-test :as pform]))
 
@@ -168,18 +170,7 @@
 (deftest clipboard-centroid-handles-negative-coordinates
   (testing "resistors at (-3,-6) and (3,6) — centers (-1.5,-4.5) and (4.5,7.5) — mean (1.5,1.5)"
     (is (= [1.5 1.5] (e/clipboard-centroid [{:type "resistor" :x -3 :y -6}
-                                            {:type "resistor" :x 3 :y 6}])))))
-
-;; ---------------------------------------------------------------------------
-;; cancel — resets ::delta and cleans orphan ::selected after a paste
-;; ---------------------------------------------------------------------------
-;;
-;; Contract: cancel (Escape / tool-switch) resets ::delta to zero and filters
-;; ::selected against @schematic, so a cancelled paste can't leak its pointer
-;; offset onto the next selection. Without the ::delta reset, a click on any
-;; instance after Esc flows straight to drag-end → end-ui, which applies the
-;; stale (cursor-at-Esc − centroid) delta to the newly selected instance —
-;; the reported "jumps to where Esc was pressed" bug.
+                                             {:type "resistor" :x 3 :y 6}])))))
 
 (defn- ui-reset []
   (swap! e/ui assoc
@@ -191,7 +182,101 @@
          ::e/delta {:x 0 :y 0 :rx 0 :ry 0}
          ::e/mouse-start [0 0]
          ::e/mouse [0 0]
+         ::e/zoom [0 0 500 500]
          ::e/tool ::e/cursor))
+
+;; ---------------------------------------------------------------------------
+;; transform-selected / move-selected — paste staging stays out of schematic
+;; ---------------------------------------------------------------------------
+
+(deftest transform-selected-updates-paste-staging
+  (testing "S (rotate) transforms pasted docs in staging without creating schematic stubs"
+    (try
+      (reset! pform/schematic {})
+      (swap! e/ui assoc
+             ::e/staging nil
+             ::e/paste-staging {"R9" {:type "resistor" :name "R9"
+                                       :x 0 :y 0 :transform cm/IV}
+                                "C9" {:type "capacitor" :name "C9" :x 4 :y 5}}
+             ::e/selected #{"R9" "C9"})
+      ((get e/shortcuts #{:s}) nil)
+      (doseq [id ["R9" "C9"]]
+        (is (= [0 1 -1 0 0 0]
+               (mapv #(js/Math.round %)
+                     (get-in @e/ui [::e/paste-staging id :transform])))))
+      (is (= {} @pform/schematic)
+          "the future pasted ids are not written to the schematic")
+      (finally (ui-reset)))))
+
+(deftest move-selected-updates-paste-staging
+  (testing "arrow movement changes pasted coordinates without touching the schematic"
+    (try
+      (reset! pform/schematic {})
+      (swap! e/ui assoc
+             ::e/staging nil
+             ::e/paste-staging {"R9" {:type "resistor" :name "R9" :x 2 :y 3}}
+             ::e/selected #{"R9"})
+      (e/move-selected -1 2)
+      (is (= [1 5]
+             ((juxt :x :y) (get-in @e/ui [::e/paste-staging "R9"]))))
+      (is (= {} @pform/schematic))
+      (finally (ui-reset)))))
+
+(deftest ordinary-staging-retains-transform-precedence
+  (testing "ordinary placement staging remains the transform target"
+    (try
+      (reset! pform/schematic {})
+      (swap! e/ui assoc
+             ::e/staging {:type "resistor" :x 0 :y 0 :transform cm/IV}
+             ::e/paste-staging {"R9" {:type "resistor" :name "R9"
+                                       :x 2 :y 3 :transform cm/IV}}
+             ::e/selected #{"R9"})
+      (e/transform-selected cm/flip-x)
+      (is (= [-1 0 0 1 0 0] (:transform (::e/staging @e/ui))))
+      (is (= cm/IV (get-in @e/ui [::e/paste-staging "R9" :transform])))
+      (is (= {} @pform/schematic))
+      (finally (ui-reset)))))
+
+(deftest ordinary-staging-retains-arrow-viewport-fallback
+  (testing "arrow keys keep panning the viewport during ordinary placement staging"
+    (try
+      (swap! e/ui assoc
+             ::e/staging {:type "resistor" :x 0 :y 0 :transform cm/IV}
+             ::e/paste-staging nil
+             ::e/selected #{}
+             ::e/zoom [10 20 100 200])
+      (e/move-selected 1 -1)
+      (is (= [60 -30 100 200] (::e/zoom @e/ui)))
+      (finally (ui-reset)))))
+
+(deftest committed-selection-retains-transform-and-move-paths
+  (testing "without staging, transforms and movement still update the schematic"
+    (try
+      (reset! pform/schematic
+              {"R1" {:type "resistor" :name "R1" :x 2 :y 3 :transform cm/IV}})
+      (swap! e/ui assoc
+             ::e/staging nil
+             ::e/paste-staging nil
+             ::e/selected #{"R1"})
+      (with-redefs [e/post-action! (fn [] nil)]
+        (e/transform-selected cm/flip-y)
+        (e/move-selected 2 -1))
+      (is (= [1 0 0 -1 0 0] (get-in @pform/schematic ["R1" :transform])))
+      (is (= [4 2] ((juxt :x :y) (get @pform/schematic "R1"))))
+      (finally
+        (reset! pform/schematic {})
+        (ui-reset)))))
+
+;; ---------------------------------------------------------------------------
+;; cancel — resets ::delta and cleans orphan ::selected after a paste
+;; ---------------------------------------------------------------------------
+;;
+;; Contract: cancel (Escape / tool-switch) resets ::delta to zero and filters
+;; ::selected against @schematic, so a cancelled paste can't leak its pointer
+;; offset onto the next selection. Without the ::delta reset, a click on any
+;; instance after Esc flows straight to drag-end → end-ui, which applies the
+;; stale (cursor-at-Esc − centroid) delta to the newly selected instance —
+;; the reported "jumps to where Esc was pressed" bug.
 
 (deftest cancel-resets-delta-after-paste
   (testing "::delta is reset to zero so the stale paste offset can't leak

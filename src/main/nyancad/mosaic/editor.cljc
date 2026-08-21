@@ -79,6 +79,7 @@
 (defonce selected (r/cursor ui [::selected]))
 (defonce delta (r/cursor ui [::delta]))
 (defonce staging (r/cursor ui [::staging]))
+(defonce paste-staging (r/cursor ui [::paste-staging]))
 (defonce notebook-state (r/cursor ui [::notebook-state]))
 (defonce tab-index (r/cursor ui [::tab-index]))
 (defonce pointer-cache (r/cursor ui [::pointer-cache]))
@@ -1813,21 +1814,31 @@
       (swap! schematic assoc id with-props)
       (post-action!))))
 
+;; @tags mosaic clipboard, editor keyboard shortcuts
 (defn transform-selected [tf]
   (let [f (comp transform-vec tf transform)
         g #(f (or % cm/IV))]
-    (if @staging
-      (swap! staging
-             update :transform g)
-      (do (swap! schematic update-keys @selected
-                 update :transform g)
-          (post-action!)))))
+    (cond
+      @staging (swap! staging update :transform g)
+      @paste-staging (swap! paste-staging update-keys @selected
+                            update :transform g)
+      :else (do (swap! schematic update-keys @selected
+                       update :transform g)
+                (post-action!)))))
 
+;; @tags mosaic clipboard, editor keyboard shortcuts
 (defn move-selected [dx dy]
-  (if (seq @selected)
+  (cond
+    @paste-staging
+    (swap! paste-staging update-keys @selected
+           #(-> % (update :x + dx) (update :y + dy)))
+
+    (seq @selected)
     (do (swap! schematic update-keys @selected
-              #(-> % (update :x + dx) (update :y + dy)))
+               #(-> % (update :x + dx) (update :y + dy)))
         (post-action!))
+
+    :else
     (swap! ui update ::zoom
            (fn [[x y w h]] [(+ x (* dx grid-size)) (+ y (* dy grid-size)) w h]))))
 
