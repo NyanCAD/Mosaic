@@ -11,7 +11,9 @@
    over a group and is the anchor `paste` uses so the group's visual
    centroid rides under the cursor.
 
-   Also covers the cancel/keyup guards against the two reported PR bugs:
+   Also covers guards against three reported paste bugs:
+   - Moving between the commit press and release must not discard the initialized
+     paste offset (element pointerdown does not restart the drag).
    - Esc then re-select must not jump the instance to the Esc cursor
      (cancel resets ::delta and cleans orphan ::selected).
    - Releasing Cmd before V during Cmd+V must not spawn a voltage source
@@ -182,6 +184,7 @@
          ::e/delta {:x 0 :y 0 :rx 0 :ry 0}
          ::e/mouse-start [0 0]
          ::e/mouse [0 0]
+         ::e/pointer-cache {}
          ::e/zoom [0 0 500 500]
          ::e/tool ::e/cursor))
 
@@ -203,7 +206,7 @@
       (doseq [id ["R9" "C9"]]
         (is (= [0 1 -1 0 0 0]
                (mapv #(js/Math.round %)
-                     (get-in @e/ui [::e/paste-staging id :transform])))))
+                     (get-in @e/paste-staging [id :transform])))))
       (is (= {} @pform/schematic)
           "the future pasted ids are not written to the schematic")
       (finally (ui-reset)))))
@@ -218,7 +221,7 @@
              ::e/selected #{"R9"})
       (e/move-selected -1 2)
       (is (= [1 5]
-             ((juxt :x :y) (get-in @e/ui [::e/paste-staging "R9"]))))
+             ((juxt :x :y) (get @e/paste-staging "R9"))))
       (is (= {} @pform/schematic))
       (finally (ui-reset)))))
 
@@ -233,7 +236,7 @@
              ::e/selected #{"R9"})
       (e/transform-selected cm/flip-x)
       (is (= [-1 0 0 1 0 0] (:transform (::e/staging @e/ui))))
-      (is (= cm/IV (get-in @e/ui [::e/paste-staging "R9" :transform])))
+      (is (= cm/IV (get-in @e/paste-staging ["R9" :transform])))
       (is (= {} @pform/schematic))
       (finally (ui-reset)))))
 
@@ -268,6 +271,51 @@
         (ui-reset)))))
 
 ;; ---------------------------------------------------------------------------
+;; element pointerdown — paste staging retains its drag origin
+;; ---------------------------------------------------------------------------
+;;
+;; Contract: primary pointerdown on any rendered element is only the commit
+;; press while paste staging is active. It registers the pointer, but does not
+;; restart selection/drag handling or replace the centroid-based mouse origin.
+
+(deftest paste-pointerdown-preserves-placement-through-movement
+  (testing "movement after pressing a paste ghost retains the initialized anchor"
+    (let [coord (atom [20 30])
+          previous-pointerdown @e/last-pointerdown
+          staged {"R9" {:type "resistor" :x 0 :y 0}}
+          event #js {:pointerId 1
+                     :clientX 100
+                     :clientY 150
+                     :isPrimary true
+                     :button 0
+                     :pointerType "mouse"
+                     :shiftKey false
+                     :stopPropagation (fn [])}]
+      (try
+        (ui-reset)
+        (reset! e/last-pointerdown {:time 0 :x 0 :y 0})
+        (swap! e/ui assoc
+               ::e/dragging ::e/device
+               ::e/paste-staging staged
+               ::e/selected #{"R9"}
+               ::e/mouse-start [1.5 1.5]
+               ::e/delta {:x 5 :y 7 :rx 0 :ry 0})
+        (with-redefs [cm/viewbox-coord (fn [_] @coord)]
+          (e/on-pointer-down-element "R1" event)
+          (is (= [1.5 1.5] (::e/mouse-start @e/ui)))
+          (is (= {:x 5 :y 7 :rx 0 :ry 0} (::e/delta @e/ui)))
+          (is (= #{"R9"} (::e/selected @e/ui)))
+          (is (= ::e/device (::e/dragging @e/ui)))
+          (is (= staged @e/paste-staging))
+          (is (= {1 {:x 100 :y 150}} (::e/pointer-cache @e/ui)))
+          (reset! coord [8 9])
+          (e/drag-device event)
+          (is (= {:x 6.5 :y 7.5 :rx 0 :ry 0} (::e/delta @e/ui))))
+        (finally
+          (reset! e/last-pointerdown previous-pointerdown)
+          (ui-reset))))))
+
+;; ---------------------------------------------------------------------------
 ;; cancel — resets ::delta and cleans orphan ::selected after a paste
 ;; ---------------------------------------------------------------------------
 ;;
@@ -293,7 +341,7 @@
       (e/cancel)
       (is (= {:x 0 :y 0 :rx 0 :ry 0} (::e/delta @e/ui)))
       (is (nil? (::e/dragging @e/ui)))
-      (is (nil? (::e/paste-staging @e/ui)))
+      (is (nil? @e/paste-staging))
       (is (= ::e/cursor (::e/tool @e/ui)))
       (finally (ui-reset)))))
 

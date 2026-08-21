@@ -1814,7 +1814,6 @@
       (swap! schematic assoc id with-props)
       (post-action!))))
 
-;; @tags mosaic clipboard, editor keyboard shortcuts
 (defn transform-selected [tf]
   (let [f (comp transform-vec tf transform)
         g #(f (or % cm/IV))]
@@ -1826,7 +1825,6 @@
                        update :transform g)
                 (post-action!)))))
 
-;; @tags mosaic clipboard, editor keyboard shortcuts
 (defn move-selected [dx dy]
   (cond
     @paste-staging
@@ -2179,7 +2177,8 @@
   (.stopPropagation e)
   (let [id (.-pointerId e)
         entry {:x (.-clientX e) :y (.-clientY e)}
-        is-dblclick (and (.-isPrimary e) (check-double-click e))]
+        paste? (some? @paste-staging)
+        is-dblclick (and (not paste?) (.-isPrimary e) (check-double-click e))]
     (swap! ui assoc-in [::pointer-cache id] entry)
     (cond
       ;; Double-click: handle and skip normal processing
@@ -2197,6 +2196,9 @@
       (= (.-button e) 1)
       (do (reset! last-coord [(.-clientX e) (.-clientY e)])
           (swap! ui #(assoc % ::prev-tool (::tool %) ::tool ::pan)))
+
+      ;; The active paste owns primary interaction until pointer-up commits it.
+      paste? nil
 
       (.-isPrimary e)
       (drag-start k e))))
@@ -2317,7 +2319,7 @@
           (swap! ui assoc ::staging nil ::dragging nil)))
       (= (::tool @ui) ::eraser) (post-action!)
       (= (::tool @ui) ::wire) nil
-      (::paste-staging @ui) (commit-paste (::paste-staging @ui) dx dy)
+      @paste-staging (commit-paste @paste-staging dx dy)
       :else (end-ui bg? selected dx dy))))
 
 (defn add-device [cell [x y] & args]
@@ -2938,7 +2940,6 @@
          v ::staging
          tool ::tool
          st ::stretch
-         paste-staging ::paste-staging
          {x :x y :y :or {x 0 y 0}} ::delta
          [sx sy] ::mouse-start} @ui
         ;; Unrounded: the staged ghost follows the cursor smoothly; the grid
@@ -2958,9 +2959,9 @@
                      :y (* (min sy (+ sy y)) grid-size)
                      :width (abs (* x grid-size))
                      :height (abs (* y grid-size))}]
-      (and paste-staging (= dr ::device))
+      (and @paste-staging (= dr ::device))
       [:g.staging {:style {:transform (str "translate(" vx "px, " vy "px)")}}
-       [schematic-elements paste-staging]]
+       [schematic-elements @paste-staging]]
       (and sel dr)
       [:<>
        ;; Selected devices ride one uniform translate.
@@ -3042,7 +3043,7 @@
   source mid-paste. Also prevents placing a device mid-drag generally."
   [f]
   (fn [& args]
-    (when-not (or (::dragging @ui) (::paste-staging @ui))
+    (when-not (or (::dragging @ui) @paste-staging)
       (apply f args))))
 
 (def shortcuts {#{:c} (unless-active #(add-device "capacitor" (::mouse @ui)))
