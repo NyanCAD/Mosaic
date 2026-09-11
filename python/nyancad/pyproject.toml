@@ -7,7 +7,7 @@ name = "nyancad"
 version = "0.18.5"
 description = "NyanCAD Python library for schematic editor with anywidget integration"
 readme = "README.md"
-requires-python = "~=3.12.0"
+requires-python = ">=3.12,<3.13"
 license = "MPL-2.0"
 authors = [
     {name = "Pepijn de Vos", email = "me@pepijndevos.nl"},
