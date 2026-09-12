@@ -31,3 +31,22 @@
 
     :else
     data))
+
+;; @tags factory resolution
+(defn clj->json
+  "Convert JSON-compatible Clojure data to JS data with deterministic object ordering."
+  [data]
+  (cond
+    (map? data)
+    (js/Object.fromEntries
+      (into-array
+        (map (fn [[k v]] #js [k (clj->json v)])
+             (sort-by first
+                      (map (fn [[k v]]
+                             [(if (keyword? k) (subs (str k) 1) k) v])
+                           data)))))
+
+    (sequential? data)
+    (into-array (map clj->json data))
+
+    :else data))

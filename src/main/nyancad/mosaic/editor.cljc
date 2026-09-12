@@ -11,15 +11,16 @@
              :refer [group schematic modeldb snapshots simulations local
                      done? syncactive notebook-panel secondary-menu-items
                      editable-model? edit-model send-to-agent resolve-symbol-url
-                     init-extra! root]]
+                     init-extra! root model-cursor get-model-async renamable-model-name]]
             [clojure.spec.alpha :as s]
-            [cljs.core.async :refer [go <!]]
+            [cljs.core.async :refer [go <! put! promise-chan]]
             [clojure.math :as math]
             clojure.edn
             clojure.set
             clojure.string
             goog.functions
             [nyancad.hipflask.util :refer [update-keys sep]]
+            [nyancad.mosaic.invocation :as invocation]
             [nyancad.mosaic.common :as cm
              :refer [grid-size debounce sconj
                      point transform transform-vec
@@ -95,6 +96,16 @@
 ; Model selector popup state
 (defonce model-popup-filter (r/atom ""))
 (defonce model-popup-category (r/atom []))
+
+;; @tags factory resolution
+(defn model-entry [model-id & [params]]
+  (when (seq model-id)
+    @(apply model-cursor modeldb (invocation/lookup-path (cm/model-key model-id) params))))
+
+(defonce ^{:doc "Cancellation generation captured by placement intents; advancing it prevents late insertion."}
+  placement-epoch (atom 0))
+(defonce ^{:doc "Completion channel of the last queued resolved placement, including its undo checkpoint. Cancellation does not bypass this queue."}
+  placement-tail (atom (go true)))
 
 (defonce undotree (cm/newundotree))
 
@@ -743,13 +754,15 @@
    a plain port is one tile, not a 1x1 rect padded to three, and callers that
    guessed wrong put the selection toolbar and the paste centroid a tile off."
   [dev]
-  (let [model-entry (get models (:type dev))
-        bg (resolve-field model-entry ::bg dev)]
+  (let [entry (model-entry (:model dev) (:props dev))
+        dev (cond-> dev (:generated entry) (assoc :type (:type entry)))
+        builtin (get models (:type dev))
+        bg (resolve-field builtin ::bg dev)]
     (cond
       (and (vector? bg) (= (count bg) 2)) bg
-      (:model dev) (let [ports (get-in @modeldb [(cm/model-key (:model dev)) :ports])]
+      (:model dev) (let [ports (:ports entry)]
                      (if (seq ports) (cm/port-perimeter ports (:type dev)) [1 1]))
-      (nil? (::conn model-entry)) [1 1]
+      (nil? (::conn builtin)) [1 1]
       :else nil)))
 
 ;; @tags mosaic selection toolbar
@@ -782,8 +795,7 @@
         {orig-size ::size, elements ::elements} builtin-elements
         delta (- new-size orig-size)
         offset (* (/ delta 2) grid-size)
-        artwork-transform (get-in @modeldb [(cm/model-key (:model v))
-                                             :artwork-transform])
+        artwork-transform (:artwork-transform (model-entry (:model v) (:props v)))
         artwork (if (zero? delta)
                   (map render-element elements)
                   [(into [:g {:transform (str "translate(" offset "," offset ")")}]
@@ -802,7 +814,7 @@
 
 ;; @tags photonic model ports, mosaic die-component
 (defn circuit-conn [k v]
-  (let [ports (:ports (get @modeldb (cm/model-key (:model v))))
+  (let [ports (:ports (model-entry (:model v) (:props v)))
         locs (if (seq ports) (cm/port-locations ports (:type v)) [])
         size (device-tile-size v)]
     [device size k v
@@ -861,11 +873,12 @@
         (.multiply inv)
         (.translate (* grid-size ax) (* grid-size ay)))))
 
+;; @tags factory resolution
 (defn circuit-designator [v size width height]
   (let [text (or (:template v)
                  (when (seq (:model v))
                    (cm/generate-important-template
-                     (:props (get @modeldb (cm/model-key (:model v))))))
+                      (:props (model-entry (:model v) (:props v)))))
                  (get-in models [(:type v) ::template])
                  "{self.name}")]
     [:text.identifier
@@ -882,9 +895,10 @@
     :transform (counter-rotate v x y)}
    pname])
 
+;; @tags factory resolution
 (defn circuit-sym-box [k v]
   (let [model (:model v)
-        model-def (get @modeldb (cm/model-key model))
+        model-def (model-entry model (:props v))
         model-name (or (:name model-def) model)
         ports (:ports model-def)
         has-model? (and model (seq model) model-def)
@@ -922,7 +936,9 @@
          (for [{:keys [x name]} bottom-locs]
            (port-label v (* (+ x 0.5) grid-size) (* (+ height 0.7) grid-size) "middle" "baseline" name))])
       ;; Symbol image replaces box, otherwise box outline with model name
-      (if-let [symbol-url (and has-model? (some-> model-def :symbol resolve-symbol-url deref))]
+      (if-let [symbol-url (and has-model? (:symbol model-def)
+                              (some-> (resolve-symbol-url (:symbol model-def)
+                                        [(:gfp/session model-def) (:gfp/revision model-def)]) deref))]
         [:image {:href symbol-url
                  :x grid-size :y grid-size
                  :width (* grid-size width)
@@ -942,9 +958,10 @@
            :transform (counter-rotate v cx cy)}
           (if has-model? model-name "?")]])]]))
 
+;; @tags factory resolution
 (defn circuit-sym-amplifier [k v]
   (let [model (:model v)
-        model-def (get @modeldb (cm/model-key model))
+        model-def (model-entry model (:props v))
         model-name (or (:name model-def) model)
         ports (:ports model-def)
         has-model? (and model (seq model) model-def)
@@ -1020,10 +1037,10 @@
         :transform (counter-rotate v cx cy)}
        (if has-model? model-name "?")]]]))
 
-;; @tags mosaic die-component
+;; @tags mosaic die-component, factory resolution
 (defn circuit-sym-die [k v]
   (let [model (:model v)
-        model-def (get @modeldb (cm/model-key model))
+        model-def (model-entry model (:props v))
         ports (:ports model-def)
         has-ports? (seq ports)
         [width height] (if has-ports? (cm/port-perimeter ports (:type v)) [1 1])
@@ -1044,6 +1061,7 @@
          (for [{:keys [x name]} (:bottom by-side)]
            (port-label v (* (+ x 0.5) grid-size) (* (+ height 0.7) grid-size) "middle" "baseline" name))])]]))
 
+;; @tags photonic model ports, mosaic die-component
 (defn circuit-sym [k v]
   (case (:type v)
     "amp" (circuit-sym-amplifier k v)
@@ -1353,9 +1371,10 @@
                                       size transform x y))]))
 
 ;; @tags reactive indices, mosaic port exposure
-(defn circuit-locations [models-snapshot {:keys [:x :y :model :transform :type]}]
+(defn circuit-locations [models-snapshot {:keys [:x :y :model :transform :type :props]}]
   (let [transform (or transform cm/IV)
-        mod (get models-snapshot (cm/model-key model))
+        mod (invocation/lookup models-snapshot (invocation/lookup-path (cm/model-key model) props))
+        type (if (:generated mod) (:type mod type) type)
         ports (:ports mod)
         conn (if ports (cm/port-locations ports type) [])
         [w h] (if ports (cm/port-perimeter ports type) [1 1])
@@ -1367,7 +1386,10 @@
 
 ;; @tags reactive indices, mosaic port exposure
 (defn device-locations [models-snapshot dev]
-  (let [cell (:type dev)]
+  (let [entry (invocation/lookup models-snapshot
+                                 (invocation/lookup-path (cm/model-key (:model dev)) (:props dev)))
+        dev (cond-> dev (:generated entry) (assoc :type (:type entry)))
+        cell (:type dev)]
     (cond
       (= cell "wire") (wire-locations dev)
       (= cell "text") []
@@ -1396,7 +1418,10 @@
 (defn- transformed-device-ports
   "Return canonical transformed descriptors for a device from one model snapshot."
   [models-snapshot dev]
-  (let [cell (:type dev)
+  (let [entry (invocation/lookup models-snapshot
+                                 (invocation/lookup-path (cm/model-key (:model dev)) (:props dev)))
+        dev (cond-> dev (:generated entry) (assoc :type (:type entry)))
+        cell (:type dev)
         {:keys [x y model]} dev
         transform (or (:transform dev) cm/IV)
         builtin? (and (contains? models cell) (::conn (get models cell)))
@@ -1410,7 +1435,7 @@
              (if (and (number? w) (number? h))
                (+ 2 (max w h))
                (cm/pattern-size conn))])
-          (let [ports (:ports (get models-snapshot (cm/model-key model)))
+          (let [ports (:ports entry)
                 conn (if ports (cm/port-locations ports cell) [])
                 [w h] (if ports (cm/port-perimeter ports cell) [1 1])]
             [conn (+ 2 (max w h))]))]
@@ -2128,10 +2153,15 @@
                                 (.-clientWidth svg) (.-clientHeight svg))]
             (reset! ui (assoc @ui ::zoom vb))))))))
 
-(defn commit-staged [dev]
+;; @tags factory resolution, nyanlib default contract, mosaic wire tool
+(defn- insert-staged! [dev model-def]
   (let [;; Snap to grid on drop (staged x/y follow the cursor unrounded). Wire
         ;; staging is already integer, so this is a no-op there.
-        dev (-> dev (update :x math/round) (update :y math/round))
+        resolved-type (or (:type model-def) (:type dev))
+        dev (-> dev
+                (cond-> (:model dev)
+                  (assoc :type (if (contains? cm/device-types resolved-type) resolved-type "ckt")))
+                (update :x math/round) (update :y math/round))
         named (update dev :name (fnil identity (make-name (:type dev))))
         ;; Port devices (ground, supply, labels) keep a fixed/constant display
         ;; :name, so it can't double as a unique id the way "R1", "C1", etc.
@@ -2139,14 +2169,51 @@
         ;; matching the scheme paste already uses for pasted port devices.
         id-name (if (= "port" (:type named)) (make-name "port") (:name named))
         id (str group sep id-name)
-        model-def (when (:model named)
-                    (get @modeldb (cm/model-key (:model named))))
         defaults (cm/model-prop-defaults model-def)
         with-props (if defaults
                      (update named :props #(merge defaults %))
                      named)]
     (swap! schematic assoc id with-props)
     (post-action!)))
+
+;; @tags factory resolution
+(defn- queue-resolved-placement!
+  "Serialize a resolved intent through insertion and its undo checkpoint.
+   Return a completion channel; cancellation skips insertion but still releases
+   the queue, and insertion failures release it through finally."
+  [dev model-def epoch]
+  (let [previous @placement-tail
+        finished (promise-chan)]
+    ;; Only resolved commits enter this queue. Cancellation never bypasses an
+    ;; active undo transaction, even when a newer intent has already resolved.
+    (reset! placement-tail finished)
+    (go
+      (<! previous)
+      (try
+        (when (= epoch @placement-epoch)
+          (<! (insert-staged! dev model-def)))
+        (finally
+          (put! finished true))))))
+
+;; @tags factory resolution, nyanlib default contract
+(defn commit-staged
+  "Commit a captured device intent, resolving component metadata before insertion.
+   Return a completion channel for non-nil dev, or nil for nil dev. The channel's
+   yielded value is unspecified; completion also covers failed or cancelled
+   resolution. Resolution failures alert without inserting a device."
+  [dev]
+  (when dev
+    (if-let [model (:model dev)]
+      (let [epoch @placement-epoch
+            result (apply get-model-async modeldb
+                          (invocation/lookup-path (cm/model-key model) (:props dev)))]
+        (go
+          (let [model-def (<! result)]
+            (when (= epoch @placement-epoch)
+              (if (instance? js/Error model-def)
+                (cm/alert (str "Cannot place component: " (ex-message model-def)))
+                (<! (queue-resolved-placement! dev model-def epoch)))))))
+      (insert-staged! dev nil))))
 
 ;; @tags mosaic clipboard, editor keyboard shortcuts
 (defn transform-selected [tf]
@@ -2425,12 +2492,16 @@
    0-arity: default behavior (keep wire tool if drawing wire, else cursor)
    1-arity: switch to specified tool and clear staging
 
+   Retires in-flight placement intents so late resolution cannot insert them;
+   an already-started insertion/undo transaction is allowed to finish.
+
    Also resets ::delta to zero and cleans ::selected against @schematic so a
    cancelled drag (paste or move) can't leak its pointer offset onto the
    next selection — without the ::delta reset, click-to-reselect after Esc
    flows to drag-end → end-ui, which applies the stale cursor-at-Esc −
    centroid offset to the newly selected instance."
   ([]
+   (swap! placement-epoch inc)
    (let [uiv @ui]
      (if (or (::staging uiv) (::dragging uiv) (not= (::tool uiv) ::cursor))
        (let [tool (if (and (::staging uiv) (= (::tool uiv) ::wire)) ::wire ::cursor)]
@@ -2446,6 +2517,7 @@
      ;; Escape ends a port-armed wire, so the momentary restore fires here.
      (maybe-restore-tool!)))
   ([new-tool]
+   (swap! placement-epoch inc)
    (let [uiv @ui]
      (swap! ui assoc
             ::dragging nil
@@ -2628,23 +2700,31 @@
     (when (and (.-isPrimary e) (< (count old-cache) 2))
       (eraser-drag k e))))
 
-;; @tags photonic model ports
+;; @tags photonic model ports, factory resolution
 (defn get-model
   [layer model k v]
-  (let [model-entry (or (get models (:type model))
-                        {::bg #'circuit-shape
-                         ::conn #'circuit-conn
-                         ::sym #'circuit-sym})
+  ;; Native renderers may never read model metadata themselves. Register demand
+  ;; here before selecting the invocation's representation from the symbol table.
+  (let [entry (model-entry (:model model) (:props model))
+        ;; Invalidated Dschematic still supplies last-known presentation; a cold
+        ;; skeleton has neither runtime metadata nor Dschematic presence.
+        resolved? (and (:generated entry) (or (:metadata-version entry) (:has-dschematic entry)))
+        model (cond-> model resolved? (assoc :type (:type entry)))
+        v (cond-> v resolved? (assoc :type (:type entry)))
+        symbol-def (or (get models (:type model))
+                       {::bg #'circuit-shape
+                        ::conn #'circuit-conn
+                        ::sym #'circuit-sym})
         ;; resolve per-variant dispatch maps to concrete data/renderer BEFORE the
         ;; cond, so `(fn? m)` only ever sees genuine [k v] renderers
-        m (resolve-field model-entry layer model)]
+        m (resolve-field symbol-def layer model)]
     (cond
       ;; Explicit no-symbol model (e.g. polyline): render nothing. Its airwire
       ;; ratsnest is drawn by the `schematic-airwires` layer instead.
-      (and (= layer ::sym) (nil? m) (contains? model-entry ::sym)) nil
+      (and (= layer ::sym) (nil? m) (contains? symbol-def ::sym)) nil
       (and (nil? m) (= layer ::bg))   ^{:key k} [circuit-shape k v]
       (and (nil? m) (= layer ::conn)) ^{:key k} [circuit-conn k v]
-      (and (nil? (::conn model-entry))
+      (and (nil? (::conn symbol-def))
            (= layer ::sym) (map? m)) ^{:key k} [photonic-sym m k v]
       (fn? m) ^{:key k} [m k v]
       (map? m) ^{:key k} [render-symbol-data m k v]
@@ -3013,7 +3093,7 @@
     (fn [key]
       (let [models-snapshot @modeldb
             sch @schematic
-            model-def (get models-snapshot (cm/model-key @model))
+            model-def (model-entry @model @props)
             exposure (port-exposure-state models-snapshot sch @point-index key)
             effective-default (or (when model-def (cm/generate-important-template (:props model-def)))
                                  (::template (get models @device-type))
@@ -3064,7 +3144,7 @@
                                   @device-type
                                   (fn [model-id]
                                     (reset! model (if model-id (cm/bare-id model-id) ""))
-                                    (let [mdef (when model-id (get @modeldb model-id))
+                                    (let [mdef (when model-id @(model-cursor modeldb model-id))
                                           defaults (or (cm/model-prop-defaults mdef) {})]
                                       (reset! props defaults))
                                     (post-action!)))}
@@ -3266,7 +3346,7 @@
    only ever bites on ::any. An untyped entry (the nyanlib catch-all) or a type
    this build does not know falls back to the button's type."
   [fallback model-id]
-  (let [t (:type (get @modeldb model-id))]
+  (let [t @(model-cursor modeldb model-id :type)]
     (if (contains? cm/device-types t) t fallback)))
 
 ;; @tags mosaic device tray, mosaic model picker
@@ -3458,7 +3538,7 @@
           :on-click (fn [_] (paste))}
       [cm/pastei]]]]
    [:div.status
-    [cm/renamable (r/cursor modeldb [(cm/model-key group) :name]) "Untitled"]
+    [renamable-model-name modeldb (cm/model-key group)]
     (if @syncactive
       [:span.syncstatus.active {:title "saving changes"} [cm/sync-active]]
       [:span.syncstatus.done   {:title "changes saved"} [cm/sync-done]])]
@@ -3865,24 +3945,8 @@
   (let [dt (.-dataTransfer e)
         fqn (some-> (.getData dt "text/x-gfp-factory") js/JSON.parse js->clj (get "factory"))]
     (when (seq fqn)
-      (let [model-key (cm/model-key fqn)
-            model-def (get @modeldb model-key)]
-        (if-not model-def
-          (cm/alert (str "Unknown component: " fqn))
-          (let [[x y] (cm/viewbox-coord e)
-                raw-type (or (:type model-def) "ckt")
-                device-type (if (contains? cm/device-types raw-type) raw-type "ckt")
-                name (make-name device-type)
-                defaults (cm/model-prop-defaults model-def)
-                dev (cond-> {:type device-type
-                             :model fqn
-                             :name name
-                             :transform cm/IV
-                             :x (Math/round x)
-                             :y (Math/round y)}
-                      (seq defaults) (assoc :props defaults))]
-            (swap! schematic assoc (str group sep name) dev)
-            (post-action!)))))))
+      (let [[x y] (cm/viewbox-coord e)]
+        (commit-staged {:type "ckt" :model fqn :transform cm/IV :x x :y y})))))
 
 (defn ^:export init []
   (.addEventListener js/document "dragover" #(.preventDefault %))

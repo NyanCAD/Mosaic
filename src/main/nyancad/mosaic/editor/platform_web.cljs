@@ -5,14 +5,40 @@
 (ns nyancad.mosaic.editor.platform-web
   (:require [nyancad.hipflask :as hf :refer [pouch-atom pouchdb watch-changes]]
             [nyancad.mosaic.common :as cm]
+            [nyancad.mosaic.invocation :as invocation]
             [reagent.core :as r]
             [reagent.dom.client :as rdc]
-            [clojure.spec.alpha :as s]))
+            [clojure.spec.alpha :as s]
+            [cljs.core.async :refer [go]]))
 
 ;; Re-export done? so editor can :refer it from this namespace
 (def done? hf/done?)
 
 ;; --- State ---
+
+;; @tags factory resolution
+(defn model-cursor
+  "Return an ordinary reactive cursor at the supplied keys."
+  [source & keys]
+  (if (= :parameterizations (second keys))
+    (r/cursor (fn [path] (invocation/lookup @source path)) (vec keys))
+    (r/cursor source (vec keys))))
+
+;; @tags factory resolution
+(defn renamable-model-name
+  "Render an editable component name backed by the local model cursor."
+  [source model-key]
+  [cm/renamable (model-cursor source model-key :name) "Untitled"])
+
+;; @tags factory resolution
+(defn get-model-async
+  "Read local component data without runtime resolution."
+  [source & keys]
+  (let [data @source]
+    (go
+      (if (and (seq keys) (nil? (get data (first keys))))
+        (ex-info "Model is unavailable" {:key (first keys)})
+        (if (seq keys) (invocation/lookup data keys) data)))))
 
 (def params (js/URLSearchParams. js/window.location.search))
 (def group (or (.get params "schem") (.getItem js/localStorage "schem") (cm/random-name)))
@@ -182,9 +208,10 @@
 
 ;; --- Symbol URL resolution ---
 
+;; @tags factory resolution
 (defn resolve-symbol-url
   "On web, symbol paths resolve directly as relative URLs."
-  [path]
+  [path & [_revision]]
   (when (seq path)
     (delay path)))
 

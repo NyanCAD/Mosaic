@@ -10,10 +10,16 @@
    Mirrors the nyancad.hipflask.util / jsatom.util split: the postMessage and
    window-listener plumbing stays in jsatom.cljs; the JSON edit generation, the
    host->webview echo application, and the JsAtom deftype live here, driven
-   through an injected `post!` fn so tests can supply an in-memory transport."
+   through an injected `post!` fn so tests can supply an in-memory transport.
+   The read-only GfpAtom shares the backing-ratom pattern and uses an injected
+   request function for whole-entry resolution rather than document edits."
   (:require ["jsonc-parser" :as jsonc]
             [nyancad.mosaic.jsatom.util :refer [doc->state]]
-            [cljs.core.async :refer [chan put! close!]]
+            [nyancad.mosaic.invocation :as invocation]
+            [nyancad.hipflask.util :refer [json->clj]]
+            [cljs.core.async :refer [chan promise-chan go <! put! close!]]
+            [clojure.string :as str]
+            [reagent.core :as r]
             reagent.ratom))
 
 (defn value->js
@@ -108,6 +114,7 @@
   (-add-watch [this key f]         (-add-watch cache key (fn [key _ old new] (f key this old new))))
   (-remove-watch [_this key]       (-remove-watch cache key)))
 
+;; @tags factory resolution
 (defn make-json-atom
   "Build a JsAtom plus its host-message receiver.
 
@@ -161,4 +168,206 @@
                            (accept! text (.-version msg) new-cache))
 
                          nil)))]
-      {:atom ja :receive! receive!})))
+     {:atom ja :receive! receive!})))
+
+;; @tags factory resolution
+(deftype GfpAtom [cache requests ordering request]
+  IAtom
+  IDeref
+  ;; @tags factory resolution
+  (-deref [_] @cache)
+  IWatchable
+  ;; @tags factory resolution
+  (-notify-watches [_ old new] (-notify-watches cache old new))
+  ;; @tags factory resolution
+  (-add-watch [this key f] (-add-watch cache key (fn [key _ old new] (f key this old new))))
+  ;; @tags factory resolution
+  (-remove-watch [_ key] (-remove-watch cache key)))
+
+;; @tags factory resolution
+(defn- delivered [value]
+  (let [ch (promise-chan)]
+    (put! ch value)
+    ch))
+
+;; @tags factory resolution
+(defn- valid-entries? [{:keys [session revision entries replace resolved parameterization]}]
+  (and (string? session) (seq session)
+       (int? revision) (<= 0 revision)
+       (boolean? replace) (boolean? resolved)
+       (or (nil? parameterization) (string? parameterization))
+       (map? entries)
+       (every? (fn [[model-key entry]]
+                 (and (string? model-key) (or (nil? entry) (map? entry))))
+               entries)))
+
+;; @tags factory resolution
+(defn decode-entries
+  "Decode a host FactoryEntries value, returning ex-info on malformed data.
+   String entry keys and explicit nil deletions survive the JS boundary."
+  [^js value]
+  (try
+    (let [entries (.-entries value)
+          decoded {:session (.-session value)
+                   :revision (.-revision value)
+                   :replace (.-replace value)
+                    :resolved (.-resolved value)
+                   :entries (when (and (some? entries) (= "object" (goog/typeOf entries))
+                                       (not (array? entries)))
+                              (into {} (map (fn [pair]
+                                               [(aget pair 0)
+                                                (invocation/normalize-entry (json->clj (aget pair 1)))]))
+                                     (js/Object.entries entries)))}
+          decoded (cond-> decoded
+                    (some? (.-parameterization value))
+                    (assoc :parameterization (.-parameterization value)))]
+      (if (valid-entries? decoded)
+        decoded
+        (ex-info "Malformed factory entries" {})))
+    (catch :default e
+      (ex-info "Malformed factory entries" {} e))))
+
+;; @tags factory resolution
+(defn receive-entries!
+  "Apply whole entries from a reply or watcher push. Revisions order overlapping
+   snapshots/replies; null entries remove keys. Only resolved pushes settle lookups.
+   Malformed updates return ex-info without changing cache or ordering state."
+  ([gfp update] (receive-entries! gfp update false))
+  ([^js gfp {:keys [session revision entries replace resolved parameterization] :as payload} subscription?]
+   (if-not (valid-entries? payload)
+     (ex-info "Malformed factory entries" {})
+     (let [cache (.-cache gfp)
+           requests (.-requests gfp)
+           ordering (.-ordering gfp)
+           restart? (and (:session @ordering) (not= session (:session @ordering)))]
+       ;; Only a subscription snapshot establishes a replacement server session.
+       ;; Old outstanding RPC replies/snapshots cannot switch the cache back.
+       (when (or (not restart?) (and subscription? replace))
+         (when restart?
+           (doseq [ch (vals @requests)] (put! ch (ex-info "Factory server restarted" {})))
+           (reset! requests {})
+           (reset! ordering {:floor -1 :versions {}}))
+         (swap! ordering assoc :session session)
+          (let [previous @cache
+                {:keys [floor versions]} @ordering
+               changes (if replace
+                          (merge (zipmap (concat (keys @cache)
+                                                 (map #(if (vector? %) (first %) %) (keys @requests)))
+                                         (repeat nil)) entries)
+                         entries)
+               accepted (into {} (filter (fn [[model-key _]]
+                                          (>= revision (max floor (get versions model-key -1))))) changes)]
+           (swap! ordering update :versions merge (zipmap (keys accepted) (repeat revision)))
+           (when replace (swap! ordering update :floor max revision))
+           (swap! cache
+                  (fn [values]
+                    (reduce-kv (fn [values model-key entry]
+                                 (if entry
+                                   (assoc values model-key (assoc entry :gfp/session session :gfp/revision revision))
+                                   (dissoc values model-key)))
+                               values accepted)))
+            (doseq [[request-key pending] @requests
+                    :when (vector? request-key)
+                    :let [[model-key _ params-key] request-key]
+                    :when (contains? accepted model-key)]
+              (let [entry (get accepted model-key)
+                    normalized (invocation/normalized-path entry request-key)
+                    normalized-key (nth normalized 2 nil)
+                    previous-entry (get previous model-key)
+                    previous-path (invocation/normalized-path previous-entry request-key)
+                    completed (if parameterization
+                                (invocation/normalized-path entry [model-key :parameterizations parameterization])
+                                [model-key])
+                    available? (or (= 1 (count normalized))
+                                   (some? (invocation/override-key entry normalized-key)))]
+                (cond
+                  (nil? entry)
+                  (put! pending (ex-info "Factory is unavailable" {:key model-key}))
+
+                  (and resolved available?
+                       (or (= parameterization params-key) (= normalized completed)))
+                  (let [value (invocation/lookup @cache request-key)
+                        identity (if (= 1 (count normalized)) model-key normalized)
+                        completed-channel (delivered value)]
+                    (put! pending value)
+                    (when-let [alias (get @requests identity)] (put! alias value))
+                    (swap! requests assoc request-key completed-channel identity completed-channel))
+
+                  (and (not available?)
+                       (or (some? (invocation/override-key previous-entry (nth previous-path 2 nil)))
+                           (and (not resolved) (nil? parameterization) (not replace))))
+                  (do
+                    (put! pending (ex-info "Factory invocation invalidated" {:key request-key}))
+                    (swap! requests dissoc request-key)))))
+            (doseq [[model-key entry] accepted]
+              (when (or (and resolved (nil? parameterization)) (nil? entry))
+               (let [value (or (get @cache model-key) (ex-info "Factory is unavailable" {:key model-key}))]
+                 (when-let [pending (get @requests model-key)] (put! pending value))
+                 (swap! requests assoc model-key (delivered value)))))))))))
+
+;; @tags factory resolution
+(defn- local-entry? [model-key entry]
+  (or (nil? model-key) (str/ends-with? model-key ".gsch")
+      (and entry (not (:generated entry)))))
+
+;; @tags factory resolution
+(defn get-async
+  "Return one shared result channel. Persisted entries are presentation, not proof
+   of session resolution. Authored entries and ordinary atoms stay local."
+  [source request-key]
+  (let [path (if (vector? request-key) request-key [request-key])
+        model-key (first path)
+        path (invocation/normalized-path (get @source model-key) path)
+        request-key (if (= 1 (count path)) model-key path)]
+   (if (instance? GfpAtom source)
+    (let [^js gfp source
+          ;; Requests are ordinary atoms, never reactive render dependencies.
+          requests (.-requests gfp)
+          entry (get @(.-cache gfp) model-key)]
+      (if (local-entry? model-key entry)
+        (delivered (or entry (ex-info "Model is unavailable" {:key model-key})))
+         (or (get @requests request-key)
+            (let [ch (promise-chan)]
+               (swap! requests assoc request-key ch)
+              (go
+                (try
+                   (let [result (<! ((.-request gfp) request-key))]
+                     (when (identical? ch (get @requests request-key))
+                      (if (instance? js/Error result)
+                        (put! ch result)
+                        (if (and (valid-entries? result) (contains? (:entries result) model-key))
+                          (do
+                            (receive-entries! gfp result)
+                             (when (identical? ch (get @requests request-key))
+                              (put! ch (ex-info "Resolution superseded by a newer catalogue" {:key model-key}))))
+                          (put! ch (ex-info "Factory resolution failed" {:key model-key}))))))
+                  (catch :default e
+                     (when (identical? ch (get @requests request-key)) (put! ch e)))))
+              ch))))
+     (delivered (or (invocation/lookup @source path)
+                    (ex-info "Model is unavailable" {:key model-key}))))))
+
+;; @tags factory resolution
+(defn gfp-cursor
+  "A synchronous reactive cache cursor which registers only nonlocal demand.
+   Local reads do not allocate result channels or missing-model errors."
+  [source path]
+  (if (instance? GfpAtom source)
+    (do
+      (binding [reagent.ratom/*ratom-context* nil]
+        (let [model-key (first path)
+              entry (get @(.-cache ^js source) model-key)]
+          (when-not (local-entry? model-key entry)
+             (get-async source (if (= :parameterizations (second path))
+                                 (subvec path 0 3) model-key)))))
+       (if (= :parameterizations (second path))
+         (r/cursor (fn [path] (invocation/lookup @(.-cache ^js source) path)) path)
+         (r/cursor (.-cache ^js source) path)))
+     (if (= :parameterizations (second path))
+       (r/cursor (fn [path] (invocation/lookup @source path)) path)
+       (r/cursor source path))))
+
+;; @tags factory resolution
+(defn make-gfp-atom [doc cache request!]
+  (reset! cache (update-vals (doc->state doc) invocation/normalize-entry))
+  (GfpAtom. cache (atom {}) (atom {:floor -1 :versions {}}) request!))

@@ -51,7 +51,30 @@
 (deftest json->clj-nested
   (testing "objects inside arrays inside objects recurse fully"
     (is (= {:a {:b [1 2 {:c 3}]}}
-           (util/json->clj #js {:a #js {:b #js [1 2 #js {:c 3}]}})))))
+            (util/json->clj #js {:a #js {:b #js [1 2 #js {:c 3}]}})))))
+
+;; @tags factory resolution
+(deftest clj->json-stable-across-map-histories
+  (let [entries (mapv (fn [n] [(keyword (str "p" n)) n]) (range 12))
+        small (array-map :b 2 :a 1)
+        nested {:layers [small {:x false :y nil}]}
+        variants [(into {} entries) (into {} (reverse entries)) (into (sorted-map) entries)]]
+    (is (apply = (map #(js/JSON.stringify (util/clj->json %)) variants)))
+    (is (= "{\"layers\":[{\"a\":1,\"b\":2},{\"x\":false,\"y\":null}]}"
+           (js/JSON.stringify (util/clj->json nested))))
+    (is (= (js/JSON.stringify (util/clj->json small))
+           (js/JSON.stringify (util/clj->json {"a" 1 "b" 2}))))
+    (is (= nested (util/json->clj (util/clj->json nested))))))
+
+;; @tags factory resolution
+(deftest clj->json-preserves-json-keys-and-falsy-values
+  (let [data {(keyword "pdk/width") 0 :enabled false :empty "" :unset nil
+              :items [] :object {} :label "µm"}
+        encoded (util/clj->json data)]
+    (is (= data (util/json->clj encoded)))
+    (is (= 0 (aget encoded "pdk/width")))
+    (is (not= (js/JSON.stringify (util/clj->json {}))
+              (js/JSON.stringify (util/clj->json {:unset nil}))))))
 
 (deftest json->clj-non-plain-object-passes-through
   (testing "host objects (constructor !== js/Object) are returned as-is"

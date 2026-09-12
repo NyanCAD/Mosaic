@@ -5,6 +5,7 @@
 (ns nyancad.mosaic.editor.platform-vscode
   (:require [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request! injected-version]]
             [nyancad.mosaic.common :as cm]
+            [nyancad.mosaic.jsatom.protocol :as ja]
             [reagent.core :as r]
             [reagent.dom.client :as rdc]
             [clojure.spec.alpha :as s]
@@ -15,6 +16,36 @@
 (def done? jsatom/done?)
 
 ;; --- State ---
+
+;; @tags factory resolution
+(defn model-cursor
+  "Return a reactive cache cursor and register demand for its component."
+  [source & keys]
+  (ja/gfp-cursor source (vec keys)))
+
+;; @tags factory resolution
+(defn get-model-async
+  "Resolve the component before reading a nested value; preserve resolution errors."
+  [source & keys]
+  (if (seq keys)
+    (let [parameterized? (= :parameterizations (second keys))
+          identity (if parameterized? (vec (take 3 keys)) (first keys))
+          fields (drop (if parameterized? 3 1) keys)
+          result (ja/get-async source identity)]
+      (if (seq fields)
+        (go
+          (let [entry (<! result)]
+            (if (instance? js/Error entry)
+              entry
+               (get-in entry fields))))
+        result))
+    (go @source)))
+
+;; @tags factory resolution
+(defn renamable-model-name
+  "Render the catalogue-owned component name as read-only text in VS Code."
+  [source model-key]
+  [:span (or @(model-cursor source model-key :name) "Untitled")])
 
 (def group (.-value (js/document.getElementById "group")))
 (defonce schematic (json-atom "schematic"
@@ -29,10 +60,9 @@
   (when-not (v @schematic) (reset! (.-cache schematic) {}))
   (set-validator! schematic v))
 ;; Secondary modeldb atom — initialized from models.nyanlib injected by extension
-(defonce modeldb (json-atom "models"
-                    (js/decodeURIComponent (.-value (js/document.getElementById "models")))
-                    (r/atom {})
-                    (injected-version "models-version")))
+(defonce modeldb (jsatom/gfpatom
+                     (js/decodeURIComponent (.-value (js/document.getElementById "models")))
+                     (r/atom {})))
 (defonce snapshots (r/atom {}))
 (defonce simulations (r/atom (sorted-map)))
 (defonce local (r/atom {}))
@@ -44,24 +74,28 @@
 
 ;; --- Symbol URL resolution ---
 
-(defonce ^:private symbol-url-cache (r/atom {}))
+(defonce ^:private symbol-url-cache (atom {}))
 
+;; @tags factory resolution, on-demand symbol generation
 (defn resolve-symbol-url
-  "Resolve a symbol path to a data URL. Returns a reactive cursor (deref for the URL).
-   Triggers async load on first call for each path; cursor yields nil until loaded.
+  "Read an existing image into a cached URL ratom, once per path/revision.
+   A new revision gets its own ratom seeded with the previous URL while loading,
+   so an older read cannot replace its URL and refresh does not blank the image.
    Uses data: URLs instead of blob: URLs so the URL resolves in isolated contexts
    (SVG <image> secure-static mode), enabling nested gsch subcircuit symbols to
    render recursively without document-scoping failures."
-  [path]
+  [path & [revision]]
   (when (seq path)
-    (when-not (contains? @symbol-url-cache path)
-      (go
-        (let [content (<! (send-request! path))]
-          (when content
-            (let [type (if (str/ends-with? path ".svg") "image/svg+xml" "image/png")
-                  url (str "data:" type ";base64," (cm/b64encode content))]
-              (swap! symbol-url-cache assoc path url))))))
-    (r/cursor symbol-url-cache [path])))
+    (let [cached (get @symbol-url-cache path)]
+      (if (and cached (= revision (:revision cached)))
+        (:url cached)
+        (let [url (r/atom (when cached @(:url cached)))]
+          (swap! symbol-url-cache assoc path {:revision revision :url url})
+          (go
+            (when-let [content (<! (send-request! path))]
+              (let [type (if (str/ends-with? path ".svg") "image/svg+xml" "image/png")]
+                (reset! url (str "data:" type ";base64," (cm/b64encode content))))))
+          url)))))
 
 ;; --- Functions ---
 

@@ -14,7 +14,7 @@
    VSCode-specific wiring: the acquireVsCodeApi transport, the window message
    listener, and the read-file request/response channel."
   (:require [nyancad.mosaic.jsatom.protocol :as protocol]
-            [cljs.core.async :refer [put! promise-chan]]))
+            [cljs.core.async :refer [go <! put! promise-chan]]))
 
 (defonce vscode (js/acquireVsCodeApi))
 
@@ -41,7 +41,7 @@
        (fn [^js event] (receive! (.-data event))))
      atom)))
 
-;; --- Request/response for read-file messages ---
+;; --- Shared request/response transport ---
 
 (defonce ^:private pending-requests (atom {}))
 
@@ -50,19 +50,69 @@
     (when-let [request-id (.. event -data -requestId)]
       (when-let [ch (get @pending-requests request-id)]
         (swap! pending-requests dissoc request-id)
-        (put! ch (or (.. event -data -content) false))))))
+        (put! ch (.-data event))))))
 
-(defn send-request!
-  "Post a read-file message to the extension host, return a promise-chan with the response."
-  [filename]
+;; @tags factory resolution
+(defn request!
+  "Post a message with a fresh request ID; return a promise channel yielding raw
+   event.data from the matching reply. The webview-lifetime listener removes the
+   pending entry on reply. Unanswered requests have no timeout or disposal API;
+   their state is released when the webview is destroyed."
+  [message]
   (let [request-id (str (random-uuid))
         ch (promise-chan)]
     (swap! pending-requests assoc request-id ch)
-    (.postMessage vscode
-      #js{:type "read-file"
-          :filename filename
-          :requestId request-id})
+    (.postMessage vscode (clj->js (assoc message :requestId request-id)))
     ch))
+
+;; @tags factory resolution
+(defn send-request!
+  "Read a document-relative file. Return a go channel yielding its content or
+   false when the host reports no content, including read/access failures."
+  [filename]
+  (go (or (.-content ^js (<! (request! {:type "read-file" :filename filename}))) false)))
+
+;; @tags factory resolution
+(defn- entries-request!
+  "Return a go channel yielding decoded FactoryEntries or ex-info as a value.
+   Host errors and malformed replies are reported through the channel, not thrown."
+  [message]
+  (go
+    (try
+      (let [^js response (<! (request! message))]
+        (if-let [error (.-error response)]
+          (ex-info error {})
+          (protocol/decode-entries (.-value response))))
+      (catch :default e
+        (ex-info "Factory request failed" {:type (:type message)} e)))))
+
+;; @tags factory resolution
+(defn gfpatom
+  "Create a read-only factory cache, subscribe to pushes, then fetch catch-up data.
+   The window message listener belongs to the webview lifetime; there is no
+   per-atom removal API. Catalogue errors are logged and preserve cached data."
+  [doc cache]
+  (let [gfp (protocol/make-gfp-atom doc cache
+              (fn [lookup]
+                (let [[model-key & path] (if (vector? lookup) lookup [lookup])]
+                  (entries-request! {:type "resolve-factory"
+                                     :fqn (subs model-key (count "models:"))
+                                     :path (vec path)}))))]
+    (.addEventListener js/window "message"
+      (fn [^js event]
+        (when (= "factory-entries" (.. event -data -type))
+          (let [update (protocol/decode-entries (.. event -data -value))]
+            (if (instance? js/Error update)
+              (js/console.error "Factory catalogue unavailable:" update)
+              (protocol/receive-entries! gfp update true))))))
+    ;; Subscribe before fetching the catch-up snapshot. Entry revisions prevent
+    ;; a slower snapshot from replacing a newer direct reply or watcher push.
+    (go
+      (let [snapshot (<! (entries-request! {:type "factory-entries"}))]
+        (if (instance? js/Error snapshot)
+          (js/console.error "Factory catalogue unavailable:" snapshot)
+          (protocol/receive-entries! gfp snapshot))))
+    gfp))
 
 (defn done?
   "Returns the channel for the latest mutation on this JsAtom. Carries the

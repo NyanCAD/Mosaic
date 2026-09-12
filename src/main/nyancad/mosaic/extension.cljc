@@ -11,7 +11,7 @@
             [clojure.string :as str]
             [goog.string :as gstring]
             [nyancad.mosaic.jsatom.bridge :as bridge]
-            [cljs.core.async :refer [go go-loop <! chan put! close! promise-chan timeout]]
+            [cljs.core.async :refer [go go-loop <! chan put! promise-chan timeout]]
             [cljs.core.async.interop :refer-macros [<p!]]))
 
 ;; ---------------------------------------------------------------------------
@@ -137,41 +137,6 @@
       {:enqueue-edit! #(put! edit-queue %)
        :disposable disposable})))
 
-;; @tags nyanlib incremental desync
-(defn- create-readonly-nyanlib-channel
-  "Set up a serialized, read-only channel backed directly by a file. The gfp
-   nyanlib is a generated artifact: the server is its only writer, so this
-   channel only ever reloads disk content into the webview via `resync`. It
-   never writes, so the generated library never enters VS Code's TextDocument
-   save lifecycle and cannot create editor save conflicts."
-  [^js webview ^js uri group initial-content]
-  (let [content (atom initial-content)
-        version (atom 1)
-        operation-queue (chan 32)
-        post-resync! (fn []
-                       (.postMessage webview
-                         #js{:type "resync"
-                             :group group
-                             :version @version
-                             :text @content}))]
-    (go-loop []
-      (when-let [[kind _payload] (<! operation-queue)]
-        (case kind
-          :reload
-          (try
-            (let [disk-content (<p! (ws-read uri))]
-              (when (not= disk-content @content)
-                (reset! content disk-content)
-                (swap! version inc)
-                (<p! (post-resync!))))
-            (catch :default e
-              (js/console.error "Failed to reload models.nyanlib:" (.-message e))))
-
-          nil)
-        (recur)))
-    {:reload! #(put! operation-queue [:reload nil])
-     :disposable #js{:dispose #(close! operation-queue)}}))
-
 ;; ---------------------------------------------------------------------------
 ;; Request/response — send get-state to webview, wait for state-response
 ;; ---------------------------------------------------------------------------
@@ -233,32 +198,32 @@
           (enqueue-edit! (.-update message)))
 
         ;; Read a file relative to document directory.
-        ;; For missing symbol SVGs, attempt on-demand generation via host API.
         "read-file"
         (let [request-id (.-requestId message)
               filename (.-filename message)]
           (if-let [file-uri (safe-resolve-uri doc-uri filename)]
             (go
               (let [content (try (<p! (ws-read file-uri))
-                                 (catch :default _e nil))
-                    content (if (or content
-                                    (nil? host-api)
-                                    (not (str/starts-with? filename "build/symbols/"))
-                                    (not (str/ends-with? filename ".svg")))
-                              content
-                              (let [fqn (-> filename
-                                            (subs (count "build/symbols/"))
-                                            (str/replace #"\.svg$" ""))]
-                                (try (<p! (.resolveSymbol host-api fqn))
-                                     (catch :default _e nil))
-                                (try (<p! (ws-read file-uri))
-                                     (catch :default _e nil))))]
+                                 (catch :default _e nil))]
                 (.postMessage webview
                   #js{:requestId request-id
                       :content content})))
             (.postMessage webview
               #js{:requestId request-id
                   :content nil})))
+
+        ("factory-entries" "resolve-factory")
+        (go
+          (try
+            (when-not host-api (throw (js/Error. "Factory resolution is unavailable")))
+            (let [value (<p! (if (= "resolve-factory" (.-type message))
+                               (.resolveFactory host-api (.-fqn message) (.-path message))
+                               (.getFactoryEntries host-api)))]
+              (<p! (.postMessage webview #js{:requestId (.-requestId message) :value value})))
+            (catch :default e
+              (<p! (.postMessage webview
+                     #js{:requestId (.-requestId message)
+                         :error (or (.-message e) (str e))})))))
 
         ;; Open a file in VS Code (create if missing, use custom editor)
         "open-file"
@@ -451,12 +416,12 @@
           :else
           readiness)))))
 
+;; @tags factory resolution
 (defn- get-html
   "Generate webview HTML for the schematic editor.
    models-content is the initial JSON string from models.nyanlib.
-   The document/models version inputs seed the webview JsAtoms' self-echo
-   guard so it stays in lockstep with the host document versions."
-  [^js document ^js webview models-content models-version]
+   Only the writable schematic needs a document version for JsAtom's echo guard."
+  [^js document ^js webview models-content]
   (let [out-uri (fn [file]
                   (.asWebviewUri webview (uri-join bundle-uri file)))
         nonce (get-nonce)
@@ -478,7 +443,6 @@
   <input type=\"hidden\" id=\"document-version\" value=\"" (.-version document) "\">
   <input type=\"hidden\" id=\"group\" value=\"" (uri-basename (.-uri document) ".gsch") "\">
   <input type=\"hidden\" id=\"models\" value=\"" (js/encodeURIComponent models-content) "\">
-  <input type=\"hidden\" id=\"models-version\" value=\"" models-version "\">
   <div class=\"mosaic-app mosaic-editor\"></div>
   <script nonce=\"" nonce "\" src=\"" (out-uri "shared.js") "\"></script>
   <script nonce=\"" nonce "\" src=\"" (out-uri "editor.js") "\"></script>
@@ -679,35 +643,28 @@
 
                   :else
                   (when-not @disposed?
-                    ;; Keep the generated library outside VS Code's TextDocument
-                    ;; lifecycle. The server owns filesystem watching and this
-                    ;; serialized channel owns reads.
+                     ;; The persisted snapshot seeds the read-only runtime cache.
+                     ;; Subsequent updates arrive as entries, not file reloads.
                     (let [models-content (if cached?
                                            cached-content
                                            (<p! (ws-read nyanlib-uri)))]
                       (when-not @disposed?
-                        (set! (.-html webview) (get-html document webview models-content 1))
+                         (set! (.-html webview) (get-html document webview models-content))
 
-                        ;; The schematic remains a TextDocument. The model library is a
-                        ;; direct file channel, so it cannot become an editor conflict.
-                        (let [schem-ch (create-atom-channel webview document "schematic")
-                              models-ch (create-readonly-nyanlib-channel webview nyanlib-uri "models" models-content)
-                              atom-channels (atom {"schematic" schem-ch "models" models-ch})]
-                          (.push disposables (:disposable schem-ch))
-                          (.push disposables (:disposable models-ch))
-
-                          ;; The typed server subscription is the only filesystem
-                          ;; watcher. Queue a catch-up read after subscribing so a
-                          ;; write between the initial read and registration is seen.
-                          (.push disposables
-                                 (.onNyanlibChanged host-api (:reload! models-ch)))
-                          ((:reload! models-ch))
+                         (let [schem-ch (create-atom-channel webview document "schematic")
+                               atom-channels (atom {"schematic" schem-ch})]
+                           (.push disposables (:disposable schem-ch))
+                           (.push disposables
+                                  (.onFactoryEntries host-api
+                                    (fn [update]
+                                      (.postMessage webview #js{:type "factory-entries" :value update}))))
 
                           ;; Track this webview for the zoomToFit command
                           (swap! schematic-webviews assoc uri-key webview)
 
                           ;; Message router — pass document URI for marimo (local file:// only)
-                          (setup-message-router! webview atom-channels (or ws-root doc-uri) (.-uri document) document)
+                           (.push disposables
+                             (setup-message-router! webview atom-channels (or ws-root doc-uri) (.-uri document) document))
 
                           ;; Save SVG sidecar on document save
                           (let [save-disposable

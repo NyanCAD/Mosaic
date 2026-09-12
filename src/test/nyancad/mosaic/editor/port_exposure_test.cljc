@@ -189,6 +189,18 @@
             "the first declared port of a side lands on the top slot (smallest y,
              here 10 device y + 1/2 relative)")))))
 
+;; @tags mosaic die-component, factory resolution
+(deftest die-rendering-uses-platform-model-lookup
+  (let [lookups (atom [])
+        model (atom (get four-port-model "models:test.component"))
+        die (assoc (component) :type "die")]
+    (with-redefs [pform/model-cursor (fn [_ & path]
+                                     (swap! lookups conj path)
+                                     model)]
+      (is (vector? (e/circuit-sym "die" die)))
+      (is (some #{["models:test.component"]} @lookups))
+      (is (nil? (e/circuit-shape "die" die))))))
+
 ;; @tags mosaic port exposure
 (deftest canonical-directions-preserve-legacy-port-map-shapes
   (let [resistor {:type "resistor" :x 0 :y 0 :transform cm/IV}
