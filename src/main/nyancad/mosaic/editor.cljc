@@ -1422,7 +1422,7 @@
                                  (invocation/lookup-path (cm/model-key (:model dev)) (:props dev)))
         dev (cond-> dev (:generated entry) (assoc :type (:type entry)))
         cell (:type dev)
-        {:keys [x y model]} dev
+        {:keys [x y]} dev
         transform (or (:transform dev) cm/IV)
         builtin? (and (contains? models cell) (::conn (get models cell)))
         [conn size]
