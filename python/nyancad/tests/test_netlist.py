@@ -6,7 +6,12 @@ hand-computed from first principles or derived from the ClojureScript
 implementation (which is the source of truth for editor display).
 """
 
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from nyancad.netlist import (
     NyanCADMixin,
     NyanCircuit,
@@ -14,6 +19,7 @@ from nyancad.netlist import (
     _eval_params,
     _parse_spice_value,
     _select_corner,
+    _settings_identity,
     bare_id,
     default_port_order,
     kfnetlist_from_nyancad,
@@ -1204,30 +1210,98 @@ class TestKfNetlistFromNyancad:
 
 
 class TestResolveSaxNetlist:
-    """resolve_sax_netlist keeps SAX models as leaves and expands only factories."""
-
     class _Cell:
-        def __init__(self, name: str) -> None:
+        def __init__(
+            self,
+            name: str,
+            child: str,
+            *,
+            calls: list[tuple[str, bool]] | None = None,
+            kcl: object | None = None,
+            settings: dict[str, object] | None = None,
+        ) -> None:
             self.name = name
+            self.child = child
+            self.calls = calls
+            self.kcl = kcl
+            self.settings = SimpleNamespace(model_dump=lambda: dict(settings or {}))
 
-        def get_netlist(self, recursive=True):
-            return {self.name: {"instances": {}, "nets": [], "ports": []}}
+        def get_netlist(self, recursive: bool = True) -> dict:
+            if self.calls is not None:
+                self.calls.append((self.name, recursive))
+            direct = {
+                "instances": {"child": {"component": self.child, "settings": {}}},
+                "nets": [],
+                "ports": [],
+            }
+            return {self.name: direct} if recursive else direct
 
-    class _Cells:
-        @staticmethod
-        def straight(**_settings):
-            return TestResolveSaxNetlist._Cell("straight")
+    @staticmethod
+    def _recnet(**components: dict[str, object]) -> dict:
+        return {
+            "top": {
+                "instances": {
+                    name: {"component": name, **info}
+                    for name, info in components.items()
+                },
+                "nets": [],
+                "ports": [],
+            }
+        }
 
-        @staticmethod
-        def ring(**_settings):
-            return TestResolveSaxNetlist._Cell("ring")
+    def test_preserves_model_backed_leaf(self) -> None:
+        factory = Mock()
+        recnet = self._recnet(straight={"settings": {"length": 10}})
 
-    def test_preserves_model_backed_leaf_component_names(self):
+        resolve_sax_netlist(
+            recnet,
+            SimpleNamespace(straight=factory),
+            model_resolver=lambda component: (
+                object() if component == "straight" else None
+            ),
+        )
+
+        factory.assert_not_called()
+        assert set(recnet) == {"top"}
+        assert recnet["top"]["instances"]["straight"]["component"] == "straight"
+
+    @settings(max_examples=12)
+    @given(depth=st.integers(min_value=1, max_value=12))
+    def test_model_boundary_stops_expansion_at_any_depth(self, depth: int) -> None:
+        calls: list[tuple[str, bool]] = []
+        levels = [f"level_{index}" for index in range(depth)]
+        boundary = "quarter_wave_resonator_coupled"
+
+        def factory(name: str, child: str):
+            return lambda **_settings: self._Cell(name, child, calls=calls)
+
+        factories = {
+            name: factory(name, levels[index + 1] if index + 1 < depth else boundary)
+            for index, name in enumerate(levels)
+        }
+        recnet = self._recnet(**{levels[0]: {"settings": {}}})
+
+        leaves = resolve_sax_netlist(
+            recnet,
+            SimpleNamespace(**factories),
+            model_resolver=lambda component: (
+                object() if component == boundary else None
+            ),
+        )
+
+        assert calls == [(level, False) for level in levels]
+        assert set(recnet) == {"top", *levels}
+        assert recnet[levels[-1]]["instances"]["child"]["component"] == boundary
+        assert leaves == [levels[0]]
+
+    def test_distinct_settings_create_variants(self) -> None:
+        factory = Mock(side_effect=lambda **_settings: self._Cell("ring", "straight"))
         recnet = {
             "top": {
                 "instances": {
-                    "s1": {"component": "straight", "settings": {"length": 10}},
-                    "s2": {"component": "straight", "settings": {"length": 20}},
+                    "first": {"component": "ring", "settings": {"radius": 5}},
+                    "second": {"component": "ring", "settings": {"radius": 10}},
+                    "equal": {"component": "ring", "settings": {"radius": 10.0}},
                 },
                 "nets": [],
                 "ports": [],
@@ -1236,33 +1310,382 @@ class TestResolveSaxNetlist:
 
         resolve_sax_netlist(
             recnet,
-            self._Cells,
-            model_names={"straight"},
+            SimpleNamespace(ring=factory),
+            model_resolver=lambda component: (
+                object() if component == "straight" else None
+            ),
         )
 
-        assert recnet["top"]["instances"]["s1"]["component"] == "straight"
-        assert recnet["top"]["instances"]["s2"]["component"] == "straight"
-        assert "straight_v0" not in recnet
-        assert "straight_v1" not in recnet
+        assert factory.call_count == 2
+        assert recnet["top"]["instances"]["first"]["component"] == "ring_v0"
+        assert recnet["top"]["instances"]["second"]["component"] == "ring_v1"
+        assert recnet["top"]["instances"]["equal"]["component"] == "ring_v1"
 
-    def test_variant_expands_non_model_cells_with_distinct_settings(self):
+    @pytest.mark.parametrize("blocked_by", ["factory", "model"])
+    def test_generated_variant_avoids_namespace_collisions(
+        self, blocked_by: str
+    ) -> None:
+        ring = Mock(side_effect=lambda **_settings: self._Cell("ring", "straight"))
+        reserved_factory = Mock()
+        namespace = {"ring": ring}
+        if blocked_by == "factory":
+            namespace["ring_v0"] = reserved_factory
         recnet = {
             "top": {
                 "instances": {
-                    "r1": {"component": "ring", "settings": {"radius": 5}},
-                    "r2": {"component": "ring", "settings": {"radius": 10}},
+                    "first": {"component": "ring", "settings": {"radius": 5}},
+                    "second": {"component": "ring", "settings": {"radius": 10}},
                 },
                 "nets": [],
                 "ports": [],
             }
         }
 
-        resolve_sax_netlist(recnet, self._Cells, model_names={"straight"})
+        resolve_sax_netlist(
+            recnet,
+            SimpleNamespace(**namespace),
+            model_resolver=lambda component: (
+                object()
+                if component == "straight"
+                or (blocked_by == "model" and component == "ring_v0")
+                else None
+            ),
+        )
 
-        assert recnet["top"]["instances"]["r1"]["component"] == "ring_v0"
-        assert recnet["top"]["instances"]["r2"]["component"] == "ring_v1"
+        variants = {
+            instance["component"] for instance in recnet["top"]["instances"].values()
+        }
+        assert variants == {"ring_v1", "ring_v2"}
+        reserved_factory.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("left", "right"),
+        [
+            (float("nan"), float("nan")),
+            (b"abc", bytearray(b"abc")),
+            ([1, [2]], (1, (2,))),
+            ({1, 2}, frozenset({1, 2})),
+            (10, 10.0),
+        ],
+    )
+    def test_setting_identity_normalizes_equivalent_values(
+        self, left: object, right: object
+    ) -> None:
+        assert _settings_identity({"value": left}) == _settings_identity(
+            {"value": right}
+        )
+
+    def test_setting_identity_hashes_large_buffers_by_content(self) -> None:
+        left = bytearray(8_192)
+        same = bytearray(left)
+        different = bytearray(left)
+        different[-1] = 1
+
+        assert _settings_identity({"value": left}) == _settings_identity(
+            {"value": same}
+        )
+        assert _settings_identity({"value": left}) != _settings_identity(
+            {"value": different}
+        )
+
+    @pytest.mark.parametrize("nested", [False, True], ids=["top", "parent"])
+    def test_caller_context_resolves_anonymous_children(self, nested: bool) -> None:
+        anonymous = self._Cell("anonymous", "straight")
+
+        class Kcl:
+            def __getitem__(self, name: str) -> object:
+                if name != "anonymous":
+                    raise KeyError(name)
+                return anonymous
+
+        owner = "parent" if nested else "top"
+        recnet = self._recnet(**{owner if nested else "anonymous": {"settings": {}}})
+        if nested:
+            recnet["parent"] = {
+                "instances": {"child": {"component": "anonymous", "settings": {}}},
+                "nets": [],
+                "ports": [],
+            }
+
+        resolve_sax_netlist(
+            recnet,
+            SimpleNamespace(),
+            model_resolver=lambda component: (
+                object() if component == "straight" else None
+            ),
+            cell=SimpleNamespace(kcl=Kcl()),
+        )
+
+        anonymous_name = recnet[owner]["instances"]["child" if nested else "anonymous"][
+            "component"
+        ]
+        assert anonymous_name in recnet
+        assert recnet[anonymous_name]["instances"]["child"]["component"] == "straight"
+
+    def test_context_survives_parent_rename_before_traversal(self) -> None:
+        class Kcl:
+            child: object | None = None
+
+            def __getitem__(self, name: str) -> object:
+                if name != "anonymous" or self.child is None:
+                    raise KeyError(name)
+                return self.child
+
+        class Cell:
+            def __init__(self, name: str, instances: dict, kcl: Kcl) -> None:
+                self.name = name
+                self.instances = instances
+                self.kcl = kcl
+                self.settings = SimpleNamespace(model_dump=dict)
+
+            def get_netlist(self, recursive: bool = True) -> dict:
+                direct = {"instances": self.instances, "nets": [], "ports": []}
+                return {self.name: direct} if recursive else direct
+
+        def parent(variant: int) -> Cell:
+            kcl = Kcl()
+            kcl.child = Cell(
+                "anonymous",
+                {
+                    "leaf": {
+                        "component": f"straight_{variant}",
+                        "settings": {},
+                    }
+                },
+                kcl,
+            )
+            return Cell(
+                "parent",
+                {"child": {"component": "anonymous", "settings": {}}},
+                kcl,
+            )
+
+        def trigger() -> Cell:
+            return Cell(
+                "trigger",
+                {"parent": {"component": "parent", "settings": {"variant": 2}}},
+                Kcl(),
+            )
+
+        recnet = {
+            "top": {
+                "instances": {
+                    "trigger": {"component": "trigger", "settings": {}},
+                    "parent": {
+                        "component": "parent",
+                        "settings": {"variant": 1},
+                    },
+                },
+                "nets": [],
+                "ports": [],
+            }
+        }
+
+        resolve_sax_netlist(
+            recnet,
+            SimpleNamespace(trigger=trigger, parent=parent),
+            model_resolver=lambda component: (
+                object() if component.startswith("straight_") else None
+            ),
+        )
+
+        parent_name = recnet["top"]["instances"]["parent"]["component"]
+        assert parent_name == "parent_v0"
+        anonymous_name = recnet[parent_name]["instances"]["child"]["component"]
+        assert recnet[anonymous_name]["instances"]["leaf"]["component"] == "straight_1"
+
+    @pytest.mark.parametrize(
+        "order", [("bad_parent", "good_parent"), ("good_parent", "bad_parent")]
+    )
+    def test_context_miss_does_not_alias_materialized_child(
+        self, order: tuple[str, str]
+    ) -> None:
+        class Kcl:
+            def __init__(self, child: object | None = None) -> None:
+                self.child = child
+
+            def __getitem__(self, name: str) -> object:
+                if name != "anonymous" or self.child is None:
+                    raise KeyError(name)
+                return self.child
+
+        good_kcl = Kcl()
+        good_kcl.child = self._Cell("anonymous", "straight", kcl=good_kcl)
+        bad_kcl = Kcl()
+        cells = SimpleNamespace(
+            good_parent=lambda: self._Cell("good_parent", "anonymous", kcl=good_kcl),
+            bad_parent=lambda: self._Cell("bad_parent", "anonymous", kcl=bad_kcl),
+        )
+        recnet = self._recnet(**{name: {"settings": {}} for name in order})
+
+        resolve_sax_netlist(
+            recnet,
+            cells,
+            model_resolver=lambda component: (
+                object() if component == "straight" else None
+            ),
+        )
+
+        assert recnet["bad_parent"]["instances"]["child"]["component"] == "anonymous"
+        good_child = recnet["good_parent"]["instances"]["child"]["component"]
+        assert good_child == "anonymous_v0"
+        assert good_child in recnet
+        assert "anonymous" not in recnet
+
+    @pytest.mark.parametrize(
+        ("expected_radius", "expands"),
+        [(10.001, True), (10.002, False)],
+    )
+    def test_materialized_settings_use_serialized_values(
+        self, expected_radius: float, expands: bool
+    ) -> None:
+        materialized = self._Cell(
+            "anonymous",
+            "straight",
+            settings={"radius": 10.0005},
+        )
+        materialized.get_netlist = Mock(wraps=materialized.get_netlist)
+
+        class Kcl:
+            def __getitem__(self, name: str) -> object:
+                if name != "anonymous":
+                    raise KeyError(name)
+                return materialized
+
+        recnet = self._recnet(
+            anonymous={
+                "settings": {"radius": expected_radius, "netlist_only": "ignored"}
+            }
+        )
+        resolve_sax_netlist(
+            recnet,
+            SimpleNamespace(),
+            model_resolver=lambda component: (
+                object() if component == "straight" else None
+            ),
+            cell=SimpleNamespace(kcl=Kcl()),
+            setting_serializer=lambda value: (
+                round(value, 3) if isinstance(value, float) else value
+            ),
+        )
+
+        if expands:
+            materialized.get_netlist.assert_called_once_with(recursive=False)
+            assert "anonymous" in recnet
+        else:
+            materialized.get_netlist.assert_not_called()
+            assert set(recnet) == {"top"}
+
+    @pytest.mark.parametrize(
+        "values", [{1, 2}, frozenset({1, 2})], ids=["set", "frozenset"]
+    )
+    def test_materialized_sets_match_serialized_sequences(
+        self, values: set[int] | frozenset[int]
+    ) -> None:
+        materialized = self._Cell(
+            "anonymous",
+            "straight",
+            settings={"values": values},
+        )
+
+        class Kcl:
+            def __getitem__(self, _name: str) -> object:
+                return materialized
+
+        recnet = self._recnet(anonymous={"settings": {"values": [1, 2]}})
+        resolve_sax_netlist(
+            recnet,
+            SimpleNamespace(),
+            model_resolver=lambda component: (
+                object() if component == "straight" else None
+            ),
+            cell=SimpleNamespace(kcl=Kcl()),
+            setting_serializer=lambda value: (
+                tuple(sorted(value)) if isinstance(value, (set, frozenset)) else value
+            ),
+        )
+
+        assert "anonymous" in recnet
+
+    def test_wrapper_without_get_netlist_stays_unresolved(self) -> None:
+        class Raw:
+            base = object()
+
+        class Kcl:
+            def __getitem__(self, _name: str) -> object:
+                return Raw()
+
+        class Wrapper:
+            def __init__(
+                self, *, base: object | None = None, kcl: object | None = None
+            ) -> None:
+                self.base = base
+                self.kcl = kcl
+
+        recnet = self._recnet(anonymous={"settings": {}})
+        resolve_sax_netlist(
+            recnet,
+            SimpleNamespace(),
+            model_resolver=lambda _component: None,
+            cell=Wrapper(kcl=Kcl()),
+        )
+
+        assert set(recnet) == {"top"}
+
+    @pytest.mark.parametrize("failure", ["factory", "netlist", "empty"])
+    def test_failed_variant_does_not_alias_other_settings(self, failure: str) -> None:
+        class VariantCell(self._Cell):
+            def __init__(self, radius: int) -> None:
+                super().__init__("ring", "straight")
+                self.radius = radius
+
+            def get_netlist(self, recursive: bool = True) -> dict:
+                if self.radius == 5 and failure == "netlist":
+                    raise RuntimeError("netlist failed")
+                if self.radius == 5 and failure == "empty":
+                    return {"instances": {}, "nets": [], "ports": []}
+                return super().get_netlist(recursive)
+
+        def ring(radius: int) -> VariantCell:
+            if radius == 5 and failure == "factory":
+                raise RuntimeError("factory failed")
+            return VariantCell(radius)
+
+        recnet = {
+            "top": {
+                "instances": {
+                    "failed": {"component": "ring", "settings": {"radius": 5}},
+                    "valid": {"component": "ring", "settings": {"radius": 10}},
+                },
+                "nets": [],
+                "ports": [],
+            }
+        }
+
+        resolve_sax_netlist(
+            recnet,
+            SimpleNamespace(ring=ring),
+            model_resolver=lambda component: (
+                object() if component == "straight" else None
+            ),
+        )
+
+        assert recnet["top"]["instances"]["failed"]["component"] == "ring"
+        assert recnet["top"]["instances"]["valid"]["component"] == "ring_v0"
+        assert "ring" not in recnet
         assert "ring_v0" in recnet
-        assert "ring_v1" in recnet
+
+    @pytest.mark.parametrize("positional", [False, True])
+    def test_deprecated_model_names_preserve_boundaries(self, positional: bool) -> None:
+        recnet = self._recnet(straight={"settings": {}})
+
+        with pytest.deprecated_call():
+            if positional:
+                resolve_sax_netlist(recnet, SimpleNamespace(), {"straight"})
+            else:
+                resolve_sax_netlist(recnet, SimpleNamespace(), model_names={"straight"})
+
+        assert set(recnet) == {"top"}
 
 
 # ---------------------------------------------------------------------------

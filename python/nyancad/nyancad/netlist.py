@@ -4,14 +4,21 @@
 """Fetch schematics from CouchDB and generate SPICE netlists."""
 
 import hashlib
+import inspect
+import logging
 import re
 import shutil
 
 # package download dependencies
 import sys
 import tempfile
+import warnings
+from collections import deque
+from collections.abc import Callable, Iterable
+from enum import Enum
+from numbers import Number
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 from urllib.parse import urlparse
 
 from InSpice.Spice.HighLevelElement import (
@@ -93,6 +100,21 @@ class SchemId(NamedTuple):
         return cls(schem, dev)
 
 
+class _GeneratedCircuit(NamedTuple):
+    component: str
+    settings_key: tuple
+
+
+class _CellContext(NamedTuple):
+    kcl: Any
+    wrapper_type: type[Any]
+
+
+class _SettingGroup(NamedTuple):
+    settings: dict[str, object]
+    references: list[dict[str, Any]]
+
+
 def default_port_order(ports):
     """Canonical port order for subcircuit calls: sorted by name.
 
@@ -126,6 +148,9 @@ def _select_corner(sections, corners):
 IDENTIFIER_RE = re.compile(r"\b[A-Za-z_]\w*", re.ASCII)
 VALID_IDENT_RE = re.compile(r"^[A-Za-z_]\w*$", re.ASCII)
 STRUCTURAL_TYPES = {"wire", "text", "port", "polyline", "via", "taper", "net"}
+_SETTING_BUFFER_COPY_LIMIT = 4_096
+_NUMERIC_BUFFER_FORMATS = frozenset("?bBhHiIlLqQnNefd") | {"Zf", "Zd"}
+_LOG = logging.getLogger(__name__)
 
 _SIM_LANGUAGES = {
     "ngspice": ("spice",),
@@ -482,151 +507,600 @@ def recursive_kfnetlist_from_nyancad(name, schem, *, kcl="PDK"):
     return result
 
 
-def _accepted_params(factory):
+def _accepted_params(factory: Callable[..., object]) -> set[str] | None:
     """Return the set of parameter names *factory* accepts, or None if it
     accepts arbitrary keyword arguments.
     """
-    import inspect
-
     try:
         sig = inspect.signature(factory)
     except (ValueError, TypeError):
         return None
-    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+    parameters = sig.parameters.values()
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters):
         return None
-    return set(sig.parameters.keys()) - {"self"}
+    return {
+        parameter.name
+        for parameter in parameters
+        if parameter.kind
+        in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    }
 
 
-def _to_python(v):
-    """Convert JSON-native value to Python: list → tuple, rest unchanged."""
-    if isinstance(v, list):
-        return tuple(_to_python(item) for item in v)
-    return v
+def _to_python(value: object) -> object:
+    """Recursively normalize container values."""
+    match value:
+        case list() | tuple():
+            return tuple(_to_python(item) for item in value)
+        case set():
+            return {_to_python(item) for item in value}
+        case frozenset():
+            return frozenset(_to_python(item) for item in value)
+        case dict():
+            return {key: _to_python(item) for key, item in value.items()}
+        case _:
+            return value
 
 
-def _coerce_settings(raw, accepted=None):
+def _coerce_settings(
+    raw: dict[str, object], accepted: set[str] | None = None
+) -> dict[str, object]:
     """Normalise prop values from native JSON to Python types.
 
     All editors now write native JSON types, so the only transforms
     needed are JSON array → Python tuple and filtering to parameters
     the factory actually accepts (extra keys cause TypeError on call).
     """
-    return {
-        k: _to_python(v) for k, v in raw.items() if accepted is None or k in accepted
-    }
+    if accepted is None:
+        return {key: _to_python(value) for key, value in raw.items()}
+    return {key: _to_python(value) for key, value in raw.items() if key in accepted}
 
 
-def resolve_sax_netlist(recnet, pdk_cells, model_names=None):
-    """Expand hierarchical components in a SAX RecursiveNetlist using PDK cells.
+def _buffer_identity(value: bytes | bytearray | memoryview) -> tuple:
+    view = memoryview(value)
+    if view.nbytes <= _SETTING_BUFFER_COPY_LIMIT:
+        return ("buffer", view.tobytes())
+    try:
+        content = view.cast("B")
+    except (TypeError, ValueError):
+        content = view.tobytes()
+    digest = hashlib.blake2b(content, digest_size=16).digest()
+    return ("buffer_digest", view.nbytes, digest)
 
-    For each component referenced by top-level instances but not already
-    defined as a sub-netlist or available as a model, creates gdsfactory
-    cells with per-instance coerced settings and merges their netlists.
-    Instances with different settings get separate variant sub-netlists
-    (e.g. ``ring_single_v0``, ``ring_single_v1``).
+
+def _large_numeric_buffer_identity(
+    value: object,
+    serializer: Callable[[object], object] | None = None,
+) -> tuple | None:
+    try:
+        view = memoryview(value)
+    except (TypeError, ValueError):
+        return None
+    format_code = view.format.lstrip("@=<>!")
+    if (
+        view.nbytes <= _SETTING_BUFFER_COPY_LIMIT
+        or format_code not in _NUMERIC_BUFFER_FORMATS
+    ):
+        return None
+    try:
+        content = view.cast("B")
+    except (TypeError, ValueError):
+        content = view.tobytes()
+    digest = hashlib.blake2b(content, digest_size=16).digest()
+    identity = ("numeric_buffer_digest", view.format, view.shape, digest)
+    if serializer is None:
+        return identity
+    try:
+        return _setting_identity(serializer(value))
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        return identity
+
+
+def _setting_identity(
+    value: object,
+    *,
+    serializer: Callable[[object], object] | None = None,
+) -> tuple:
+    """Return a hashable identity for a setting value."""
+    match value:
+        case Enum():
+            return _setting_identity(value.value, serializer=serializer)
+        case str():
+            return (str, str(value))
+        case bytes() | bytearray():
+            return _buffer_identity(value)
+        case memoryview() if value.format == "B" and value.ndim == 1:
+            return _buffer_identity(value)
+        case memoryview():
+            if (
+                buffer_identity := _large_numeric_buffer_identity(value, serializer)
+            ) is not None:
+                return buffer_identity
+            try:
+                return _setting_identity(value.tolist(), serializer=serializer)
+            except (NotImplementedError, TypeError, ValueError):
+                return ("object", type(value), id(value))
+        case Number():
+            try:
+                if bool(value != value):  # noqa: PLR0124
+                    return ("nan",)
+            except (TypeError, ValueError, ArithmeticError):
+                pass
+            if serializer is not None:
+                try:
+                    return _setting_identity(serializer(value))
+                except (
+                    TypeError,
+                    ValueError,
+                    OverflowError,
+                    RecursionError,
+                ):
+                    pass
+            return ("number", value)
+        case dict():
+            return (
+                "mapping",
+                frozenset(
+                    (
+                        _setting_identity(key, serializer=serializer),
+                        _setting_identity(item, serializer=serializer),
+                    )
+                    for key, item in value.items()
+                ),
+            )
+        case list() | tuple():
+            return (
+                "sequence",
+                tuple(_setting_identity(item, serializer=serializer) for item in value),
+            )
+        case set() | frozenset():
+            if serializer is not None:
+                try:
+                    return _setting_identity(serializer(value))
+                except (
+                    TypeError,
+                    ValueError,
+                    OverflowError,
+                    RecursionError,
+                ):
+                    pass
+            return (
+                "set",
+                frozenset(
+                    _setting_identity(item, serializer=serializer) for item in value
+                ),
+            )
+        case _:
+            if (
+                buffer_identity := _large_numeric_buffer_identity(value, serializer)
+            ) is not None:
+                return buffer_identity
+            tolist = getattr(value, "tolist", None)
+            if callable(tolist):
+                try:
+                    converted = tolist()
+                except (TypeError, ValueError, OverflowError):
+                    pass
+                else:
+                    if converted is not value:
+                        return _setting_identity(converted, serializer=serializer)
+            if serializer is not None:
+                try:
+                    serialized = serializer(value)
+                except (
+                    TypeError,
+                    ValueError,
+                    OverflowError,
+                    RecursionError,
+                ):
+                    pass
+                else:
+                    return _setting_identity(serialized)
+            try:
+                hash(value)
+            except (TypeError, ValueError):
+                return ("object", type(value), id(value))
+            return (type(value), value)
+
+
+def _settings_identity(settings: dict[str, object]) -> tuple:
+    """Return a canonical identity for a factory settings mapping."""
+    return _setting_identity(settings)
+
+
+def resolve_sax_netlist(
+    recnet: dict[str, dict[str, Any]],
+    pdk_cells: Any,
+    model_resolver: Callable[[str], Any | None] | Iterable[str] | None = None,
+    *,
+    model_names: Iterable[str] | None = None,
+    cell: Any | None = None,
+    cell_wrapper: Callable[..., Any] | None = None,
+    setting_serializer: Callable[[object], object] | None = None,
+) -> list[str]:
+    """Expand unmodeled factories one hierarchy level at a time.
+
+    A component for which ``model_resolver`` returns a model remains a leaf at
+    any depth. Otherwise its factory is materialized with the instance settings
+    and only its direct child netlist is added. Newly exposed children go
+    through the same decision, so separate branches can stop at different
+    semantic boundaries. Setting variants retain separate circuit definitions
+    (for example ``ring_single_v0`` and ``ring_single_v1``).
+
+    Existing circuit definitions are treated as already expanded. Callers with
+    recursive netlists must first remove definitions below modeled components.
 
     Args:
-        recnet: SAX RecursiveNetlist dict (mutated in place).
-        pdk_cells: PDK cells module (e.g. ``cspdk.si220.cband.cells``).
-        model_names: Optional set of SAX model names. Components in this set
-            are left as leaf models so SAX can call the model factory with the
-            instance settings.
+        recnet: SAX RecursiveNetlist dict, mutated in place.
+        pdk_cells: PDK cell namespace (for example ``cspdk.si220.cband.cells``).
+        model_resolver: Callable returning a model or ``None`` for a component.
+        model_names: Deprecated iterable of modeled component names.
+        cell: Materialized layout cell whose KLayout registry owns ``recnet``.
+        cell_wrapper: Wrapper that provides ``get_netlist`` for registry cells.
+        setting_serializer: Serializer used to match materialized cell settings.
 
     Returns:
-        List of leaf component names that were expanded.
+        Sorted top-level leaf component names considered for expansion.
+
     """
-    import logging
-    import warnings
-
-    log = logging.getLogger(__name__)
-
-    top_name = next(iter(recnet))
-    top = recnet.get(top_name, {})
-    instances = top.get("instances", {})
-    sub_netlists = set(recnet.keys()) - {top_name}
-    model_names = set(model_names or ())
-
+    top_name = next(iter(recnet), None)
+    top_instances = (
+        ((recnet.get(top_name) or {}).get("instances") or {})
+        if top_name is not None
+        else {}
+    )
+    sub_netlists = set(recnet) - ({top_name} if top_name is not None else set())
     leaf_components = sorted(
         {
-            info.get("component", name)
-            for name, info in instances.items()
-            if name not in sub_netlists
-            and info.get("component", name) not in sub_netlists
+            component
+            for name, info in top_instances.items()
+            if (component := info.get("component", name)) not in sub_netlists
         }
     )
+    legacy_model_names = None
+    if model_names is not None:
+        if model_resolver is not None:
+            raise TypeError("pass either model_resolver or model_names, not both")
+        legacy_model_names = set(model_names)
+        warnings.warn(
+            "model_names is deprecated; pass model_resolver instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    elif model_resolver is not None and not callable(model_resolver):
+        legacy_model_names = set(model_resolver)
+        model_resolver = None
+        warnings.warn(
+            "passing model_names positionally is deprecated; "
+            "pass model_resolver instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    resolver = model_resolver if callable(model_resolver) else None
 
-    if pdk_cells is None:
-        return leaf_components
+    modeled_components: dict[str, bool] = {}
 
-    comp_instances: dict[str, list[tuple[str, dict]]] = {}
-    for inst_name, inst_info in instances.items():
-        comp = inst_info.get("component", inst_name)
-        if comp not in leaf_components:
-            continue
-        if comp in model_names:
-            continue
-        comp_instances.setdefault(comp, []).append((inst_name, inst_info))
+    def is_modeled(component: str) -> bool:
+        """Resolve each component model at most once per expansion."""
+        if legacy_model_names is not None:
+            return component in legacy_model_names
+        if resolver is None:
+            return False
+        try:
+            return modeled_components[component]
+        except KeyError:
+            pass
+        modeled = resolver(component) is not None
+        modeled_components[component] = modeled
+        return modeled
 
-    for comp, inst_list in comp_instances.items():
-        cell_fn = getattr(pdk_cells, comp, None)
-        if cell_fn is None:
-            continue
+    factory_cache: dict[str, Callable[..., Any] | None] = {}
 
-        accepted = _accepted_params(cell_fn)
+    def get_factory(component: str) -> Callable[..., Any] | None:
+        if pdk_cells is None:
+            return None
+        try:
+            return factory_cache[component]
+        except KeyError:
+            pass
+        factory = getattr(pdk_cells, component, None)
+        factory_cache[component] = factory
+        return factory
 
-        coerced_per_inst = []
-        for inst_name, inst_info in inst_list:
-            coerced = _coerce_settings(inst_info.get("settings", {}), accepted=accepted)
-            key = tuple(sorted(coerced.items()))
-            coerced_per_inst.append((inst_name, inst_info, coerced, key))
+    reserved_components = {
+        info.get("component", instance_name)
+        for netlist in recnet.values()
+        for instance_name, info in ((netlist or {}).get("instances") or {}).items()
+    }
+    pending = deque(recnet)
+    queued = set(recnet)
+    processed: set[str] = set()
+    variants: dict[str, dict[tuple, str]] = {}
+    variant_indices: dict[str, int] = {}
+    unexpandable: set[tuple[str, tuple]] = set()
+    generated_references: dict[str, list[dict[str, Any]]] = {}
+    resolver_reference_ids: set[int] = set()
+    generated_owners: dict[str, _GeneratedCircuit] = {}
+    # Serialized names are only unique within one KLayout context.
+    kcl = getattr(cell, "kcl", None)
+    wrapper_type = cell_wrapper or type(cell)
+    initial_context = _CellContext(kcl, wrapper_type) if kcl is not None else None
+    circuit_contexts = (
+        dict.fromkeys(recnet, initial_context) if initial_context is not None else {}
+    )
+    accepted_params: dict[str, set[str] | None] = {}
+    failed_components: set[str] = set()
 
-        unique_keys = {key for _, _, _, key in coerced_per_inst}
-        needs_variants = len(unique_keys) > 1
-        variant_map: dict[tuple, str] = {}
-        idx = 0
+    def enqueue(circuit_name: str) -> None:
+        if circuit_name not in processed and circuit_name not in queued:
+            pending.append(circuit_name)
+            queued.add(circuit_name)
 
-        for _inst_name, inst_info, coerced, key in coerced_per_inst:
-            if key not in variant_map:
+    def allocate_variant_name(component: str) -> str:
+        """Allocate a circuit name without shadowing models or PDK factories."""
+        index = variant_indices.get(component, 0)
+        while True:
+            candidate = f"{component}_v{index}"
+            if (
+                candidate not in recnet
+                and candidate not in reserved_components
+                and get_factory(candidate) is None
+                and not is_modeled(candidate)
+            ):
+                variant_indices[component] = index + 1
+                return candidate
+            index += 1
+
+    def record_generated_reference(circuit_name: str, ref_info: dict[str, Any]) -> None:
+        resolver_reference_ids.add(id(ref_info))
+        reserved_components.add(circuit_name)
+        generated_references.setdefault(circuit_name, []).append(ref_info)
+
+    def rename_generated_circuit(circuit_name: str) -> str:
+        component, key = generated_owners.pop(circuit_name)
+        replacement = allocate_variant_name(component)
+        recnet[replacement] = recnet.pop(circuit_name)
+        generated_owners[replacement] = _GeneratedCircuit(component, key)
+        variants[component][key] = replacement
+        reserved_components.add(replacement)
+
+        if context := circuit_contexts.pop(circuit_name, None):
+            circuit_contexts[replacement] = context
+
+        was_processed = circuit_name in processed
+        processed.discard(circuit_name)
+        if was_processed:
+            processed.add(replacement)
+        else:
+            enqueue(replacement)
+
+        references = generated_references.pop(circuit_name, [])
+        for ref_info in references:
+            ref_info["component"] = replacement
+        if references:
+            generated_references[replacement] = references
+        return replacement
+
+    def find_materialized_cell(
+        context: _CellContext | None, component: str
+    ) -> tuple[Any, int] | None:
+        if context is None:
+            return None
+        try:
+            kcl, wrapper_type = context
+            cell = kcl[component]
+        except (ImportError, KeyError, ValueError):
+            return None
+        if hasattr(cell, "get_netlist"):
+            return cell, id(kcl)
+        if (base := getattr(cell, "base", None)) is None:
+            return None
+        try:
+            wrapped = wrapper_type(base=base)
+        except (TypeError, ValueError):
+            return None
+        return (wrapped, id(kcl)) if hasattr(wrapped, "get_netlist") else None
+
+    def cell_settings_match(
+        actual: dict[str, object],
+        actual_identities: dict[str, tuple],
+        serialized_actual_identities: dict[str, tuple],
+        expected: dict[str, object],
+    ) -> bool:
+        for key, value in expected.items():
+            try:
+                actual_identity = actual_identities[key]
+            except KeyError:
                 try:
-                    cell = cell_fn(**coerced)
+                    actual_value = actual[key]
+                except KeyError:
+                    return False
+                actual_value = _to_python(actual_value)
+                actual_identity = _setting_identity(actual_value)
+                actual_identities[key] = actual_identity
+            if _setting_identity(value) == actual_identity:
+                continue
+            if setting_serializer is None:
+                return False
+            try:
+                serialized_actual_identity = serialized_actual_identities[key]
+            except KeyError:
+                serialized_actual_identity = _setting_identity(
+                    _to_python(actual[key]), serializer=setting_serializer
+                )
+                serialized_actual_identities[key] = serialized_actual_identity
+            if (
+                _setting_identity(value, serializer=setting_serializer)
+                != serialized_actual_identity
+            ):
+                return False
+        return True
+
+    while pending:
+        circuit_name = pending.popleft()
+        queued.discard(circuit_name)
+        if circuit_name in processed or circuit_name not in recnet:
+            continue
+        processed.add(circuit_name)
+        circuit_context = circuit_contexts.get(circuit_name)
+
+        instances = (recnet[circuit_name] or {}).get("instances") or {}
+        comp_instances: dict[str, list[dict[str, Any]]] = {}
+        for inst_name, inst_info in instances.items():
+            component = inst_info.get("component", inst_name)
+            reserved_components.add(component)
+            owner = generated_owners.get(component)
+            if (
+                owner is not None
+                and owner.component != component
+                and id(inst_info) not in resolver_reference_ids
+            ):
+                # A real child can claim a variant name allocated before it was visible.
+                rename_generated_circuit(component)
+                owner = None
+            if is_modeled(component):
+                continue
+            if component in recnet and (owner is None or owner.component != component):
+                enqueue(component)
+                continue
+            if pdk_cells is not None:
+                comp_instances.setdefault(component, []).append(inst_info)
+
+        for component, inst_list in comp_instances.items():
+            cell_fn = get_factory(component)
+            materialized = (
+                find_materialized_cell(circuit_context, component)
+                if cell_fn is None
+                else None
+            )
+            if cell_fn is None and materialized is None:
+                if component in generated_owners:
+                    rename_generated_circuit(component)
+                failed_components.add(component)
+                continue
+            materialized_cell, source_id = (
+                materialized if materialized is not None else (None, None)
+            )
+            actual_settings: dict[str, object] = {}
+            actual_setting_identities: dict[str, tuple] = {}
+            serialized_actual_setting_identities: dict[str, tuple] = {}
+            if materialized_cell is not None:
+                cell_settings = getattr(materialized_cell, "settings", None)
+                model_dump = getattr(cell_settings, "model_dump", None)
+                if callable(model_dump):
+                    actual_settings = model_dump()
+
+            if cell_fn is None:
+                accepted = set(actual_settings)
+            else:
+                try:
+                    accepted = accepted_params[component]
+                except KeyError:
+                    accepted_params[component] = _accepted_params(cell_fn)
+                    accepted = accepted_params[component]
+            setting_groups: dict[tuple, _SettingGroup] = {}
+            for inst_info in inst_list:
+                coerced = _coerce_settings(
+                    inst_info.get("settings", {}), accepted=accepted
+                )
+                key = (source_id, _settings_identity(coerced))
+                try:
+                    setting_groups[key].references.append(inst_info)
+                except KeyError:
+                    setting_groups[key] = _SettingGroup(coerced, [inst_info])
+
+            cache = variants.setdefault(component, {})
+            needs_variants = (
+                len(cache) > 1
+                or len(setting_groups) > 1
+                or (bool(cache) and next(iter(setting_groups)) not in cache)
+            )
+
+            for key, group in setting_groups.items():
+                try:
+                    variant_name = cache[key]
+                except KeyError:
+                    pass
+                else:
+                    for ref_info in group.references:
+                        ref_info["component"] = variant_name
+                        record_generated_reference(variant_name, ref_info)
+                    continue
+
+                if needs_variants and len(cache) == 1 and component in cache.values():
+                    rename_generated_circuit(component)
+
+                if (component, key) in unexpandable:
+                    continue
+
+                if materialized_cell is not None and not cell_settings_match(
+                    actual_settings,
+                    actual_setting_identities,
+                    serialized_actual_setting_identities,
+                    group.settings,
+                ):
+                    _LOG.warning(
+                        "%s: materialized cell settings do not match %r, skipping",
+                        component,
+                        group.settings,
+                    )
+                    unexpandable.add((component, key))
+                    failed_components.add(component)
+                    continue
+
+                try:
+                    cell = (
+                        materialized_cell
+                        if materialized_cell is not None
+                        else cell_fn(**group.settings)
+                    )
                 except Exception:
-                    log.warning(
+                    _LOG.warning(
                         "%s: cell_fn(**%r) failed, skipping",
-                        comp,
-                        coerced,
+                        component,
+                        group.settings,
                         exc_info=True,
                     )
+                    unexpandable.add((component, key))
+                    failed_components.add(component)
                     continue
 
                 try:
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        sub = cell.get_netlist(recursive=True)
+                        direct = cell.get_netlist(recursive=False)
                 except Exception:
-                    log.warning(
+                    _LOG.warning(
                         "%s: get_netlist failed, skipping",
-                        comp,
+                        component,
                         exc_info=True,
                     )
+                    unexpandable.add((component, key))
+                    failed_components.add(component)
                     continue
 
-                variant_name = f"{comp}_v{idx}" if needs_variants else comp
-                idx += 1
-                if comp in sub and comp != variant_name:
-                    sub[variant_name] = sub.pop(comp)
+                if not direct.get("instances"):
+                    unexpandable.add((component, key))
+                    failed_components.add(component)
+                    continue
 
-                for existing_key in set(recnet.keys()) & set(sub.keys()):
-                    if existing_key != variant_name:
-                        log.debug(
-                            "%s: sub-netlist key %r already in recnet, overwriting",
-                            comp,
-                            existing_key,
-                        )
-                recnet.update(sub)
-                variant_map[key] = variant_name
+                reserved_components.update(
+                    child_info.get("component", child_name)
+                    for child_name, child_info in direct["instances"].items()
+                )
 
-            if key in variant_map:
-                inst_info["component"] = variant_map[key]
+                if needs_variants or cache or component in failed_components:
+                    variant_name = allocate_variant_name(component)
+                else:
+                    variant_name = component
+                recnet[variant_name] = direct
+                cache[key] = variant_name
+                generated_owners[variant_name] = _GeneratedCircuit(component, key)
+                if (kcl := getattr(cell, "kcl", None)) is not None:
+                    circuit_contexts[variant_name] = _CellContext(kcl, type(cell))
+                for ref_info in group.references:
+                    ref_info["component"] = variant_name
+                    record_generated_reference(variant_name, ref_info)
+                enqueue(variant_name)
 
     return leaf_components
 

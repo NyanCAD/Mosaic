@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nyancad"
-version = "0.18.5"
+version = "0.18.6"
 description = "NyanCAD Python library for schematic editor with anywidget integration"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -28,7 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 vacask = ['vacask-bin>=0.3.3.dev0']
-test = ["pytest>=7.0", "kfnetlist>=0.1.4"]
+test = ["pytest>=7.0", "hypothesis>=6.0,<7.0", "kfnetlist>=0.1.4"]
 
 [project.urls]
 Homepage = "https://github.com/NyanCAD/Mosaic"
@@ -42,7 +42,7 @@ include = ["nyancad*"]
 testpaths = ["tests"]
 
 [tool.bumpversion]
-current_version = "0.18.5"
+current_version = "0.18.6"
 commit = true
 tag = false
 allow_dirty = true
