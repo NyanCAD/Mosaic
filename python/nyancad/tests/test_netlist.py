@@ -7,10 +7,13 @@ implementation (which is the source of truth for editor display).
 """
 
 import pytest
+from InSpice.Spice.Netlist import Circuit
+from InSpice.Spice.Simulator import Simulator
 from nyancad.netlist import (
     NyanCADMixin,
     NyanCircuit,
     SchemId,
+    _add_library,
     _eval_params,
     _parse_spice_value,
     _select_corner,
@@ -226,13 +229,48 @@ class TestSelectModelEntry:
         entry = self._select(spice_model_def, "VACASK")
         assert entry["name"] == "nmos_vacask"
 
-    def test_vacask_ignores_spice_entries(self):
+    def test_vacask_ignores_inline_spice_entries(self):
+        """Inline SPICE does not identify a foreign library.
+
+        @tags spice model libraries
+        """
         model_def = {
             "models": [
                 {"language": "spice", "implementation": "NgSpice", "name": "ng"},
             ]
         }
         assert self._select(model_def, "VACASK") is None
+
+    @pytest.mark.parametrize("implementation", ["nGsPiCe", "XYCE"])
+    def test_foreign_fallback_and_native_precedence(self, implementation):
+        """Ordered foreign fallback loses to native language and exact matches.
+
+        @tags spice model libraries
+        """
+        foreign = {
+            "language": "SPICE",
+            "implementation": implementation,
+            "library": "foreign.lib",
+        }
+        second = {**foreign, "library": "second.lib"}
+        native = {"language": "spectre", "library": "native.lib"}
+        exact = {**native, "implementation": "VACASK", "library": "exact.lib"}
+        assert self._select({"models": [foreign, second]}, "vacask") is foreign
+        assert self._select({"models": [foreign, native]}, "vacask") is native
+        assert self._select({"models": [foreign, native, exact]}, "vacask") is exact
+
+    @pytest.mark.parametrize("implementation", ["", "generic", "spectre"])
+    def test_unknown_foreign_dialect_is_not_guessed(self, implementation):
+        """A library alone cannot establish its dialect.
+
+        @tags spice model libraries
+        """
+        entry = {
+            "language": "spice",
+            "implementation": implementation,
+            "library": "models.lib",
+        }
+        assert self._select({"models": [entry]}, "VACASK") is None
 
     def test_ngspice_ignores_spectre_entries(self):
         model_def = {
@@ -574,6 +612,205 @@ class TestLibrarySectionEntry:
 # ---------------------------------------------------------------------------
 # Case-insensitive port matching — built-in symbols vs. migrated model ports
 # ---------------------------------------------------------------------------
+
+
+def _vacask_text(circuit):
+    """Serialize through the real VACASK backend without running analysis.
+
+    @tags spice model libraries
+    """
+    simulation = Simulator.factory(simulator="vacask").simulation(circuit)
+    simulation.operating_point(run=False)
+    return str(simulation)
+
+
+class TestForeignLibraries:
+    @pytest.mark.parametrize("dialect", ["NgSpice", "Xyce"])
+    @pytest.mark.parametrize("section", [None, "ff"])
+    def test_foreign_directives_copy_and_dedup(self, dialect, section):
+        """Resolved foreign paths and selected sections survive circuit copying.
+
+        @tags spice model libraries
+        """
+        schem = TestLibrarySectionEntry()._schem(
+            sections=("tt", "ff"), drop_sections=section is None
+        )
+        entry = schem["models"]["models:sky.nfet"]["models"][0]
+        entry["implementation"] = dialect
+        schem["models"]["models:second"] = {
+            **schem["models"]["models:sky.nfet"],
+            "models": [dict(entry)],
+        }
+        schem["top"]["second"] = {
+            **schem["top"]["top:X1"],
+            "name": "X2",
+            "model": "second",
+        }
+        circuit = NyanCircuit("top", schem, sim="VACASK", corners=["ff"])
+        copied = Circuit(circuit.title)
+        circuit.copy_to(copied)
+        text = _vacask_text(copied.clone())
+        includes = [line for line in text.splitlines() if line.startswith("include ")]
+        assert len(includes) == 1
+        assert "nyancad_archive_cache" in includes[0]
+        assert f"lang={dialect.lower()}" in includes[0]
+        assert ("section=ff" in includes[0]) == bool(section)
+        assert "m_sky130" not in text
+        assert len(circuit._pending_downloads) == 1
+
+    @pytest.mark.parametrize(
+        ("sim", "language", "implementation"),
+        [
+            ("NgSpice", "spice", "NgSpice"),
+            ("Xyce", "spice", "Xyce"),
+            ("VACASK", "spectre", "VACASK"),
+        ],
+    )
+    def test_native_output_has_no_lang(self, sim, language, implementation):
+        """Native IHP-style libraries and ordinary SPICE remain unoptioned.
+
+        @tags spice model libraries
+        """
+        schem = TestLibrarySectionEntry()._schem()
+        entry = schem["models"]["models:sky.nfet"]["models"][0]
+        entry.update(language=language, implementation=implementation)
+        circuit = NyanCircuit("top", schem, sim=sim)
+        text = (
+            _vacask_text(circuit)
+            if sim == "VACASK"
+            else circuit.str(simulator=sim.lower())
+        )
+        assert "lang=" not in text
+        assert "sky130.lib.spice" in text
+
+    @pytest.mark.parametrize(
+        ("kind", "ports", "params"),
+        [
+            ("D", ["P", "N"], {"pj": "perimeter"}),
+            ("M", ["D", "G", "S", "B"], {"w": "width"}),
+            ("Q", ["C", "B", "E"], {"area": "area"}),
+        ],
+    )
+    @pytest.mark.parametrize("sim", ["VACASK", "NgSpice", "Xyce", "native-vacask"])
+    def test_primitive_model_forwarding(self, kind, ports, params, sim):
+        """Primitive models survive mappings; only foreign VACASK prefixes them.
+
+        @tags spice model libraries
+        """
+        entry = {
+            "language": "spice",
+            "implementation": "NgSpice",
+            "library": "models.lib",
+            "name": "Mixed_Model",
+            "spice-type": kind,
+            "port-order": ports,
+            "params": params,
+        }
+        schem = {
+            "top": {
+                "dev": {
+                    "type": "component",
+                    "model": "primitive",
+                    "nets": {p: f"n{i}" for i, p in enumerate(ports)},
+                    "props": {"perimeter": 2, "width": 3, "area": 4},
+                }
+            },
+            "models": {
+                "models:primitive": {
+                    "name": "unused",
+                    "ports": [{"name": p} for p in ports],
+                    "models": [entry],
+                }
+            },
+        }
+        native = sim == "native-vacask"
+        if native:
+            entry.update(language="spectre", implementation="VACASK")
+            sim = "VACASK"
+        circuit = NyanCircuit("top", schem, sim=sim)
+        element = next(iter(circuit.elements))
+        assert str(element.model) == (
+            "m_mixed_model" if sim == "VACASK" and not native else "Mixed_Model"
+        )
+        if kind == "D":
+            assert float(element.pj) == 2
+        text = _vacask_text(circuit) if sim == "VACASK" else str(circuit)
+        assert str(element.model).lower() in text.lower()
+
+    @pytest.mark.parametrize("section", [None, "tt"])
+    def test_old_api_error_only_for_foreign(self, section):
+        """Legacy native calls work; foreign options fail with actionable guidance.
+
+        @tags spice model libraries
+        """
+
+        class Legacy:
+            def include(self, path):
+                """@tags spice model libraries"""
+                self.path = path
+
+            def lib(self, path, section):
+                """@tags spice model libraries"""
+                self.path = path
+
+        circuit = Legacy()
+        _add_library(circuit, "native.lib", section, None)
+        assert circuit.path == "native.lib"
+        with pytest.raises(RuntimeError, match="InSpice include-options API"):
+            _add_library(circuit, "foreign.lib", section, "ngspice")
+
+    def test_add_spice_code_preserves_optioned_copy(self, monkeypatch):
+        """Parsed circuit directives are copied once without losing options.
+
+        @tags spice model libraries
+        """
+        source = Circuit("parsed")
+        source.include("foreign.lib", lang="ngspice")
+        source.lib("foreign.lib", "tt", lang="xyce")
+        source.parameter("supply", 3.3)
+
+        def translate(self, spice_source):
+            """@tags spice model libraries"""
+            return source
+
+        monkeypatch.setattr("nyancad.netlist.Builder.translate", translate)
+        target = NyanCircuit("top", {"top": {}, "models": {}})
+        target.add_spice_code(".param supply=3.3")
+        text = _vacask_text(target)
+        assert text.count("include ") == 2
+        assert "lang=ngspice" in text
+        assert "lang=xyce section=tt" in text
+        assert "parameters supply=3.3" in text
+        assert not target.raw_spice.strip()
+
+    def test_add_spice_code_legacy_unoptioned_copy(self, monkeypatch):
+        """Older copy_to implementations still receive includes, libs and params.
+
+        @tags spice model libraries
+        """
+
+        class LegacyParsed:
+            _includes = ["legacy.inc"]
+            _libs = [("legacy.lib", "tt")]
+            _parameters = {"supply": 3.3}
+
+            def copy_to(self, target):
+                """@tags spice model libraries"""
+                return target
+
+        def translate(self, spice_source):
+            """@tags spice model libraries"""
+            return LegacyParsed()
+
+        monkeypatch.setattr("nyancad.netlist.Builder.translate", translate)
+        target = NyanCircuit("top", {"top": {}, "models": {}})
+        target.add_spice_code(".param supply=3.3")
+        text = str(target)
+        assert text.count(".include ") == 1
+        assert "legacy.lib tt" in text
+        assert sum(line.startswith(".lib ") for line in text.splitlines()) == 1
+        assert ".param supply=3.3" in text
+        assert not target.raw_spice.strip()
 
 
 class TestCaseInsensitivePorts:
