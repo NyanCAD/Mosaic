@@ -4,6 +4,7 @@
 """Fetch schematics from CouchDB and generate SPICE netlists."""
 
 import hashlib
+import inspect
 import re
 import shutil
 
@@ -132,6 +133,45 @@ _SIM_LANGUAGES = {
     "xyce": ("spice",),
     "vacask": ("spectre",),
 }
+
+
+def _foreign_library_language(entry, sim):
+    """Identify an explicitly declared VACASK foreign library dialect.
+
+    @tags spice model libraries
+    """
+    if (
+        sim.lower() == "vacask"
+        and entry.get("library")
+        and entry.get("language", "").lower() == "spice"
+    ):
+        implementation = entry.get("implementation", "").lower()
+        if implementation in ("ngspice", "xyce"):
+            return implementation
+    return None
+
+
+def _add_library(circuit, library, section, language):
+    """Forward dialect options only when the installed InSpice supports them.
+
+    @tags spice model libraries
+    """
+    method = circuit.lib if section else circuit.include
+    args = (library, section) if section else (library,)
+    if language:
+        try:
+            inspect.signature(method).bind(*args, lang=language)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "VACASK foreign libraries require the InSpice include-options API "
+                "(PR #36). Install an InSpice build supporting include/lib "
+                "lang kwargs; "
+                "the package version alone does not establish support."
+            ) from exc
+        method(*args, lang=language)
+    else:
+        method(*args)
+
 
 _SPICE_SUFFIX_SCALE = {
     "t": 1e12,
@@ -681,9 +721,10 @@ class NyanCADMixin:
     def _select_model_entry(self, model_def, sim):
         """Select a model entry compatible with the target simulator.
 
-        Each simulator only accepts specific languages (see ``_SIM_LANGUAGES``).
-        Priority: exact implementation match first, then first language-compatible
-        entry. Returns None when no compatible entry exists.
+        Priority: exact implementation, native language, then an explicitly
+        declared foreign library dialect for VACASK. Preserve entry order.
+
+        @tags spice model libraries
         """
         entries = model_def.get("models", [])
         if not entries:
@@ -693,7 +734,10 @@ class NyanCADMixin:
             if entry.get("implementation", "").lower() == sim.lower():
                 return entry
         for entry in entries:
-            if entry.get("language") in accepted:
+            if entry.get("language", "").lower() in accepted:
+                return entry
+        for entry in entries:
+            if _foreign_library_language(entry, sim):
                 return entry
         return None
 
@@ -749,7 +793,10 @@ class NyanCADMixin:
             self._add_nyancad_element(dev_id, dev, ports, models, corners, sim)
 
     def _add_nyancad_element(self, dev_id, dev, ports, models, corners, sim):
-        """Add a single NyanCAD element to this netlist."""
+        """Add a single NyanCAD element to this netlist.
+
+        @tags spice model libraries
+        """
         device_type = dev["type"]
         name = dev.get("name") or dev_id.replace(
             ":", "_"
@@ -813,6 +860,10 @@ class NyanCADMixin:
         ports_ci = {k.lower(): v for k, v in ports.items()}
 
         def p(port_name):
+            """Resolve terminal names case-insensitively.
+
+            @tags spice model libraries
+            """
             return ports_ci[port_name.lower()]
 
         # Map SPICE element type letters to InSpice methods
@@ -848,6 +899,10 @@ class NyanCADMixin:
 
             if spice_type.upper() in ("X", "SUBCKT"):
                 element_fn(name, subcircuit_model, *port_list, **props)
+            elif spice_type.upper() in ("D", "M", "Q"):
+                if _foreign_library_language(selected_entry, sim):
+                    subcircuit_model = "m_" + subcircuit_model.lower()
+                element_fn(name, *port_list, model=subcircuit_model, **props)
             else:
                 element_fn(name, *port_list, **props)
             return
@@ -920,6 +975,8 @@ class NyanCircuit(NyanCADMixin, Circuit):
                    Each model entry uses the first match from its sections list,
                    falling back to sections[0] (typical).
         - sim: Simulator name for model entry selection
+
+        @tags spice model libraries
         """
         super().__init__(title="schematic", **kwargs)
         self._pending_downloads = []  # List of (url, dest_path) tuples
@@ -972,10 +1029,12 @@ class NyanCircuit(NyanCADMixin, Circuit):
                             if resolved is not None:
                                 library = str(resolved)
                             section = _select_corner(entry.get("sections"), corners)
-                            if section:
-                                self.lib(library, section)
-                            else:
-                                self.include(library)
+                            _add_library(
+                                self,
+                                library,
+                                section,
+                                _foreign_library_language(entry, sim),
+                            )
                         # Handle inline SPICE code
                         code = entry.get("code", "").strip()
                         if code:
@@ -1006,6 +1065,8 @@ class NyanCircuit(NyanCADMixin, Circuit):
 
         Args:
             spice_code: Raw SPICE code (models, subcircuits, etc.)
+
+        @tags spice model libraries
         """
         try:
             # Parse SPICE code
@@ -1015,13 +1076,15 @@ class NyanCircuit(NyanCADMixin, Circuit):
             parsed_circuit = builder.translate(spice_source)
             # Copy all content to self (models, subcircuits, elements)
             parsed_circuit.copy_to(self)
-            # copy includes and parameters
-            for include in parsed_circuit._includes:
-                self.include(include)
-            for path, section in parsed_circuit._libs:
-                self.lib(path, section)
-            for name, value in parsed_circuit._parameters.items():
-                self.parameter(name, value)
+            # Modern copy_to preserves directive options. Older InSpice needs
+            # the legacy path-only copy, but must never replay optioned paths.
+            if not hasattr(parsed_circuit, "_include_directives"):
+                for include in parsed_circuit._includes:
+                    self.include(include)
+                for path, section in parsed_circuit._libs:
+                    self.lib(path, section)
+                for name, value in parsed_circuit._parameters.items():
+                    self.parameter(name, value)
 
         except Exception as e:
             import traceback
