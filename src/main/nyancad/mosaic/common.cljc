@@ -727,6 +727,8 @@
 (def help (r/adapt-react-class icons/QuestionCircle))
 (def external-link (r/adapt-react-class icons/BoxArrowUpRight))
 (def expose-ports (r/adapt-react-class icons/NodePlus))
+;; @tags mosaic make array
+(def grid3x3 (r/adapt-react-class icons/Grid3x3))
 (def simulate (r/adapt-react-class icons/PlayCircle))
 (def amp-icon (r/adapt-react-class icons/CaretRight))
 (def photonic-icon (r/adapt-react-class icons/Lightbulb))

@@ -1681,6 +1681,42 @@
         (<! (post-action! models-snapshot))
         docs))))
 
+;; @tags mosaic make array
+(def array-fqn
+  "Fully-qualified name of the built-in generic array factory
+   (specs/mosaic_make_array.md)."
+  "gdsfactory.components.containers.array_component.array")
+
+;; @tags mosaic make array
+(defn array-able?
+  "Eligibility for the Make array action, given the device's bare `model` and its
+   resolved `model-def`. Mirrors `editable-model?`'s arity; see
+   specs/mosaic_make_array.md."
+  [model model-def]
+  (boolean
+   (and (seq model)
+        (not (clojure.string/ends-with? model ".gsch"))
+        (not= model array-fqn)
+        (seq (:name model-def)))))
+
+;; @tags mosaic make array
+(defn make-array!
+  "Transform device `device-id` in place into the generic array of its current
+   component: one whole-document `swap!` on `schematic` followed by the standard
+   `post-action!` lifecycle (one undo checkpoint), see
+   specs/mosaic_make_array.md."
+  [device-id]
+  (go
+    (let [dev (get @schematic device-id)
+          model-def (model-entry (:model dev) (:props dev))
+          array-def (get @modeldb (cm/model-key array-fqn))
+          defaults (or (cm/model-prop-defaults array-def) {})]
+      (swap! schematic update device-id
+             #(assoc % :type "ckt"
+                       :model array-fqn
+                       :props (merge defaults {:component (:name model-def)})))
+      (<! (post-action!)))))
+
 ;; --- Shift-drag connectivity: stretch wires attached to dragged devices ---
 
 (defn connected-wire-ends
@@ -3083,7 +3119,7 @@
   (swap! model-popup-category #(matching-tags (picker-models device-type) %))
   (reset! cm/modal-content [model-selector-popup device-type on-select]))
 
-;; @tags property editing, terminology, mosaic selection toolbar, model identity, mosaic port exposure
+;; @tags property editing, terminology, mosaic selection toolbar, model identity, mosaic port exposure, mosaic make array
 (defn deviceprops [key]
   (let [props (r/cursor schematic [key :props])
         device-type (r/cursor schematic [key :type])
@@ -3125,7 +3161,21 @@
                        :disabled (:disabled? exposure)
                        :on-click #(expose-ports! key)}
               [cm/expose-ports]
-              [:span "Expose ports"]])]
+              [:span "Expose ports"]])
+           (when (seq @model)
+             (let [able? (array-able? @model model-def)
+                   reason (cond
+                            (not model-def) "No component definition"
+                            (not (seq (:name model-def))) "Component has no name"
+                            (clojure.string/ends-with? @model ".gsch")
+                            "Schematic subcircuits cannot be arrayed"
+                            (= @model array-fqn) "Already an array")]
+               [:button {:type "button"
+                         :title (or reason "Make array")
+                         :disabled (not able?)
+                         :on-click #(make-array! key)}
+                [cm/grid3x3]
+                [:span "Make array"]]))]
          [:div.properties
           [:label {:for "name" :title "Instance name"} "name"]
           [:input {:id "name"
