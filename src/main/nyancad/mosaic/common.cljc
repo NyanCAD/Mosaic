@@ -116,26 +116,29 @@
          [:div.field-with-unit input [:span.unit-suffix unit]]
          input))]))
 
+;; @tags property editing
 (defn- tagged-enum-editor
-  "Render a tagged union: a select for the discriminant, then the matching variant's children."
-  [{:keys [tag-key variants tooltip]} enum-cursor on-change wrap-leaf path]
+  "Render a tagged union: a select for the discriminant, then the matching case's children.
+   The union's cases live under `:cases` — distinct from a prop's `:variants`
+   key, which scopes visibility to a port variant in `visible-props`."
+  [{:keys [tag-key cases tooltip]} enum-cursor on-change wrap-leaf path]
   (let [tag-val (get @enum-cursor (keyword tag-key))
-        variant (first (filter #(= (:value %) tag-val) variants))]
+        active-case (first (filter #(= (:value %) tag-val) cases))]
     [:<>
      [:label {:title tooltip} tag-key]
      [:select {:value (or tag-val "")
                :on-change #(let [v (.. % -target -value)
-                                  selected (first (filter (fn [vr] (= (:value vr) v)) variants))
+                                  selected (first (filter (fn [vr] (= (:value vr) v)) cases))
                                   defaults (into {} (map (fn [{:keys [name default]}]
                                                            [(keyword name) (if (some? default) default "")]))
                                                    (:children selected))]
                              (reset! enum-cursor (if (seq v) (merge {(keyword tag-key) v} defaults) {}))
                              (when on-change (on-change)))}
       [:option {:value ""} "None"]
-      (for [{:keys [value label]} variants]
+      (for [{:keys [value label]} cases]
         [:option {:key value :value value} label])]
-     (when variant
-       [recursive-editor (:children variant) enum-cursor on-change wrap-leaf path])]))
+     (when active-case
+       [recursive-editor (:children active-case) enum-cursor on-change wrap-leaf path])]))
 
 (defn- list-editor
   "Render a list of maps: fieldset per item with add/remove, recurse per item."

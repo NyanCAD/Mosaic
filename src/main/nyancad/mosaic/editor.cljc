@@ -1071,7 +1071,7 @@
 (def tran-field
   {:name "tran" :tooltip "Transient waveform" :type :tagged-enum
    :tag-key "type"
-   :variants
+   :cases
    [{:value "sin" :label "Sinusoidal"
      :children [{:name "offset" :tooltip "DC offset" :default "0"}
                 {:name "amplitude" :tooltip "Amplitude" :default "1"}

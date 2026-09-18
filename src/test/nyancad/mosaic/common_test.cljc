@@ -542,6 +542,14 @@
       (is (= props (cm/visible-props props "emitter")))
       (is (= [{:name "name"}] (cm/visible-props props "detector"))))))
 
+;; @tags property editing
+(deftest visible-props-keeps-tagged-enum-cases
+  (testing "a tagged-enum field's :cases is not mistaken for port-variant scoping"
+    (let [tran {:name "tran" :type :tagged-enum :tag-key "type"
+                :cases [{:value "sin"} {:value "pulse"}]}]
+      (is (= [tran] (cm/visible-props [tran] nil)))
+      (is (= [tran] (cm/visible-props [tran] "emitter"))))))
+
 ;; ---------------------------------------------------------------------------
 ;; World-frame flips — flip-x, flip-y
 ;; ---------------------------------------------------------------------------
