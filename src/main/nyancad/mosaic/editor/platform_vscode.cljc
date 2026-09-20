@@ -122,6 +122,7 @@
   [_notebook-state]
   nil)
 
+;; @tags component simulation
 (defn secondary-menu-items
   "VSCode secondary menu: simulate (toolbar-group dropdown), switch to Livewire."
   [_ui]
@@ -129,7 +130,7 @@
    [:a {:title "Simulate"
         :on-click #(.postMessage vscode
                                  #js{:type "open-sax-simulation"})}
-    [cm/rocket-icon]]
+    [cm/graph-icon]]
    [:a {:title "Open in Livewire layout editor"
         :on-click #(.postMessage vscode
                                  #js{:type "switchEditor"

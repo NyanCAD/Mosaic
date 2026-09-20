@@ -732,7 +732,7 @@
 (def simulate (r/adapt-react-class icons/PlayCircle))
 (def amp-icon (r/adapt-react-class icons/CaretRight))
 (def photonic-icon (r/adapt-react-class icons/Lightbulb))
-(def rocket-icon (r/adapt-react-class icons/RocketTakeoff))
+(def graph-icon (r/adapt-react-class icons/GraphUp))
 (def search (r/adapt-react-class icons/Search))
 (def exclamation-triangle (r/adapt-react-class icons/ExclamationTriangleFill))
 (def exclamation-diamond (r/adapt-react-class icons/ExclamationDiamondFill))
@@ -1283,7 +1283,7 @@
         [:td (when (seq key) [:kbd key])]
         [:td.desc desc]])]]])
 
-;; @tags editor keyboard shortcuts, mosaic device tray
+;; @tags editor keyboard shortcuts, mosaic device tray, component simulation
 (defn onboarding-popup []
   [:div.onboarding
    [:button.close-btn
@@ -1347,7 +1347,7 @@
       [[copyi] (str mod-key "+C") "Copy"]
       [[cuti] (str mod-key "+X") "Cut"]
       [[pastei] (str mod-key "+V") "Paste"]
-      [[rocket-icon] "" "Simulate"]
+      [[graph-icon] "" "Simulate"]
       [[layout-icon] "" "Open in Livewire"]
       [[help] "" "Help"]]]]
 
