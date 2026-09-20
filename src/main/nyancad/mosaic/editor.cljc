@@ -3835,7 +3835,7 @@
     (cm/set-context-menu (.-left r) (.-bottom r)
                          [:div.device-props [deviceprops k]])))
 
-;; @tags mosaic selection toolbar
+;; @tags mosaic selection toolbar, editor keyboard shortcuts
 (defn selection-toolbar
   "Floating action bar anchored above the selected device tiles. Renders the
    selection's screen rect as `.selection-anchor` and lets CSS hang the bar off
@@ -3882,7 +3882,7 @@
          [:a {:title (str "Copy selected [" cm/mod-key "+c]")
               :on-click #(copy)}
           [cm/copyi]]
-         [:a {:title "Delete selected [del]"
+         [:a {:title "Delete selected [Del / Backspace / D]"
               :on-click #(delete-selected)}
           [cm/delete]]]
         (when single
@@ -3957,8 +3957,6 @@
                 #{:shift :p} (unless-active #(add-supply (::mouse @ui)))
                 #{:t} (unless-active #(add-device "text" (::mouse @ui)))
                 #{:shift :t} (unless-active #(add-label (::mouse @ui)))
-                #{:backspace} delete-selected
-                #{:delete} delete-selected
                 #{:w} #(cancel ::wire)
                 #{:e} #(cancel ::eraser)
                 #{:escape} #(do (cm/clear-context-menu) (cancel) (cm/clear-modal))
@@ -3975,7 +3973,10 @@
                 #{:home} zoom-to-fit})
 
 (def immediate-shortcuts
-  {#{(keyword " ")} (fn [] (momentary-tool! ::pan))
+  {#{:backspace} delete-selected
+   #{:delete} delete-selected
+   #{:d} delete-selected
+   #{(keyword " ")} (fn [] (momentary-tool! ::pan))
    (hash-set cm/mod-bind :c) copy
    (hash-set cm/mod-bind :x) cut
    (hash-set cm/mod-bind :v) paste

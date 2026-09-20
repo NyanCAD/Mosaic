@@ -954,14 +954,18 @@
         (conj-when :shift (.-shiftKey e))
         (conj-when :os (.-metaKey e)))))
 
+;; @tags editor keyboard shortcuts
 (defn keyboard-shortcuts [shortcuts e]
   (when-not (or ;; it's a repeat event
              (.-repeat e)
              ;; the user is typing, ignore
              (= "INPUT" (.. e -target -tagName))
              (= "TEXTAREA" (.. e -target -tagName)))
-    (println (keyset e))
-    ((get shortcuts (keyset e) #()))))
+    (let [keys (keyset e)]
+      (println keys)
+      (when-let [handler (get shortcuts keys)]
+        (.preventDefault e)
+        (handler)))))
 
 (defn pprint-str [data]
   (-> data
@@ -1337,7 +1341,7 @@
       [[rotateccw] "Shift+R" "Rotate CCW"]
       [[mirror-vertical] "X" "Flip Horizontally"]
       [[mirror-horizontal] "Y" "Flip Vertically"]
-      [[delete] "Del" "Delete"]
+      [[delete] "Del / Backspace / D" "Delete"]
       [[zoom-in] "Scroll" "Zoom"]
       [[zoom-fit] "Home" "Zoom to fit"]]]
 
