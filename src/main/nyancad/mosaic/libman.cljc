@@ -183,7 +183,8 @@
   [tags]
   (vec (remove cm/parse-prop-tag tags)))
 
-(defn- prop-tag-matches?
+;; @tags mosaic model picker
+(defn prop-tag-matches?
   "True if tag is plain, or if it's a prop-tag whose k:v matches doc."
   [tag doc]
   (if-let [[k v] (cm/parse-prop-tag tag)]

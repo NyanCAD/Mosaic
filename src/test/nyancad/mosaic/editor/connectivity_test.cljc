@@ -748,20 +748,39 @@
        (filter #(and (vector? %) (= :text.port-label (first %))))
        (map #(:transform (second %)))))
 
+;; @tags factory metadata annotations, photonic model ports
 (deftest selected-port-labels-render-only-when-selected
   (testing "selected photonic model ports get outside SVG text labels"
     (let [dev {:type "straight" :model "test.straight"
                :x 0 :y 0 :transform [1 0 0 1 0 0] :name "S1"}
-          locs [{:name "o1" :side :left :type "photonic" :x 0 :y 1}
+          locs [{:name "o1" :aliases ["in"] :side :left :type "photonic" :x 0 :y 1}
                 {:name "o2" :side :right :type "photonic" :x 2 :y 1}]]
       (try
         (swap! e/ui assoc ::e/selected #{})
         (is (nil? (e/selected-port-labels "S1" dev locs))
             "unselected devices keep port labels hidden")
         (swap! e/ui assoc ::e/selected #{"S1"})
-        (is (= ["o1" "o2"]
+        (is (= ["in" "o2"]
                (port-label-texts (e/selected-port-labels "S1" dev locs)))
-            "selected devices label each model port")
+            "selected devices prefer a display alias without changing the port name")
+        (finally
+          (swap! e/ui assoc ::e/selected #{}))))))
+
+;; @tags photonic model ports
+(deftest selected-port-labels-prefer-display-alias
+  (testing "a model port labels by its first non-empty alias, otherwise its
+            name; `name` stays the connectivity identity, per invariant 9"
+    (let [dev {:type "straight" :model "test.straight"
+               :x 0 :y 0 :transform [1 0 0 1 0 0] :name "S1"}
+          locs [{:name "cathode" :side :left :type "photonic" :x 0 :y 1
+                 :aliases ["K" "C"]}
+                {:name "o2" :side :right :type "photonic" :x 2 :y 1 :aliases []}
+                {:name "o3" :side :top :type "photonic" :x 1 :y 0}]]
+      (try
+        (swap! e/ui assoc ::e/selected #{"S1"})
+        (is (= ["K" "o2" "o3"]
+               (port-label-texts (e/selected-port-labels "S1" dev locs)))
+            "labels use the alias when present and the name otherwise")
         (finally
           (swap! e/ui assoc ::e/selected #{}))))))
 

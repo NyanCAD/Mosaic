@@ -169,25 +169,63 @@
 
 (declare start-marimo!)
 
-(defn- safe-resolve-uri
-  "Resolve filename within doc-uri. Rejects path traversal."
+;; @tags on-demand symbol generation
+(defn- safe-relative-uri
+  "Resolve filename within doc-uri. Reject absolute paths and traversal."
   [^js doc-uri filename]
-  (when-not (re-find #"\.\." filename)
+  (when (and (string? filename)
+             (not (path/isAbsolute filename))
+             (not (re-find #"\.\." filename)))
     (let [resolved (uri-join doc-uri filename)]
       (when (str/starts-with? (.-path resolved) (str (.-path doc-uri) "/"))
         resolved))))
 
 ;; @tags on-demand symbol generation
+(defn- readable-uri
+  "Resolve a contained relative path or an exact host-authorized absolute path."
+  [^js doc-uri filename authorized-paths]
+  (if (and (string? filename) (path/isAbsolute filename))
+    (when (contains? authorized-paths filename)
+      (vscode/Uri.file filename))
+    (safe-relative-uri doc-uri filename)))
+
+;; @tags on-demand symbol generation
+(defn- entry-symbol-paths
+  "Return default and parameterized symbol paths from one factory entry."
+  [entry]
+  (when (map? entry)
+    (cons (get entry "symbol")
+          (keep #(when (map? %) (get % "symbol"))
+                (vals (get entry "parameterizations" {}))))))
+
+;; @tags on-demand symbol generation
+(defn- absolute-symbol-paths
+  "Extract absolute default and parameterized paths from factory entries."
+  [entries]
+  (->> (vals entries)
+       (mapcat entry-symbol-paths)
+       (filter #(and (string? %) (path/isAbsolute %)))
+       set))
+
+;; @tags on-demand symbol generation
+(defn symbol-paths-from-json
+  "Extract authorized packaged-symbol paths from serialized nyanlib entries."
+  [content]
+  (try
+    (absolute-symbol-paths (js->clj (js/JSON.parse content)))
+    (catch :default _ #{})))
+
+;; @tags on-demand symbol generation
 (def ^:private ^js host-api nil)
 
 ;; @tags on-demand symbol generation, mosaic livewire interop, schematic reference context
-(defn- setup-message-router!
+(defn setup-message-router!
   "Install a single message handler that dispatches by type.
    atom-channels: atom of map group -> channel map (read-only channels omit :enqueue-edit!)
    doc-uri: directory URI for resolving relative filenames
    doc-uri may be any scheme (file://, vsls://, etc.).
    doc-file-uri and document are present for document-backed editors."
-  [^js webview atom-channels ^js doc-uri & [^js doc-file-uri ^js document]]
+  [^js webview atom-channels ^js doc-uri & [^js doc-file-uri ^js document authorized-read-paths]]
   (.onDidReceiveMessage webview
     (fn [^js message]
       (case (.-type message)
@@ -201,7 +239,7 @@
         "read-file"
         (let [request-id (.-requestId message)
               filename (.-filename message)]
-          (if-let [file-uri (safe-resolve-uri doc-uri filename)]
+          (if-let [file-uri (readable-uri doc-uri filename (or (some-> authorized-read-paths deref) #{}))]
             (go
               (let [content (try (<p! (ws-read file-uri))
                                  (catch :default _e nil))]
@@ -219,6 +257,9 @@
             (let [value (<p! (if (= "resolve-factory" (.-type message))
                                (.resolveFactory host-api (.-fqn message) (.-path message))
                                (.getFactoryEntries host-api)))]
+              (when authorized-read-paths
+                (swap! authorized-read-paths into
+                       (absolute-symbol-paths (js->clj (.-entries value)))))
               (<p! (.postMessage webview #js{:requestId (.-requestId message) :value value})))
             (catch :default e
               (<p! (.postMessage webview
@@ -227,7 +268,7 @@
 
         ;; Open a file in VS Code (create if missing, use custom editor)
         "open-file"
-        (when-let [file-uri (safe-resolve-uri doc-uri (.-filename message))]
+        (when-let [file-uri (safe-relative-uri doc-uri (.-filename message))]
           (let [filename (.-filename message)]
             (go
               (when-not (<! (ws-exists? file-uri))
@@ -670,11 +711,15 @@
                          (set! (.-html webview) (get-html document webview models-content))
 
                          (let [schem-ch (create-atom-channel webview document "schematic")
-                               atom-channels (atom {"schematic" schem-ch})]
+                               atom-channels (atom {"schematic" schem-ch})
+                               authorized-read-paths (atom (symbol-paths-from-json models-content))]
                            (.push disposables (:disposable schem-ch))
                            (.push disposables
                                   (.onFactoryEntries host-api
                                     (fn [update]
+                                      (swap! authorized-read-paths into
+                                             (absolute-symbol-paths
+                                               (js->clj (.-entries update))))
                                       (.postMessage webview #js{:type "factory-entries" :value update}))))
 
                           ;; Track this webview for the zoomToFit command
@@ -682,7 +727,8 @@
 
                           ;; Message router — pass document URI for marimo (local file:// only)
                            (.push disposables
-                             (setup-message-router! webview atom-channels (or ws-root doc-uri) (.-uri document) document))
+                             (setup-message-router! webview atom-channels (or ws-root doc-uri)
+                                                    (.-uri document) document authorized-read-paths))
 
                           ;; Save SVG sidecar on document save
                           (let [save-disposable

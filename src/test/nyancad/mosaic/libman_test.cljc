@@ -39,7 +39,7 @@
            (libman/plain-tags ["a" "x:1" "b" "y:2" "c"])))))
 
 ;; ---------------------------------------------------------------------------
-;; prop-tag-matches?  (private — reach via var deref)
+;; prop-tag-matches?
 ;; ---------------------------------------------------------------------------
 ;; Contract: given a tag from the selected-category vector and a model
 ;; document, return true iff the doc "satisfies" the tag. Plain tags
@@ -48,32 +48,30 @@
 ;; has field k whose stringified value equals v. Doc lookup uses
 ;; (keyword k) — so "type:ckt" looks at (:type doc).
 
-(def ^:private prop-tag-matches? @#'libman/prop-tag-matches?)
-
 (deftest prop-tag-plain-always-matches
   (testing "a plain tag matches every doc regardless of fields"
-    (is (prop-tag-matches? "IHP" {}))
-    (is (prop-tag-matches? "analog" {:type "resistor" :name "R1"}))))
+    (is (libman/prop-tag-matches? "IHP" {}))
+    (is (libman/prop-tag-matches? "analog" {:type "resistor" :name "R1"}))))
 
 (deftest prop-tag-matches-when-field-equals-value
   (testing "k:v tag matches when (str (get doc (keyword k))) = v"
-    (is (prop-tag-matches? "type:ckt" {:type "ckt"}))
-    (is (prop-tag-matches? "variant:hv" {:variant "hv" :other "x"}))))
+    (is (libman/prop-tag-matches? "type:ckt" {:type "ckt"}))
+    (is (libman/prop-tag-matches? "variant:hv" {:variant "hv" :other "x"}))))
 
 (deftest prop-tag-rejects-mismatch
   (testing "k:v tag does not match when the field value differs"
-    (is (not (prop-tag-matches? "type:ckt" {:type "resistor"})))))
+    (is (not (libman/prop-tag-matches? "type:ckt" {:type "resistor"})))))
 
 (deftest prop-tag-missing-field-stringifies-to-empty-string
   (testing "if the doc has no field k, (str nil) = \"\" — so a missing
             field never matches a non-empty value, and 'type:' with an
             empty value string matches every doc that lacks :type"
-    (is (not (prop-tag-matches? "type:ckt" {})))
-    (is (not (prop-tag-matches? "type:ckt" {:name "foo"})))
-    (is (prop-tag-matches? "type:" {}))))
+    (is (not (libman/prop-tag-matches? "type:ckt" {})))
+    (is (not (libman/prop-tag-matches? "type:ckt" {:name "foo"})))
+    (is (libman/prop-tag-matches? "type:" {}))))
 
 (deftest prop-tag-non-string-fields-stringified
   (testing "non-string field values are compared via (str v), so numbers
             and keywords round-trip through their print representation"
-    (is (prop-tag-matches? "n:42" {:n 42}))
-    (is (prop-tag-matches? "k::foo" {:k :foo}))))
+    (is (libman/prop-tag-matches? "n:42" {:n 42}))
+    (is (libman/prop-tag-matches? "k::foo" {:k :foo}))))

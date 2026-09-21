@@ -695,7 +695,7 @@
           clear 6                  ; perpendicular lift + gap from the body edge
           base (- stem clear)]     ; along-stem anchor: `clear` out from the edge
       (into [:g.port-labels]
-            (for [{:keys [x y side name]} locs
+            (for [{:keys [x y side name] :as port} locs
                   :let [mx (* (+ x 0.5) grid-size)
                         my (* (+ y 0.5) grid-size)
                         ;; local outward normal for the canonical side …
@@ -724,12 +724,12 @@
                                          :top    ["start" (- base)]
                                          :left   ["end" base]
                                          :bottom ["end" base])]]
-              [:text.port-label {:key (str name)
+               [:text.port-label {:key (str name)
                                  :x (+ mx along) :y (- my clear)
                                  :text-anchor anchor
                                  :dominant-baseline "auto"
                                  :transform (.toString tm)}
-               name])))))
+               (cm/port-display-name port)])))))
 
 ;; The single source of truth for "how big is this device?". Everything that
 ;; needs a footprint — rendering, placement, the clipboard centroid, the
@@ -927,14 +927,14 @@
       ;; Port labels inside box
       (when has-ports?
         [:<>
-         (for [{:keys [y name]} left-locs]
-           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" name))
-         (for [{:keys [y name]} right-locs]
-           (port-label v (* (+ width 0.85) grid-size) (* (+ y 0.5) grid-size) "end" "middle" name))
-         (for [{:keys [x name]} top-locs]
-           (port-label v (* (+ x 0.5) grid-size) (* 1.3 grid-size) "middle" "hanging" name))
-         (for [{:keys [x name]} bottom-locs]
-           (port-label v (* (+ x 0.5) grid-size) (* (+ height 0.7) grid-size) "middle" "baseline" name))])
+         (for [{:keys [y] :as port} left-locs]
+           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" (cm/port-display-name port)))
+         (for [{:keys [y] :as port} right-locs]
+           (port-label v (* (+ width 0.85) grid-size) (* (+ y 0.5) grid-size) "end" "middle" (cm/port-display-name port)))
+         (for [{:keys [x] :as port} top-locs]
+           (port-label v (* (+ x 0.5) grid-size) (* 1.3 grid-size) "middle" "hanging" (cm/port-display-name port)))
+         (for [{:keys [x] :as port} bottom-locs]
+           (port-label v (* (+ x 0.5) grid-size) (* (+ height 0.7) grid-size) "middle" "baseline" (cm/port-display-name port)))])
       ;; Symbol image replaces box, otherwise box outline with model name
       (if-let [symbol-url (and has-model? (:symbol model-def)
                               (some-> (resolve-symbol-url (:symbol model-def)
@@ -1015,20 +1015,20 @@
       ;; Port labels inside triangle
       (when has-ports?
         [:<>
-         (for [{:keys [y name]} left-locs]
-           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" name))
-         (for [{:keys [y name]} right-locs]
-           (port-label v (* (+ width 0.6) grid-size) (* (+ y 0.5) grid-size) "end" "middle" name))
+         (for [{:keys [y] :as port} left-locs]
+           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" (cm/port-display-name port)))
+         (for [{:keys [y] :as port} right-locs]
+           (port-label v (* (+ width 0.6) grid-size) (* (+ y 0.5) grid-size) "end" "middle" (cm/port-display-name port)))
          ;; Top port labels - follow diagonal edge
-         (for [{:keys [x name]} top-locs
+         (for [{:keys [x] :as port} top-locs
                :let [px (+ x 0.5)
                      edge-y (+ tri-top (* (- px tri-left) (/ (- tri-apex-y tri-top) width)))]]
-           (port-label v (* px grid-size) (* (+ edge-y 0.3) grid-size) "middle" "hanging" name))
+           (port-label v (* px grid-size) (* (+ edge-y 0.3) grid-size) "middle" "hanging" (cm/port-display-name port)))
          ;; Bottom port labels - follow diagonal edge
-         (for [{:keys [x name]} bottom-locs
+         (for [{:keys [x] :as port} bottom-locs
                :let [px (+ x 0.5)
                      edge-y (+ tri-bottom (* (- px tri-left) (/ (- tri-apex-y tri-bottom) width)))]]
-           (port-label v (* px grid-size) (* (- edge-y 0.3) grid-size) "middle" "baseline" name))])
+           (port-label v (* px grid-size) (* (- edge-y 0.3) grid-size) "middle" "baseline" (cm/port-display-name port)))])
       ;; Model name or "?"
       [:text.model-name
        {:x cx :y cy
@@ -1052,14 +1052,14 @@
       (circuit-designator v size width height)
       (when has-ports?
         [:<>
-         (for [{:keys [y name]} (:left by-side)]
-           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" name))
-         (for [{:keys [y name]} (:right by-side)]
-           (port-label v (* (+ width 0.85) grid-size) (* (+ y 0.5) grid-size) "end" "middle" name))
-         (for [{:keys [x name]} (:top by-side)]
-           (port-label v (* (+ x 0.5) grid-size) (* 1.3 grid-size) "middle" "hanging" name))
-         (for [{:keys [x name]} (:bottom by-side)]
-           (port-label v (* (+ x 0.5) grid-size) (* (+ height 0.7) grid-size) "middle" "baseline" name))])]]))
+         (for [{:keys [y] :as port} (:left by-side)]
+           (port-label v (* 1.15 grid-size) (* (+ y 0.5) grid-size) "start" "middle" (cm/port-display-name port)))
+         (for [{:keys [y] :as port} (:right by-side)]
+           (port-label v (* (+ width 0.85) grid-size) (* (+ y 0.5) grid-size) "end" "middle" (cm/port-display-name port)))
+         (for [{:keys [x] :as port} (:top by-side)]
+           (port-label v (* (+ x 0.5) grid-size) (* 1.3 grid-size) "middle" "hanging" (cm/port-display-name port)))
+         (for [{:keys [x] :as port} (:bottom by-side)]
+           (port-label v (* (+ x 0.5) grid-size) (* (+ height 0.7) grid-size) "middle" "baseline" (cm/port-display-name port)))])]]))
 
 ;; @tags photonic model ports, mosaic die-component
 (defn circuit-sym [k v]

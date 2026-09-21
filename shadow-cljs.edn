@@ -56,4 +56,9 @@
   {:target    :node-test
    :output-to "out/node-tests.js"
    :ns-regexp "-test$"
-   :compiler-options {:reader-features #{:test}}}}}
+   :compiler-options {:reader-features #{:test}}
+   ;; The extension host requires the VS Code API, which only exists inside
+   ;; VS Code. Tests that exercise the message router load it against a
+   ;; minimal stand-in so path resolution can be asserted under Node.
+   :js-options {:resolve {"vscode" {:target :file
+                                    :file   "src/test/support/vscode.js"}}}}}}

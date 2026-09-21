@@ -109,6 +109,12 @@
     (let [v (cm/set-coord [] [1 2 :x])]
       (is (= [] (cm/remove-coord v [1 2]))))))
 
+;; @tags factory metadata annotations, photonic model ports
+(deftest port-display-name-prefers-alias-without-changing-name
+  (is (= "K" (cm/port-display-name {:name "cathode" :aliases ["K" "C"]})))
+  (is (= "anode" (cm/port-display-name {:name "anode" :aliases []})))
+  (is (= "heater_1" (cm/port-display-name {:name "heater_1"}))))
+
 ;; ---------------------------------------------------------------------------
 ;; Port geometry — spread-ports, port-perimeter, port-locations
 ;; ---------------------------------------------------------------------------

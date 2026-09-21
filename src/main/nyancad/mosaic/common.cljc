@@ -418,8 +418,9 @@
 ;; key, so :port/type validates the :type field of port entries while
 ;; ::type independently validates the :type field of devices.
 (s/def :port/type #{"electric" "photonic"})
+(s/def ::aliases (s/coll-of string? :kind vector?))
 (s/def ::port-entry (s/keys :req-un [::name ::side]
-                             :opt-un [:port/type]))
+                             :opt-un [:port/type ::aliases]))
 (s/def ::ports (s/coll-of ::port-entry :kind vector?))
 (s/def ::code string?)
 (s/def ::language string?)
@@ -690,6 +691,12 @@
          top-locs (map-indexed (fn [i p] (assoc p :side :top :x (nth top-xs i) :y 0)) top)
          bottom-locs (map-indexed (fn [i p] (assoc p :side :bottom :x (nth bottom-xs i) :y (inc height))) bottom)]
      (concat top-locs bottom-locs left-locs right-locs))))
+
+;; @tags factory metadata annotations, photonic model ports
+(defn port-display-name
+  "Return the first non-empty display alias without changing connectivity name."
+  [{:keys [name aliases]}]
+  (or (first (filter #(and (string? %) (not-empty %)) aliases)) name))
 
 ; icons
 (def zoom-in (r/adapt-react-class icons/ZoomIn))
