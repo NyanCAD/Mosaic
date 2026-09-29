@@ -247,3 +247,79 @@
   (reset! e/model-popup-category [])
   (reset! pform/modeldb {})
   (reset! cm/modal-content nil))
+
+;; ---------------------------------------------------------------------------
+;; visible-picker-models / hide-private-cells
+;; ---------------------------------------------------------------------------
+;;
+;; Contract (specs/mosaic_model_picker.md): the picker's result list applies
+;; cm/filter-models (tags + search, ranked when searching) and then the
+;; hide-private-cells toggle — which drops `_`-prefixed display names from the
+;; list only, never from resolution. A query that itself starts with `_`
+;; bypasses the toggle: it is an explicit ask for a private cell.
+
+;; @tags mosaic model picker
+(def ^:private picker-db-with-privates
+  {"models:pk.EAM" {:name "EAM" :type "ckt"}
+   "models:pk._EAM" {:name "_EAM" :type "ckt"}
+   "models:pk._terminator" {:name "_terminator" :type "ckt"}
+   "models:pk.stream_EAM" {:name "stream_EAM" :type "ckt"}})
+
+;; @tags mosaic model picker
+(deftest visible-picker-models-hides-private-cells-test
+  (let [names (fn [visible] (map (fn [[_ m]] (:name m)) visible))]
+    (testing "toggle on: _-prefixed names drop from the list, publics stay"
+      (is (= ["EAM" "stream_EAM"]
+             (names (e/visible-picker-models picker-db-with-privates [] "" true)))))
+    (testing "toggle off: every entry is listed"
+      (is (= ["EAM" "_EAM" "_terminator" "stream_EAM"]
+             (names (e/visible-picker-models picker-db-with-privates [] "" false)))))
+    (testing "search and tags apply before the private filter"
+      (is (= ["EAM" "_EAM" "stream_EAM"]
+             (names (e/visible-picker-models picker-db-with-privates [] "eam" false)))))
+    (testing "an explicit _-prefixed query bypasses the toggle"
+      (is (= ["_EAM" "_terminator" "stream_EAM"]
+             (names (e/visible-picker-models picker-db-with-privates [] "_" true)))))
+    (testing "a _-query does not hide public matches either"
+      (is (contains? (set (names (e/visible-picker-models picker-db-with-privates [] "_EAM" true)))
+                     "stream_EAM")))))
+
+;; @tags mosaic model picker
+(deftest visible-picker-models-does-not-hide-from-the-modeldb-test
+  (reset! pform/modeldb picker-db-with-privates)
+  (testing "the picker's type set still contains the private entry —
+            hiding is list-level, not modeldb-level"
+    (is (contains? (e/picker-models "ckt") "models:pk._EAM")))
+  (reset! pform/modeldb {}))
+
+;; @tags mosaic model picker
+(deftest hide-private-cells-toggle-test
+  (testing "the toggle defaults on and flips both ways"
+    (is (true? @e/hide-private-cells))
+    (e/set-hide-private-cells! false)
+    (is (false? @e/hide-private-cells))
+    (e/set-hide-private-cells! true)
+    (is (true? @e/hide-private-cells))))
+
+;; @tags mosaic model picker
+(deftest hide-private-cells-denied-storage-test
+  (testing "webviews whose storage access is denied boot and toggle anyway"
+    ;; The Playwright smoke harness boots Mosaic on an opaque origin: the
+    ;; localStorage property exists, but reading or writing it throws
+    ;; SecurityError (the CI failure on this PR). exists? guards absence —
+    ;; the Node test build — not denial, so the guards below must survive a
+    ;; throw on every storage touch.
+    (.defineProperty js/Object js/globalThis "localStorage"
+                     #js {:configurable true
+                          :get (fn []
+                                 (throw (js/Error. "Failed to read the 'localStorage' property from 'Window': Access is denied for this document.")))})
+    (try
+      (testing "the boot default is unchanged when storage reads as denied"
+        (is (true? (e/initial-hide-private-cells))))
+      (testing "toggling works and persisting does not throw"
+        (is (nil? (e/set-hide-private-cells! false)))
+        (is (false? @e/hide-private-cells))
+        (is (nil? (e/set-hide-private-cells! true)))
+        (is (true? @e/hide-private-cells)))
+      (finally
+        (js-delete js/globalThis "localStorage")))))

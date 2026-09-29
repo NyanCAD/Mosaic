@@ -89,6 +89,33 @@
 (defonce model-popup-filter (r/atom ""))
 (defonce model-popup-category (r/atom []))
 
+(defn initial-hide-private-cells
+  "The toggle value to boot with: the persisted choice when storage is
+   readable, the default (hidden) when it is not. Storage can exist yet be
+   denied — an opaque-origin webview such as the Playwright smoke harness
+   throws on read — which counts as absent, exactly like the Node test
+   build where localStorage does not exist at all."
+  []
+  (try
+    (if (exists? js/localStorage)
+      (not= "false" (.getItem js/localStorage "mosaic-hide-private-cells"))
+      true)
+    (catch :default _ true)))
+
+(defonce hide-private-cells (r/atom (initial-hide-private-cells)))
+
+(defn set-hide-private-cells!
+  "Persist the picker's hide-private-cells choice across webview reloads
+   (localStorage key mosaic-hide-private-cells). Absent or denied storage —
+   fresh install, the Node test build, or an opaque-origin webview — cannot
+   persist; the choice then lives in memory for the session only."
+  [v]
+  (reset! hide-private-cells v)
+  (try
+    (when (exists? js/localStorage)
+      (.setItem js/localStorage "mosaic-hide-private-cells" (str v)))
+    (catch :default _ nil)))
+
 (defonce undotree (cm/newundotree))
 
 (declare build-wire-split-index build-point-index split-wire point-index net-type-index
@@ -718,7 +745,7 @@
   "DOMMatrix that places a device-local origin just outside the screen-space
    top-right corner of the `[a b c d e f]` `tf`-transformed bbox, and cancels
    `tf`'s linear part so the text stays upright. Pure matrix math (transpose for
-   the orthogonal inverse), reachable from the node test build. See
+   the orthogonal inverse), reachable from the node test build.
    `circuit-designator`."
   [tf size width height]
   (let [half-size (/ size 2)
@@ -2601,6 +2628,18 @@
   [device-type]
   (into {} (filter (fn [[_ m]] (picker-type-match? device-type (:type m))) @modeldb)))
 
+(defn visible-picker-models
+  "The entries the picker lists: cm/filter-models over the type set, then
+   the hide-private-cells toggle. The toggle drops `_`-prefixed display
+   names (cm/private-cell?) from the list only — never from resolution
+   (#1139, #1182, #1059) — and a query that itself starts with `_` bypasses
+   it: an explicit ask for a private cell must not meet an empty list."
+  [type-models category query hide-privates]
+  (let [matched (cm/filter-models type-models category query)]
+    (vec (if (and hide-privates (not (clojure.string/starts-with? query "_")))
+           (remove cm/private-cell? matched)
+           matched))))
+
 (defn matching-tags
   "The tags that, on their own, still match at least one of models.
 
@@ -2661,8 +2700,11 @@
             type-models (picker-models device-type)
             ;; Build tag tree from type-filtered models
             trie (cm/build-tag-index type-models)
-            ;; Filter by tags and search text
-            filtered (vec (cm/filter-models type-models @model-popup-category @model-popup-filter))
+            ;; Filter by tags and search text, ranked; hide private cells
+            filtered (visible-picker-models type-models
+                                            @model-popup-category
+                                            @model-popup-filter
+                                            @hide-private-cells)
             confirm! (fn [model-id]
                        (on-select model-id)
                        (reset! cm/modal-content nil))]
@@ -2680,6 +2722,13 @@
                                :on-change #(do (reset! model-popup-filter (.. % -target -value))
                                                (reset! highlight 0))
                                :on-key-down #(picker-key-down! % filtered highlight confirm!)}]
+         ;; Hide-private-cells toggle: list-only — a `_`-prefixed query
+         ;; reaches past it, resolution never filters on it
+         [:label.hide-private-cells
+          [:input {:type "checkbox"
+                   :checked @hide-private-cells
+                   :on-change #(set-hide-private-cells! (.. % -target -checked))}]
+          " Hide private cells"]
          [:div.model-popup-content
           ;; Tag tree (left)
           [:div.model-categories

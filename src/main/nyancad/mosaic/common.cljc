@@ -764,24 +764,73 @@
     (when idx
       [(subs tag 0 idx) (subs tag (inc idx))])))
 
+;; @tags mosaic model picker
+(defn model-search-rank
+  "Relevance rank of query against a display name, smaller is better:
+   0 exact name (case-insensitive), 1 name prefix, 2 word-boundary match
+   (the query starts right after a `_` or `-`), 3 plain substring, nil no
+   match. An empty query ranks 0 — everything matches. cm/filter-models
+   ranks search results by [rank, name length, name]."
+  [name query]
+  (let [lname (clojure.string/lower-case name)
+        lquery (clojure.string/lower-case query)
+        boundary? #{\_ \-}]
+    (cond
+      (empty? lquery) 0
+      (= lname lquery) 0
+      (clojure.string/starts-with? lname lquery) 1
+      (loop [i (clojure.string/index-of lname lquery)]
+        (when (some? i)
+          (if (and (pos? i) (boundary? (nth lname (dec i))))
+            true
+            (recur (clojure.string/index-of lname lquery (inc i))))))
+      2
+      (clojure.string/includes? lname lquery) 3
+      :else nil)))
+
+;; @tags mosaic model picker
+(defn private-cell?
+  "True iff the entry's display name starts with `_` — the gdsfactory
+   private-cell convention. The name is read like cm/filter-models reads
+   it (`:name`, falling back to the id), str-guarded against a nil name.
+   A display-only predicate: pickers may hide these entries from their
+   lists; resolution never filters on it (#1139, #1182, #1059)."
+  [[model-id model]]
+  (clojure.string/starts-with? (str (get model :name model-id)) "_"))
+
+;; @tags mosaic model picker
 (defn filter-models
   "Filter models by active tags and search text.
    sel-tags: vector of active tags. Plain tags match via set containment on :tags.
-   Property tags like \"type:ckt\" match the corresponding model field."
+   Property tags like \"type:ckt\" match the corresponding model field.
+   With search text, matches are ranked best-first: exact name, prefix,
+   word-boundary, substring — ties on shorter name, then alphabetically.
+   Without search text, iteration order is preserved."
   [models sel-tags search-text]
   (let [plain-tags (set (remove parse-prop-tag sel-tags))
-        prop-tags (keep parse-prop-tag sel-tags)]
-    (filter (fn [[model-id model]]
-              (let [model-tags (set (or (:tags model) []))
-                    model-name (get model :name model-id)
-                    tags-match (every? model-tags plain-tags)
-                    props-match (every? (fn [[k v]] (= (str (get model (keyword k))) v)) prop-tags)
-                    name-match (or (empty? search-text)
-                                   (clojure.string/includes?
-                                    (clojure.string/lower-case model-name)
-                                    (clojure.string/lower-case search-text)))]
-                (and tags-match props-match name-match)))
-            models)))
+        prop-tags (keep parse-prop-tag sel-tags)
+        name-fn (fn [[model-id model]] (get model :name model-id))
+        matches (filter (fn [entry]
+                          (let [model (second entry)
+                                model-tags (set (or (:tags model) []))
+                                tags-match (every? model-tags plain-tags)
+                                props-match (every? (fn [[k v]]
+                                                      (= (str (get model (keyword k))) v))
+                                                    prop-tags)]
+                            (and tags-match props-match)))
+                        models)]
+    (if (empty? search-text)
+      matches
+      (->> matches
+           (keep (fn [entry]
+                   (let [model-name (name-fn entry)]
+                     (when-let [rank (model-search-rank model-name search-text)]
+                       [[rank
+                         (count model-name)
+                         (clojure.string/lower-case model-name)]
+                        entry]))))
+           (sort-by first)
+           (map second)))))
 
 (defn add-tag!
   "Add tag to selected-atom unless it is already selected.

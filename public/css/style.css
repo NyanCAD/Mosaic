@@ -335,6 +335,17 @@ html {
     margin-bottom: 10px;
 }
 
+.mosaic-app .model-selector-popup .hide-private-cells {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: -4px 0 10px;
+    font-size: 12px;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    user-select: none;
+}
+
 .mosaic-app .model-popup-content {
     display: flex;
     gap: 10px;
