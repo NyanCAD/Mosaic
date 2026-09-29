@@ -1968,11 +1968,19 @@
             ;; fallback can resolve what the port exposes) plus :nature, the type
             ;; of the net it sits on. Each is diffed independently so a change to
             ;; one never rewrites the other.
-            (let [net    (get ports id)
-                  nature (or (get net-types id) "photonic")]
+            ;;
+            ;; :nets is diffed unconditionally, exactly as device-update does.
+            ;; A port that leaves every network must have the annotation
+            ;; cleared, not merely left alone: a stale {:P net} keeps the port
+            ;; claiming a net that no longer exists, and `post-action!`
+            ;; checkpoints after annotating, baking it into every later undo
+            ;; state.
+            (let [net     (get ports id)
+                  desired (if net {:P net} {})
+                  nature  (or (get net-types id) "photonic")]
               (cond-> nil
-                (and net (not= (get (:nets dev) :P) net)) (assoc :nets {:P net})
-                (not= (:nature dev) nature)               (assoc :nature nature))))
+                (not= (or (:nets dev) {}) desired) (assoc :nets desired)
+                (not= (:nature dev) nature)        (assoc :nature nature))))
           (entry [id dev]
             (cond
               (= "wire" (:type dev)) (wire-update id dev)

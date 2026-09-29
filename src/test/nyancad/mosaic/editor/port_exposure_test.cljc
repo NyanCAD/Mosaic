@@ -269,6 +269,84 @@
       (is (= (get expected-natures (:transform doc))
              (get-in updates [id :nature]))))))
 
+;; @tags mosaic port exposure, nyancir format, reactive indices
+(defn- annotations-for
+  "Run one annotation derivation over `sch`, the way `post-action!` does."
+  [sch]
+  (let [idx (e/build-point-index sch four-port-model)
+        networks (e/build-wire-networks sch idx)]
+    (e/build-net-annotations sch
+                             (e/build-netlist networks)
+                             (e/build-net-type-index networks idx))))
+
+;; @tags mosaic port exposure, nyancir format, reactive indices
+(deftest a-disconnected-port-loses-its-nets-annotation
+  (let [device-id (str group-prefix "X1")
+        sch {device-id (component)}
+        idx (e/build-point-index sch four-port-model)
+        docs (e/build-port-exposure-docs four-port-model sch idx device-id)
+        with-docs (merge sch docs)
+        ;; Apply the annotations the way post-action! does: merge-with merge is
+        ;; one level deep over document ids, so each update is a shallow merge
+        ;; into its doc.
+        annotated (merge-with merge with-docs (annotations-for with-docs))
+        ;; The device the markers exposed is gone, so no cell carries a :ports
+        ;; attribution any more and every marker is free-floating — the state
+        ;; the reported P2 was left in.
+        orphaned (dissoc annotated device-id)
+        updates (annotations-for orphaned)]
+    (testing "every marker carried a net while it was still on a device pin"
+      (is (= 4 (count docs)))
+      (is (every? #(string? (get-in annotated [% :nets :P])) (keys docs))))
+    (testing "disconnecting clears :nets instead of leaving a phantom net"
+      (doseq [id (keys docs)]
+        (is (= {} (:nets (get updates id))) id)))
+    (testing ":nets and :nature stay independently diffed"
+      ;; An isolated port has no net type, so nature resolves to the photonic
+      ;; default. Markers already recorded photonic therefore need no nature
+      ;; rewrite and emit the cleared connectivity alone; markers recorded
+      ;; electric emit both, and neither field suppresses the other.
+      (let [by-nature (group-by #(get-in annotated [% :nature]) (keys docs))]
+        (is (seq (get by-nature "photonic")))
+        (is (seq (get by-nature "electric")))
+        (doseq [id (get by-nature "photonic")]
+          (is (= {:nets {}} (get updates id)) id))
+        (doseq [id (get by-nature "electric")]
+          (is (= {:nets {} :nature "photonic"} (get updates id)) id))))
+    (testing "clearing is idempotent — an already-cleared port is not rewritten"
+      (let [cleared (merge-with merge orphaned updates)]
+        (doseq [id (keys docs)]
+          (is (nil? (get (annotations-for cleared) id)) id))))))
+
+;; @tags mosaic port exposure, nyancir format, reactive indices
+(deftest removing-the-wire-to-a-port-clears-its-nets
+  ;; The repro reported in #4814: a port marker joined to a device pin by a
+  ;; wire, then the wire deleted. Unlike a marker sitting directly on a pin
+  ;; cell — which is always reachable from that cell's seed — a marker at the
+  ;; far end of a wire genuinely leaves the network when the wire goes.
+  (let [device-id (str group-prefix "X1")
+        port-id (str group-prefix "P1")
+        wire-id (str group-prefix "W1")
+        ;; The left pin of the device sits at [10 11]; run a wire from it out
+        ;; to [8 11] and put the marker on that far endpoint.
+        wired {device-id (component)
+               wire-id {:type "wire" :x 10 :y 11 :rx -2 :ry 0 :variant "d"}
+               port-id {:type "port" :x 8 :y 11 :transform cm/IV :name "P1"}}
+        annotated (merge-with merge wired (annotations-for wired))]
+    (testing "the marker is annotated while the wire joins it to the pin"
+      (is (string? (get-in annotated [port-id :nets :P]))))
+    (testing "deleting the wire clears the marker's :nets"
+      (let [updates (annotations-for (dissoc annotated wire-id))]
+        (is (= {} (:nets (get updates port-id))))))))
+
+;; @tags mosaic port exposure, nyancir format, reactive indices
+(deftest a-port-that-never-carried-a-net-produces-no-write
+  (let [bare-id (str group-prefix "bare")
+        sch {bare-id {:type "port" :x 40 :y 40 :transform cm/IV
+                      :name "bare" :nature "photonic"}}]
+    (is (nil? (get (annotations-for sch) bare-id))
+        "an unwired port with no :nets key must not be touched")))
+
 ;; @tags mosaic port exposure
 (deftest action-writes-one-batch-supports-undo-redo-and-skips-an-empty-repeat
   (async done
