@@ -421,6 +421,97 @@
     (let [matched (into {} (cm/filter-models sample-models ["analog"] "nmos"))]
       (is (= #{"models:nmos-ihp"} (set (keys matched)))))))
 
+;; Contract (filter-models ordering): with non-empty search text, matches are
+;; ranked best-first by match class — exact name (case-insensitive), then name
+;; prefix, then word-boundary (the query starts right after `_` or `-`), then
+;; plain substring — with ties broken by shorter name first, then
+;; alphabetically (case-insensitive). With no search text, iteration order is
+;; preserved: ranking is a property of search results.
+
+;; @tags mosaic model picker
+(def ^:private rank-sample-models
+  ;; Array-map: insertion order is the expected no-search order.
+  {"models:m.bondEPI_EAM_ch3" {:name "bondEPI_EAM_ch3" :type "ckt"}
+   "models:m.o_cwdm_100G_EAM_ch0" {:name "o_cwdm_100G_EAM_ch0_1271nm_high_ind_term"
+                                   :type "ckt"}
+   "models:m.SEAM_ch0" {:name "SEAM_ch0" :type "ckt"}
+   "models:m._EAM" {:name "_EAM" :type "ckt"}
+   "models:m.EAM_ch0" {:name "EAM_ch0" :type "ckt"}
+   "models:m.EAM" {:name "EAM" :type "ckt"}
+   "models:m.SS-EAM" {:name "SS-EAM" :type "ckt"}})
+
+;; @tags mosaic model picker
+(deftest filter-models-ranks-by-match-class
+  (testing "exact beats prefix beats word-boundary (after _ or -) beats substring"
+    (let [names (map (fn [[_ m]] (:name m))
+                     (cm/filter-models rank-sample-models [] "eam"))]
+      (is (= ["EAM"                                    ; exact, case-insensitive
+              "EAM_ch0"                                ; prefix
+              "_EAM"                                   ; word-boundary, shortest name
+              "SS-EAM"                                 ; word-boundary after -
+              "bondEPI_EAM_ch3"                        ; word-boundary, longer
+              "o_cwdm_100G_EAM_ch0_1271nm_high_ind_term"
+              "SEAM_ch0"]                               ; plain substring
+             names))))
+  (testing "an uppercase query ranks the same"
+    (let [names (map (fn [[_ m]] (:name m))
+                     (cm/filter-models rank-sample-models [] "EAM"))]
+      (is (= "EAM" (first names))))))
+
+;; @tags mosaic model picker
+(deftest filter-models-ties-alphabetical-within-class
+  (let [models {"models:m.q_EAM" {:name "q_EAM"}
+                "models:m.b_EAM" {:name "b_EAM"}}]
+    (is (= ["b_EAM" "q_EAM"]
+           (map (fn [[_ m]] (:name m)) (cm/filter-models models [] "eam"))))))
+
+;; @tags mosaic model picker
+(deftest filter-models-prefix-ties-on-name-length
+  (let [models {"models:m.EAM_longer" {:name "EAM_longer"}
+                "models:m.EAM_x" {:name "EAM_x"}}]
+    (is (= ["EAM_x" "EAM_longer"]
+           (map (fn [[_ m]] (:name m)) (cm/filter-models models [] "EAM"))))))
+
+;; @tags mosaic model picker
+(deftest filter-models-no-search-text-keeps-iteration-order
+  (is (= (vec rank-sample-models)
+         (vec (cm/filter-models rank-sample-models [] "")))))
+
+;; Contract (model-search-rank): 0 exact (case-insensitive), 1 prefix,
+;; 2 word-boundary (query starts right after `_` or `-`), 3 substring, nil no
+;; match; an empty query ranks 0 — everything matches.
+
+;; @tags mosaic model picker
+(deftest model-search-rank-classes
+  (is (= 0 (cm/model-search-rank "EAM" "eam")) "exact, case-insensitive")
+  (is (= 1 (cm/model-search-rank "EAM_ch3" "eam")) "prefix")
+  (is (= 2 (cm/model-search-rank "bondEPI_EAM" "eam")) "word-boundary after _")
+  (is (= 2 (cm/model-search-rank "SS-EAM" "eam")) "word-boundary after -")
+  (is (= 3 (cm/model-search-rank "SEAM" "eam")) "plain substring")
+  (is (nil? (cm/model-search-rank "WG" "eam")) "no match")
+  (is (= 0 (cm/model-search-rank "anything" "")) "empty query matches all")
+  (is (nil? (cm/model-search-rank "ab" "abc")) "query longer than name")
+  (is (nil? (cm/model-search-rank "" "a")) "empty name never matches"))
+
+;; @tags mosaic model picker
+(deftest model-search-rank-scanning-occurrences
+  (is (= 2 (cm/model-search-rank "xEAM_EAM" "eam"))
+      "a later occurrence after a boundary outranks the earlier substring")
+  (is (= 3 (cm/model-search-rank "xEAMxEAM" "eam"))
+      "repeated occurrences with no boundary stay plain substrings"))
+
+;; Contract (private-cell?): true iff the display name (falling back to the
+;; id, exactly as filter-models reads it) starts with `_` — the gdsfactory
+;; private-cell convention. A display-only predicate: pickers may hide these
+;; entries from their lists; resolution never filters on it (#1139, #1182,
+;; #1059).
+
+;; @tags mosaic model picker
+(deftest private-cell-is-underscore-prefixed-name
+  (is (true? (cm/private-cell? ["models:m._EAM" {:name "_EAM"}])))
+  (is (false? (cm/private-cell? ["models:m.EAM" {:name "EAM"}])))
+  (is (false? (cm/private-cell? ["models:m.a_b" {:name "a_b"}]))))
+
 ;; Contract (build-tag-index): produce a two-level hierarchy from the first
 ;; two tags of each model. The result is `{first-tag {second-tag {}}}`.
 ;; Models with no tags don't appear.
