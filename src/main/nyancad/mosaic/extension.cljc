@@ -543,22 +543,6 @@
   (atom {}))
 
 ;; @tags cross-platform file and process operations
-(defn- shell-quote
-  "Quote an executable path for the platform shell used by child_process.spawn."
-  [executable]
-  (if (= "win32" (.-platform js/process))
-    (str "\"" (str/replace executable #"\"" "\"\"") "\"")
-    (str "'" (str/replace executable #"'" "'\"'\"'") "'")))
-
-;; @tags cross-platform file and process operations
-(defn- resolve-python-command
-  "Replace a leading bare uv command with GF+'s staged uv executable."
-  [python-cmd]
-  (if (and host-api (re-find #"^uv(?:\s|$)" python-cmd))
-    (str/replace python-cmd #"^uv(?=\s|$)" (shell-quote (.getUvExe host-api)))
-    python-cmd))
-
-;; @tags cross-platform file and process operations
 (defn- start-marimo!
   "Spawn marimo run as a sidecar process for the given .gsch file.
    If already running, re-opens the Simple Browser."
@@ -571,13 +555,12 @@
       (.. vscode/commands (executeCommand "simpleBrowser.show" url))
       ;; Spawn a new marimo process
       (let [sax? (= kind "sax")
-            python-cmd (resolve-python-command
-                         (.. vscode/workspace
-                             (getConfiguration "mosaic")
-                             (get (if sax? "saxPythonCommand" "pythonCommand")
-                                  (if sax?
-                                    "uv run --with nyancad-server[sax]"
-                                    "uv run --with nyancad-server"))))
+            python-cmd (.. vscode/workspace
+                           (getConfiguration "mosaic")
+                           (get (if sax? "saxPythonCommand" "pythonCommand")
+                                (if sax?
+                                  "uv run --with nyancad-server[sax]"
+                                  "uv run --with nyancad-server")))
             module-name (if sax? "nyancad_server.run_sax" "nyancad_server.run")
             output-ch (.. vscode/window (createOutputChannel (str "Mosaic " kind ": " basename)))]
         (.show output-ch true)
@@ -586,9 +569,9 @@
                            " -- --schem " basename
                            " --project " (js/JSON.stringify doc-dir))
               _ (.appendLine output-ch (str "Running: " cmd-str))
-              proc (.spawn cp cmd-str
-                     #js{:cwd doc-dir
-                         :shell true})]
+              proc (if (and host-api (re-find #"^uv(?:\s|$)" python-cmd))
+                     (.spawnUvShell host-api cmd-str #js{:cwd doc-dir})
+                     (.spawn cp cmd-str #js{:cwd doc-dir :shell true}))]
           (let [url-found (atom false)]
             (.. proc -stdout
                 (on "data"
