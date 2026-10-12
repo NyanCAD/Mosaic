@@ -105,6 +105,17 @@
     (let [[_ body] (e/wire-locations {:x 0 :y 0 :rx 3 :ry 3})]
       (is (empty? body)))))
 
+;; @tags nyancir format
+(deftest via-is-schematic-transparent
+  (testing "Livewire via entries are neither drawn nor entered in the point index"
+    (let [via {:type "via" :name "via_1" :x 0 :y 0
+               :irl_x 50 :irl_y 350 :bbox_width 0.35 :bbox_height 0.35}]
+      (is (= [[] []] (device-locations via)))
+      (is (nil? (device-port-types via)))
+      (is (= {} (point-index (sch ["via_1" via]))))
+      (is (nil? (e/device-dims via)) "no tetris box")
+      (is (nil? (e/get-model ::e/sym via "via_1" via))))))
+
 (deftest wire-locations-hv-has-corner
   (testing "hv: horizontal first (at y=start-y), corner at (x+rx, y), then vertical"
     (let [[_ body] (e/wire-locations {:x 0 :y 0 :rx 2 :ry 2 :variant "hv"})]

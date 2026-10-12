@@ -55,3 +55,14 @@
       (is (= 9 (:y B)) "authored entry preserved")
       (is (= #{0 1} (set [(:y A) (:y C)]))
           "two unauthored entries get y=0 and y=1, not y=0 and y=2"))))
+
+;; @tags nyancir format
+(deftest livewire-via-entry-validates
+  (testing "a Livewire route via (layout-only fields, no :x/:y) passes the schematic spec"
+    (let [doc (js/JSON.stringify
+                #js {"via_1" #js {"type" "via" "name" "via_1"
+                                  "irl_x" 52.0 "irl_y" 23.357
+                                  "bbox_width" 0.62 "bbox_height" 0.62
+                                  "bbox_xmin" -0.31 "bbox_ymin" -0.31}})
+          state (doc->state doc)]
+      (is (s/valid? ::cm/schematic state) (s/explain-str ::cm/schematic state)))))

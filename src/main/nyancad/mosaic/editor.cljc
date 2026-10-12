@@ -1298,6 +1298,13 @@
                          ;; `schematic-airwires` layer instead.
                          ::sym nil
                          ::props []}
+             ;; Livewire route vias are physical-only markers. They carry
+             ;; layout coordinates and directional ports, not schematic
+             ;; coordinates or a Mosaic symbol.
+             "via" {::bg []
+                    ::conn []
+                    ::sym nil
+                    ::props []}
              ;; Ideal photonic source/detector are `port` instances (so SAX and
              ;; everything else treat them as ordinary exposed ports; only the
              ;; circulax testbench reads `port.variant`), but they render as
@@ -1414,7 +1421,7 @@
                                         {:x (inc bx) :y (inc by)})
                                       size transform x y))]))
 
-;; @tags reactive indices, mosaic port exposure
+;; @tags reactive indices, mosaic port exposure, nyancir format
 (defn device-locations [models-snapshot dev]
   (let [entry (invocation/lookup models-snapshot
                                  (invocation/lookup-path (cm/model-key (:model dev)) (:props dev)))
@@ -1424,6 +1431,7 @@
       (= cell "wire") (wire-locations dev)
       (= cell "text") []
       (= cell "polyline") [[] []]
+      (= cell "via") [[] []]
       (and (contains? models cell) (::conn (get models cell)))
       (builtin-locations dev)
       :else (circuit-locations models-snapshot dev))))
@@ -1472,7 +1480,7 @@
     (map #(assoc % :direction (world-port-direction transform (:side %)))
          (rotate-shape conn size transform x y))))
 
-;; @tags mosaic port exposure, reactive indices
+;; @tags mosaic port exposure, reactive indices, nyancir format
 (defn device-port-types
   "Return typed port maps [{:x :y :type ...}] for a device after rotation."
   [models-snapshot dev]
@@ -1481,6 +1489,7 @@
       (= cell "wire") nil
       (= cell "text") nil
       (= cell "polyline") nil
+      (= cell "via") nil
       :else (let [builtin? (and (contains? models cell) (::conn (get models cell)))]
               (map #(cond-> (dissoc % :direction)
                       builtin? (dissoc :side))
