@@ -1,4 +1,4 @@
-"""Tests for pure functions in nyancad.netlist.
+"""Tests for NyanCAD identities, topology, and SPICE netlisting.
 
 Tests focus on the *intent* of each function — what it should do given its
 contract — not on mirroring implementation details. Expected values are
@@ -8,18 +8,20 @@ implementation (which is the source of truth for editor display).
 
 import pytest
 from nyancad.netlist import (
-    NyanCADMixin,
-    NyanCircuit,
     SchemId,
-    _eval_params,
-    _parse_spice_value,
-    _select_corner,
     bare_id,
     default_port_order,
     kfnetlist_from_nyancad,
     model_key,
     recursive_kfnetlist_from_nyancad,
     resolve_sax_netlist,
+)
+from nyancad.spice import (
+    NyanCADMixin,
+    NyanCircuit,
+    _eval_params,
+    _parse_spice_value,
+    _select_corner,
 )
 
 # ---------------------------------------------------------------------------

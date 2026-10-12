@@ -471,8 +471,8 @@ async def _():
     import pandas as pd
     from InSpice import Simulator
     from nyancad.anywidget import schematic_bridge
-    from nyancad.netlist import inspice_netlist
     from nyancad.plot import bodeplot, sweepplot, timeplot
+    from nyancad.spice import inspice_netlist
 
     return (
         Simulator,
