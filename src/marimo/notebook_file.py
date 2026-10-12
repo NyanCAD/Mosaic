@@ -459,8 +459,8 @@ def _():
     import numpy as np
     import pandas as pd
     from InSpice import Simulator
-    from nyancad.netlist import inspice_netlist
     from nyancad.plot import bodeplot, sweepplot, timeplot
+    from nyancad.spice import inspice_netlist
     from nyancad.watch import file_schematic, watch_project_dir
 
     return (

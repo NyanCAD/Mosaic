@@ -11,8 +11,8 @@ import jwt
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
 from nyancad.api import ServerAPI
-from nyancad.netlist import NyanCircuit
 from nyancad.schemas import Device, ModelMetadata
+from nyancad.spice import NyanCircuit
 from pydantic import AnyHttpUrl, BaseModel, Field, TypeAdapter
 
 from .config import COUCHDB_URL, SERVER_URL

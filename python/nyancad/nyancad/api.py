@@ -18,7 +18,7 @@ from typing import Any, Self
 
 import httpx
 
-from .netlist import model_key
+from nyancad.identity import model_key
 
 
 class SchematicAPI(ABC):

@@ -8,6 +8,24 @@ A Python library for the [NyanCAD schematic editor](https://github.com/NyanCAD/M
 pip install nyancad
 ```
 
+Optional dependencies are selected by workflow:
+
+```bash
+pip install 'nyancad[spice]'     # SPICE netlisting and circuit classes
+pip install 'nyancad[vacask]'    # SPICE plus the VACASK simulator
+pip install 'nyancad[topology]'  # Native kfnetlist/SAX conversion
+pip install 'nyancad[test]'      # Complete Python test dependencies
+```
+
+SPICE entrypoints such as `inspice_netlist` and `NyanCircuit` live in
+`nyancad.spice`. Native conversion entrypoints remain in `nyancad.netlist`,
+which requires `kfnetlist` when imported. Shared helpers live in
+`nyancad.identity`; the shared API does not import either simulation backend.
+
+Publish NyanCAD 0.18.6 before releasing consumers of the separated modules,
+including NyanCAD server and the GF+ SDK. Version 0.18.5 lacks the new module
+layout and extras.
+
 ## Usage
 
 ### Basic Usage
