@@ -56,6 +56,19 @@
 (defn- device-port-types [dev]
   (e/device-port-types @pform/modeldb dev))
 
+;; @tags photonic model ports, factory card picyaml
+(deftest detector-model-keeps-its-declared-physical-port-names
+  (let [models {"models:detector" {:generated true :metadata-version 7 :type "photodiode"
+                                  :ports [{:name "o1" :side "left" :type "photonic"}
+                                          {:name "top" :side "right" :type "electric"}
+                                          {:name "bot" :side "right" :type "electric"}]}}
+        dev {:type "ckt" :model "detector" :x 0 :y 0}
+        pins (into {} (map (fn [{:keys [name x y]}] [name [x y]]))
+                   (e/device-port-types models dev))]
+    (is (= {"o1" [0 2] "top" [2 1] "bot" [2 3]} pins))
+    (with-redefs [e/model-entry (fn [& _] (get models "models:detector"))]
+      (is (= [1 3] (e/device-dims dev))))))
+
 ;; ---------------------------------------------------------------------------
 ;; exrange — exclusive integer range
 ;; ---------------------------------------------------------------------------

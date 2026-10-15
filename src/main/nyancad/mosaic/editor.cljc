@@ -186,7 +186,7 @@
   (when-let [st (cm/redo undotree)]
     (restore st)))
 
-(declare drag-start drag-end eraser-drag models resolve-field on-pointer-down-element on-pointer-move-element on-pointer-up-bg double-click device-dims device-template circuit-designator device-context-menu)
+(declare drag-start drag-end eraser-drag models resolve-field effective-model-type on-pointer-down-element on-pointer-move-element on-pointer-up-bg double-click device-dims device-template circuit-designator device-context-menu)
 
 (defn device [size k v & elements]
   (assert (js/isFinite size))
@@ -767,7 +767,7 @@
 ;; than re-deriving the `::bg`/`@modeldb` lookup, because the branches disagree
 ;; in ways that are invisible for the 1x1 case every builtin happens to use.
 
-;; @tags mosaic clipboard
+;; @tags mosaic clipboard, photonic model ports, factory card picyaml
 (defn device-dims
   "Return [width height] of a device doc's tetris rect — the footprint before
    the 2-tile padding added by the `device` renderer — or nil for devices that
@@ -785,7 +785,7 @@
    guessed wrong put the selection toolbar and the paste centroid a tile off."
   [dev]
   (let [entry (model-entry (:model dev) (:props dev))
-        dev (cond-> dev (:generated entry) (assoc :type (:type entry)))
+        dev (assoc dev :type (effective-model-type entry dev))
         builtin (get models (:type dev))
         bg (resolve-field builtin ::bg dev)]
     (cond
@@ -1356,6 +1356,19 @@
       (get v (:variant dev) (::default v))
       v)))
 
+;; @tags photonic model ports, factory card picyaml
+(defn- effective-model-type
+  "Use a model's named pins when they cannot be represented by a fixed symbol."
+  [entry dev]
+  (let [type (if (:generated entry) (or (:type entry) (:type dev)) (:type dev))
+        conn (resolve-field (get models type) ::conn dev)
+        fixed-names (set (map :name conn))
+        ports (:ports entry)]
+    (if (and (seq conn) (seq ports)
+             (some #(not (contains? fixed-names (:name %))) ports))
+      "ckt"
+      type)))
+
 (defn rotate-shape
   ([shape transform devx devy]
    (rotate-shape shape (cm/pattern-size shape) transform devx devy))
@@ -1408,10 +1421,10 @@
                                       size transform x y))]))
 
 ;; @tags reactive indices, mosaic port exposure
-(defn circuit-locations [models-snapshot {:keys [:x :y :model :transform :type :props]}]
+(defn circuit-locations [models-snapshot {:keys [:x :y :model :transform :props] :as dev}]
   (let [transform (or transform cm/IV)
         mod (invocation/lookup models-snapshot (invocation/lookup-path (cm/model-key model) props))
-        type (if (:generated mod) (:type mod type) type)
+        type (effective-model-type mod dev)
         ports (:ports mod)
         conn (if ports (cm/port-locations ports type) [])
         [w h] (if ports (cm/port-perimeter ports type) [1 1])
@@ -1425,7 +1438,7 @@
 (defn device-locations [models-snapshot dev]
   (let [entry (invocation/lookup models-snapshot
                                  (invocation/lookup-path (cm/model-key (:model dev)) (:props dev)))
-        dev (cond-> dev (:generated entry) (assoc :type (:type entry)))
+        dev (assoc dev :type (effective-model-type entry dev))
         cell (:type dev)]
     (cond
       (= cell "wire") (wire-locations dev)
@@ -1458,7 +1471,7 @@
   [models-snapshot dev]
   (let [entry (invocation/lookup models-snapshot
                                  (invocation/lookup-path (cm/model-key (:model dev)) (:props dev)))
-        dev (cond-> dev (:generated entry) (assoc :type (:type entry)))
+        dev (assoc dev :type (effective-model-type entry dev))
         cell (:type dev)
         {:keys [x y]} dev
         transform (or (:transform dev) cm/IV)
@@ -2240,7 +2253,7 @@
 (defn- insert-staged! [dev model-def]
   (let [;; Snap to grid on drop (staged x/y follow the cursor unrounded). Wire
         ;; staging is already integer, so this is a no-op there.
-        resolved-type (or (:type model-def) (:type dev))
+        resolved-type (effective-model-type (assoc model-def :generated true) dev)
         dev (-> dev
                 (cond-> (:model dev)
                   (assoc :type (if (contains? cm/device-types resolved-type) resolved-type "ckt")))
@@ -2783,7 +2796,7 @@
     (when (and (.-isPrimary e) (< (count old-cache) 2))
       (eraser-drag k e))))
 
-;; @tags photonic model ports, factory resolution
+;; @tags photonic model ports, factory resolution, factory card picyaml
 (defn get-model
   [layer model k v]
   ;; Native renderers may never read model metadata themselves. Register demand
@@ -2792,8 +2805,9 @@
         ;; Invalidated Dschematic still supplies last-known presentation; a cold
         ;; skeleton has neither runtime metadata nor Dschematic presence.
         resolved? (and (:generated entry) (or (:metadata-version entry) (:has-dschematic entry)))
-        model (cond-> model resolved? (assoc :type (:type entry)))
-        v (cond-> v resolved? (assoc :type (:type entry)))
+        resolved-type (effective-model-type (assoc entry :generated resolved?) model)
+        model (assoc model :type resolved-type)
+        v (assoc v :type resolved-type)
         symbol-def (or (get models (:type model))
                        {::bg #'circuit-shape
                         ::conn #'circuit-conn
