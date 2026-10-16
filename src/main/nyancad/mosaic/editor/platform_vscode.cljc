@@ -6,6 +6,7 @@
   (:require [nyancad.mosaic.jsatom :as jsatom :refer [json-atom vscode send-request! injected-version]]
             [nyancad.mosaic.common :as cm]
             [nyancad.mosaic.jsatom.protocol :as ja]
+            [nyancad.mosaic.symbol-file :as sf]
             [reagent.core :as r]
             [reagent.dom.client :as rdc]
             [clojure.spec.alpha :as s]
@@ -76,15 +77,21 @@
 
 (defonce ^:private symbol-url-cache (atom {}))
 
-;; @tags factory resolution, on-demand symbol generation
+;; Bumped when a symbol file changes so renderers re-request their URLs.
+(defonce ^:private symbol-epoch (r/atom 0))
+
+;; @tags factory resolution, on-demand symbol generation, mosaic symbol maker
 (defn resolve-symbol-url
   "Read an existing image into a cached URL ratom, once per path/revision.
    A new revision gets its own ratom seeded with the previous URL while loading,
    so an older read cannot replace its URL and refresh does not blank the image.
    Uses data: URLs instead of blob: URLs so the URL resolves in isolated contexts
    (SVG <image> secure-static mode), enabling nested gsch subcircuit symbols to
-   render recursively without document-scoping failures."
+   render recursively without document-scoping failures.
+   Dereferencing symbol-epoch re-renders callers after a symbol-changed message
+   invalidates their path, so they re-read the file."
   [path & [revision]]
+  @symbol-epoch
   (when (seq path)
     (let [cached (get @symbol-url-cache path)]
       (if (and cached (= revision (:revision cached)))
@@ -165,6 +172,7 @@
                       (catch :default _e nil))))
             (clojure.string/join "\n"))))
 
+;; @tags gsch symbol sidecar, mosaic symbol maker
 (defn init-extra!
   "Set up message handlers for VS Code webview."
   []
@@ -194,4 +202,9 @@
                                   (.-outerHTML clone)))}))))
         "zoom-to-fit"
         (.dispatchEvent js/document (js/CustomEvent. "mosaic-zoom-to-fit"))
+        "symbol-changed"
+        (do (swap! symbol-url-cache sf/apply-symbol-change
+                   (js->clj (.. event -data -paths))
+                   (boolean (.. event -data -deleted)))
+            (swap! symbol-epoch inc))
         nil))))

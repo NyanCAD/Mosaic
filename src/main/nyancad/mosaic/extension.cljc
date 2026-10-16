@@ -3,14 +3,17 @@
 ; SPDX-License-Identifier: MPL-2.0
 
 (ns nyancad.mosaic.extension
-  "VSCode extension host: custom editor providers for .gsch and .nyanlib files.
+  "VSCode extension host: custom editor providers for .gsch, .nyanlib and
+   symbol maker .svg files.
    Bridges the VSCode text document model with the webview's JsAtom."
   (:require ["vscode" :as vscode]
             ["path" :as path]
+            ["fs" :as fs]
             ["child_process" :as cp]
             [clojure.string :as str]
             [goog.string :as gstring]
             [nyancad.mosaic.jsatom.bridge :as bridge]
+            [nyancad.mosaic.symbol-file :as sf]
             [cljs.core.async :refer [go go-loop <! chan put! promise-chan timeout]]
             [cljs.core.async.interop :refer-macros [<p!]]))
 
@@ -42,7 +45,8 @@
 
 (def ^:private bundle-uri
   "Filesystem URI of the directory containing this compiled extension bundle.
-   Webview assets (style.css, shared.js, editor.js, libman.js) are siblings of
+   Webview assets (style.css, shared.js, editor.js, libman.js,
+   symbol-maker.js) are siblings of
    main.js in the same out/ directory, so resolving them against __dirname
    keeps mosaic independent of how the host extension lays out its files."
   (vscode/Uri.file js/__dirname))
@@ -522,15 +526,20 @@
 ;; SVG auto-save on schematic save
 ;; ---------------------------------------------------------------------------
 
+;; @tags gsch symbol sidecar, mosaic symbol maker
 (defn- save-svg-sidecar!
-  "Request preview SVG from webview and write it as a sidecar file."
+  "Request preview SVG from webview and write it as a sidecar file. A sidecar
+   drawn in the symbol maker is user-owned and is never overwritten."
   [^js webview ^js doc-uri basename]
   (go
     (try
-      (let [svg (<! (send-request! webview "preview"))
-            svg-uri (uri-join doc-uri (str basename ".svg"))]
-        (when (and svg (seq svg))
-          (<p! (ws-write svg-uri svg))))
+      (let [svg-uri (uri-join doc-uri (str basename ".svg"))
+            existing (try (<p! (ws-read svg-uri))
+                          (catch :default _e nil))]
+        (when-not (sf/owned-svg? existing)
+          (let [svg (<! (send-request! webview "preview"))]
+            (when (and svg (seq svg))
+              (<p! (ws-write svg-uri svg))))))
       (catch :default e
         (js/console.error "Failed to save SVG sidecar:" (.-message e))))))
 
@@ -756,6 +765,176 @@
               (.dispose d))))))))
 
 ;; ---------------------------------------------------------------------------
+;; SymbolEditorProvider
+;; ---------------------------------------------------------------------------
+
+;; @tags mosaic symbol maker
+(defn- get-symbol-html
+  "Generate webview HTML for the symbol maker. `rel-path` is the document's
+   workspace-relative path, used to infer the target of a file without
+   symbol maker metadata."
+  [^js document ^js webview rel-path]
+  (let [out-uri (fn [file]
+                  (.asWebviewUri webview (uri-join bundle-uri file)))
+        nonce (get-nonce)
+        csp (str "default-src 'none';"
+                 " style-src " (.-cspSource webview) " 'unsafe-inline';"
+                 " script-src 'nonce-" nonce "' 'unsafe-eval';"
+                 " img-src " (.-cspSource webview) " data: blob:;")]
+    (str "<!DOCTYPE html>
+<html>
+<head>
+  <meta charset=\"UTF-8\">
+  <meta http-equiv=\"Content-Security-Policy\" content=\"" csp "\">
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+  <link rel=\"stylesheet\" href=\"" (out-uri "style.css") "\">
+  <style>html, body { width: 100%; height: 100%; overflow: hidden; margin: 0; padding: 0; }</style>
+</head>
+<body>
+  <input type=\"hidden\" id=\"document\" value=\"" (js/encodeURIComponent (.getText document)) "\">
+  <input type=\"hidden\" id=\"relative-path\" value=\"" (js/encodeURIComponent rel-path) "\">
+  <div class=\"mosaic-app mosaic-symbol-maker\"></div>
+  <script nonce=\"" nonce "\" src=\"" (out-uri "shared.js") "\"></script>
+  <script nonce=\"" nonce "\" src=\"" (out-uri "symbol-maker.js") "\"></script>
+</body>
+</html>")))
+
+;; @tags mosaic symbol maker
+(defn- replace-document!
+  "Replace the whole text of `document` with `text` as one undoable edit.
+   Returns the applyEdit promise, or nil when the text is unchanged."
+  [^js document text]
+  (let [current (.getText document)]
+    (when (not= text current)
+      (let [edit (vscode/WorkspaceEdit.)
+            whole (vscode/Range. (.positionAt document 0)
+                                 (.positionAt document (.-length current)))]
+        (.replace edit (.-uri document) whole text)
+        (.. vscode/workspace (applyEdit edit))))))
+
+;; @tags mosaic symbol maker
+(defn- step-edit-queue!
+  "Advance the edit queue atom with `f` (a pure symbol-file queue step) and
+   return the resulting action."
+  [queue f]
+  (let [action (volatile! nil)]
+    (swap! queue (fn [q]
+                   (let [[next-q next-action] (f q)]
+                     (vreset! action next-action)
+                     next-q)))
+    @action))
+
+;; @tags mosaic symbol maker
+(defn- document-editor
+  "Serialize webview edits into `document`: at most one applyEdit is in flight
+   and only the newest requested text waits behind it, so rapid edits are never
+   built from stale text. Returns {:request! (fn [text]) :idle? (fn [])}.
+   `post-document!` re-syncs the webview whenever the queue goes idle,
+   including after a rejected edit."
+  [^js document post-document!]
+  (let [queue (atom sf/idle-edit-queue)]
+    (letfn [(perform! [[op text]]
+              (case op
+                :apply (if-let [pending (replace-document! document text)]
+                         (-> (js/Promise.resolve pending)
+                             (.then (fn [applied?]
+                                      (when-not applied?
+                                        (js/console.error "Symbol maker edit was not applied"))
+                                      (settle! (boolean applied?)))
+                                    (fn [e]
+                                      (js/console.error "Symbol maker edit failed:" e)
+                                      (settle! false)))
+                             (.catch (fn [e]
+                                       (js/console.error "Symbol maker could not re-sync its webview:" e))))
+                         (settle! true))
+                :post (post-document!)
+                nil))
+            (settle! [applied?]
+              (perform! (step-edit-queue! queue #(sf/edit-queue-settled % applied?))))]
+      {:request! (fn [text] (perform! (step-edit-queue! queue #(sf/edit-queue-request % text))))
+       :idle? (fn [] (not (:in-flight? @queue)))})))
+
+(deftype SymbolEditorProvider [^js context]
+  Object
+  ;; @tags mosaic symbol maker
+  (resolveCustomTextEditor [^js _this ^js document ^js webviewpanel _token]
+    (let [^js webview (.-webview webviewpanel)
+          ws-root (or (some-> (first (.-workspaceFolders vscode/workspace)) .-uri)
+                      (uri-parent (.-uri document)))
+          rel-path (.. vscode/workspace (asRelativePath (.-uri document) false))
+          uri-key (.. document -uri (toString))
+          disposables #js[]]
+      (set! (.-options webview)
+            #js{:enableScripts true
+                :localResourceRoots #js[bundle-uri]})
+      (set! (.-html webview) (get-symbol-html document webview rel-path))
+      ;; resolve-factory / factory-entries requests supply the target's ports.
+      (.push disposables (setup-message-router! webview (atom {}) ws-root))
+      ;; The document owns history: each committed drawing edit replaces it.
+      ;; Echoes are held back while edits are queued; the queue re-syncs the
+      ;; webview once it goes idle.
+      (let [post-document! #(.postMessage webview #js{:type "document"
+                                                      :text (.getText document)})
+            {:keys [request! idle?]} (document-editor document post-document!)]
+        (.push disposables
+               (.onDidReceiveMessage webview
+                 (fn [^js message]
+                   (when (= "edit" (.-type message))
+                     (request! (.-text message))))))
+        (.push disposables
+               (.. vscode/workspace
+                   (onDidChangeTextDocument
+                     (fn [^js e]
+                       (when (and (= uri-key (.. e -document -uri (toString)))
+                                  (idle?))
+                         (post-document!)))))))
+      (when host-api
+        (.push disposables
+               (.onFactoryEntries host-api
+                 (fn [update]
+                   (.postMessage webview #js{:type "factory-entries" :value update})))))
+      (.onDidDispose webviewpanel
+        (fn []
+          (doseq [d disposables]
+            (.dispose d)))))))
+
+;; @tags mosaic symbol maker, gsch symbol sidecar
+(defn- real-path
+  "Resolved real path of `file`, or nil when it cannot be resolved (for
+   example after deletion)."
+  [file]
+  (try (.native (.-realpathSync fs) file)
+       (catch :default _e nil)))
+
+;; @tags mosaic symbol maker, gsch symbol sidecar
+(defn- symbol-change-paths
+  "Every spelling a schematic may cache a symbol under: absolute, real, and
+   workspace-relative, with Windows drive letters in both cases."
+  [^js uri]
+  (let [absolute (.-fsPath uri)]
+    (clj->js (sf/symbol-path-forms absolute
+                                   (real-path absolute)
+                                   (.. vscode/workspace (asRelativePath uri false))))))
+
+;; @tags mosaic symbol maker, gsch symbol sidecar
+(defn- watch-symbol-files
+  "Tell every open schematic when a workspace SVG is created, changed or
+   deleted so it re-reads or drops that symbol. Returns the watcher to
+   dispose."
+  []
+  (let [^js watcher (.. vscode/workspace (createFileSystemWatcher "**/*.svg"))
+        notify (fn [deleted? ^js uri]
+                 (let [paths (symbol-change-paths uri)]
+                   (doseq [[_ ^js webview] @schematic-webviews]
+                     (.postMessage webview #js{:type "symbol-changed"
+                                               :paths paths
+                                               :deleted deleted?}))))]
+    (.onDidCreate watcher (partial notify false))
+    (.onDidChange watcher (partial notify false))
+    (.onDidDelete watcher (partial notify true))
+    watcher))
+
+;; ---------------------------------------------------------------------------
 ;; Registration & activation
 ;; ---------------------------------------------------------------------------
 
@@ -775,7 +954,16 @@
     #js{:supportsMultipleEditorsPerDocument false
         :webviewOptions #js{:retainContextWhenHidden true}}))
 
-;; @tags on-demand symbol generation
+;; @tags mosaic symbol maker
+(defn- register-symbol-provider [^js context]
+  (.registerCustomEditorProvider
+    vscode/window
+    "Mosaic.symbol"
+    (SymbolEditorProvider. context)
+    #js{:supportsMultipleEditorsPerDocument false
+        :webviewOptions #js{:retainContextWhenHidden true}}))
+
+;; @tags on-demand symbol generation, mosaic symbol maker
 (defn activate
   "Extension activation - register custom editor providers."
   [^js context & [^js api]]
@@ -783,6 +971,8 @@
   (set! host-api api)
   (.. context -subscriptions (push (register-schematic-provider context)))
   (.. context -subscriptions (push (register-library-provider context)))
+  (.. context -subscriptions (push (register-symbol-provider context)))
+  (.. context -subscriptions (push (watch-symbol-files)))
   (.. context -subscriptions
       (push (.. vscode/commands
                 (registerCommand "Mosaic.schematic.zoomToFit"

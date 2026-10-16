@@ -7,6 +7,7 @@
    read verbatim, while relative names still resolve against the workspace
    root. See specs/on_demand_symbol_generation.md (Mosaic Bridge)."
   (:require [cljs.test :refer [deftest is testing async]]
+            ["vscode" :as vscode]
             [nyancad.mosaic.extension :as ext]))
 
 ;; @tags on-demand symbol generation
@@ -76,3 +77,74 @@
                                     :filename "../secret.gsch"}))))
       (is (nil? (@handler (clj->js {:type "open-file"
                                     :filename "/tmp/secret.gsch"})))))))
+
+;; @tags gsch symbol sidecar, mosaic symbol maker
+(defn- preview-webview
+  "Webview stand-in that answers the sidecar's preview request."
+  [preview]
+  #js{:postMessage
+      (fn [^js m]
+        (js/setTimeout
+         #(#'ext/deliver-response! #js{:requestId (.-requestId m)
+                                       :value preview})
+         0))})
+
+;; @tags gsch symbol sidecar, mosaic symbol maker
+(defn- run-sidecar-save
+  "Run save-svg-sidecar! with `read-file` as the existing sidecar reader and
+   call `check` with every [path content] the save wrote."
+  [read-file check done]
+  (let [fs (.. vscode -workspace -fs)
+        orig-read (.-readFile fs)
+        orig-write (.-writeFile fs)
+        writes (atom [])]
+    (set! (.-readFile fs) read-file)
+    (set! (.-writeFile fs)
+          (fn [^js uri bytes]
+            (swap! writes conj [(.-path uri)
+                                (.decode (js/TextDecoder. "utf-8") bytes)])
+            (js/Promise.resolve nil)))
+    (#'ext/save-svg-sidecar! (preview-webview "<svg>preview</svg>")
+                             (vscode/Uri.file "/workspace/schematics")
+                             "amp.gsch")
+    (js/setTimeout
+     (fn []
+       (set! (.-readFile fs) orig-read)
+       (set! (.-writeFile fs) orig-write)
+       (check @writes)
+       (done))
+     50)))
+
+;; @tags gsch symbol sidecar, mosaic symbol maker
+(deftest sidecar-save-keeps-symbol-maker-drawing
+  (testing "an existing sidecar carrying symbol maker metadata is never overwritten"
+    (async done
+      (run-sidecar-save
+       (fn [_]
+         (js/Promise.resolve
+          (.encode (js/TextEncoder.)
+                   "<svg><metadata id=\"gfp-symbol-maker\">{}</metadata></svg>")))
+       (fn [writes] (is (empty? writes)))
+       done))))
+
+;; @tags gsch symbol sidecar, mosaic symbol maker
+(deftest sidecar-save-replaces-auto-preview
+  (testing "an auto-written preview sidecar is refreshed on save"
+    (async done
+      (run-sidecar-save
+       (fn [_] (js/Promise.resolve (.encode (js/TextEncoder.) "<svg>old</svg>")))
+       (fn [writes]
+         (is (= [["/workspace/schematics/amp.gsch.svg" "<svg>preview</svg>"]]
+                writes)))
+       done))))
+
+;; @tags gsch symbol sidecar, mosaic symbol maker
+(deftest sidecar-save-writes-missing-sidecar
+  (testing "a missing sidecar is written"
+    (async done
+      (run-sidecar-save
+       (fn [_] (js/Promise.reject (js/Error. "FileNotFound")))
+       (fn [writes]
+         (is (= [["/workspace/schematics/amp.gsch.svg" "<svg>preview</svg>"]]
+                writes)))
+       done))))

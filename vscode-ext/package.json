@@ -39,6 +39,16 @@
           }
         ],
         "priority": "default"
+      },
+      {
+        "viewType": "Mosaic.symbol",
+        "displayName": "Mosaic Symbol Maker",
+        "selector": [
+          {
+            "filenamePattern": "*.svg"
+          }
+        ],
+        "priority": "option"
       }
     ],
     "configuration": {

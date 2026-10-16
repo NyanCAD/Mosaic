@@ -36,7 +36,8 @@
    :output-dir "vscode-ext/out"
    :modules {:shared {}
              :editor {:init-fn nyancad.mosaic.editor/init :depends-on #{:shared}}
-             :libman {:init-fn nyancad.mosaic.libman/init :depends-on #{:shared}}}
+             :libman {:init-fn nyancad.mosaic.libman/init :depends-on #{:shared}}
+             :symbol-maker {:init-fn nyancad.mosaic.symbol-maker.editor/init :depends-on #{:shared}}}
    :compiler-options {:output-feature-set :es2018
                       :reader-features #{:vscode}}
    :js-options {:entry-keys ["module" "browser" "main"]}}
