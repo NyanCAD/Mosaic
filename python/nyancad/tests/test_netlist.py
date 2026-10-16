@@ -19,6 +19,7 @@ from nyancad.netlist import (
     _select_corner,
     bare_id,
     default_port_order,
+    invert_kf_nets,
     kfnetlist_from_nyancad,
     model_key,
     recursive_kfnetlist_from_nyancad,
@@ -1891,3 +1892,51 @@ class TestStructuredSources:
         props = {"dc": "5", "tran": "SIN(0 1 1k)"}
         spice = str(NyanCircuit("top", self._source_schem("vsource", props)))
         assert "DC 5" in spice
+
+
+@pytest.mark.parametrize("variant", ["text", "ground", "supply"])
+def test_marker_net_semantics_remain_available_to_consumers(variant):
+    """@tags sax simulation pipeline, spice model libraries"""
+    components = [
+        ("a", {"nets": {"p": "labelled"}}),
+        ("b", {"nets": {"p": "labelled"}}),
+    ]
+    markers = {
+        "labelled": {"type": "port", "variant": variant, "nets": {"P": "labelled"}}
+    }
+    buckets = invert_kf_nets(components, markers)
+    assert set(buckets["labelled"]["inst"]) == {("a", "p"), ("b", "p")}
+    assert buckets["labelled"]["ports"] == ["labelled"]
+    attached = invert_kf_nets(
+        [],
+        {
+            "reference": {
+                "variant": variant,
+                "attached_port": {"component_id": "a", "port_name": "p"},
+            }
+        },
+    )
+    assert attached["reference"] == {"inst": [("a", "p")], "ports": ["reference"]}
+
+
+def test_spice_ground_marker_keeps_the_reference_node():
+    """@tags spice model libraries"""
+    schematic = {
+        "models": {},
+        "top": {
+            "r": {
+                "type": "resistor",
+                "name": "R1",
+                "props": {"resistance": "1k"},
+                "nets": {"P": "signal", "N": "GND"},
+            },
+            "ground": {
+                "type": "port",
+                "name": "GND",
+                "variant": "ground",
+                "nets": {"P": "GND"},
+            },
+        },
+    }
+    circuit = NyanCircuit("top", schematic)
+    assert "signal 0" in str(circuit)
