@@ -813,6 +813,233 @@ class TestForeignLibraries:
         assert not target.raw_spice.strip()
 
 
+# ---------------------------------------------------------------------------
+# Nested .gsch model dependencies reach the top circuit (#5278)
+# ---------------------------------------------------------------------------
+
+
+def _library_includes(text):
+    """Include lines of a serialized VACASK netlist, in emitted order.
+
+    @tags spice model libraries
+    """
+    return [line for line in text.splitlines() if line.startswith("include ")]
+
+
+class TestNestedSubcircuitModelDependencies:
+    """Models reached only through a `.gsch` child must still emit their
+    library includes / inline code at circuit level. Without that closure the
+    netlist calls masters nothing defines — VACASK exits with
+    ``Master 'sg13_lv_nmos' not found`` for the child's MOS devices.
+    """
+
+    def _nmos(self, doc_id="inverter.gsch:M1"):
+        """Schematic device referencing the library-backed nmos model.
+
+        @tags spice model libraries
+        """
+        return {
+            "_id": doc_id,
+            "type": "nmos",
+            "name": "M1",
+            "model": "ihp.nmos",
+            "nets": {"D": "P1", "G": "P2", "S": "GND", "B": "GND"},
+            "props": {"model": "sg13_lv_nmos"},
+        }
+
+    def _models(self):
+        """Child subcircuit entry plus the leaf nmos model entry.
+
+        @tags spice model libraries
+        """
+        return {
+            "models:inverter.gsch": {
+                "name": "inverter",
+                "ports": [{"name": n} for n in ("P1", "P2", "GND")],
+            },
+            "models:ihp.nmos": {
+                "name": "nmos",
+                "type": "nmos",
+                "ports": [{"name": n} for n in ("D", "G", "S", "B")],
+                "models": [
+                    {
+                        "language": "spectre",
+                        "implementation": "VACASK",
+                        "name": "sg13_lv_nmos",
+                        "spice-type": "SUBCKT",
+                        "library": "models/sg13g2_moslv_mod.lib",
+                        "sections": ["tt"],
+                        "port-order": ["D", "G", "S", "B"],
+                    }
+                ],
+            },
+        }
+
+    def _top(self, stage_model="inverter.gsch"):
+        """Top-level stage instance plus its output and ground ports.
+
+        @tags spice model libraries
+        """
+        return {
+            "top:stage": {
+                "_id": "top:stage",
+                "type": "ckt",
+                "name": "stage",
+                "model": stage_model,
+                "nets": {"P1": "out", "P2": "input", "GND": "0"},
+            },
+            "top:OUT": {
+                "_id": "top:OUT",
+                "type": "port",
+                "name": "out",
+                "nets": {"P": "out"},
+            },
+            "top:GND": {
+                "_id": "top:GND",
+                "type": "port",
+                "name": "gnd",
+                "variant": "ground",
+                "nets": {"P": "0"},
+            },
+        }
+
+    def _nested_schem(self):
+        """Top circuit holding the child schematic as a subcircuit.
+
+        @tags spice model libraries
+        """
+        return {
+            "top": self._top(),
+            "inverter.gsch": {"inverter.gsch:M1": self._nmos()},
+            "models": self._models(),
+        }
+
+    def _flat_schem(self):
+        """Flat equivalent of :meth:`_nested_schem` for parity comparison.
+
+        @tags spice model libraries
+        """
+        return {
+            "top": {"top:M1": self._nmos("top:M1")},
+            "models": self._models(),
+        }
+
+    def test_nested_child_library_reaches_circuit(self):
+        """The child's model library is included; its master is called.
+
+        @tags spice model libraries
+        """
+        text = _vacask_text(NyanCircuit("top", self._nested_schem(), sim="VACASK"))
+        includes = _library_includes(text)
+        assert len(includes) == 1
+        assert "sg13g2_moslv_mod.lib" in includes[0]
+        assert "section=tt" in includes[0]
+        assert "subckt inverter" in text
+        assert "sg13_lv_nmos" in text
+
+    def test_nested_includes_match_flat(self):
+        """Flat and nested equivalent circuits emit the same includes.
+
+        @tags spice model libraries
+        """
+        flat = _vacask_text(NyanCircuit("top", self._flat_schem(), sim="VACASK"))
+        nested = _vacask_text(NyanCircuit("top", self._nested_schem(), sim="VACASK"))
+        assert _library_includes(flat) == _library_includes(nested)
+        assert len(_library_includes(nested)) == 1
+
+    def test_deep_nesting_propagates_leaf_models(self):
+        """A model two `.gsch` levels down still reaches the top circuit.
+
+        @tags spice model libraries
+        """
+        schem = {
+            "top": self._top("stage.gsch"),
+            "stage.gsch": {
+                "stage.gsch:inner": {
+                    "_id": "stage.gsch:inner",
+                    "type": "ckt",
+                    "name": "inner",
+                    "model": "inverter.gsch",
+                    "nets": {"P1": "P1", "P2": "P2", "GND": "GND"},
+                },
+                "stage.gsch:OUT": {
+                    "_id": "stage.gsch:OUT",
+                    "type": "port",
+                    "name": "P1",
+                    "nets": {"P": "P1"},
+                },
+            },
+            "inverter.gsch": {"inverter.gsch:M1": self._nmos()},
+            "models": {
+                **self._models(),
+                "models:stage.gsch": {
+                    "name": "stage",
+                    "ports": [{"name": n} for n in ("P1", "P2", "GND")],
+                },
+            },
+        }
+        text = _vacask_text(NyanCircuit("top", schem, sim="VACASK"))
+        assert "subckt stage" in text
+        assert "subckt inverter" in text
+        assert len(_library_includes(text)) == 1
+        assert "sg13g2_moslv_mod.lib" in _library_includes(text)[0]
+
+    def test_shared_leaf_model_included_once(self):
+        """A model used at top level and in a child emits one include.
+
+        @tags spice model libraries
+        """
+        schem = self._nested_schem()
+        schem["top"]["top:M0"] = self._nmos("top:M0")
+        text = _vacask_text(NyanCircuit("top", schem, sim="VACASK"))
+        includes = _library_includes(text)
+        assert len(includes) == 1
+        assert "sg13g2_moslv_mod.lib" in includes[0]
+
+    def test_schematic_reference_cycle_terminates(self):
+        """Mutually referencing `.gsch` children terminate and emit both
+        subcircuits exactly once.
+
+        @tags spice model libraries
+        """
+        schem = {
+            "top": {
+                "top:stage": {
+                    "_id": "top:stage",
+                    "type": "ckt",
+                    "name": "stage",
+                    "model": "a.gsch",
+                    "nets": {"P": "out"},
+                }
+            },
+            "a.gsch": {
+                "a.gsch:b": {
+                    "_id": "a.gsch:b",
+                    "type": "ckt",
+                    "name": "b",
+                    "model": "b.gsch",
+                    "nets": {"P": "P"},
+                }
+            },
+            "b.gsch": {
+                "b.gsch:a": {
+                    "_id": "b.gsch:a",
+                    "type": "ckt",
+                    "name": "a",
+                    "model": "a.gsch",
+                    "nets": {"P": "P"},
+                }
+            },
+            "models": {
+                "models:a.gsch": {"name": "a", "ports": [{"name": "P"}]},
+                "models:b.gsch": {"name": "b", "ports": [{"name": "P"}]},
+            },
+        }
+        text = _vacask_text(NyanCircuit("top", schem, sim="VACASK"))
+        assert text.count("subckt a(") == 1
+        assert text.count("subckt b(") == 1
+
+
 class TestCaseInsensitivePorts:
     """Built-in nmos/pmos symbols label pins with uppercase chars (D/G/S/B),
     but PDK models migrated by SpiceArmyKnife.jl declare ports/port-order in

@@ -936,9 +936,20 @@ class NyanCircuit(NyanCADMixin, Circuit):
         # First populate main circuit elements to collect used models
         self.populate_from_nyancad(schem[name], models, corners, sim)
 
-        # Then process only the used models: create subcircuits for schematic
-        # models, add SPICE for others
-        for model_key_str in self.used_models:
+        # Then process the used models transitively: create subcircuits for
+        # schematic models, add SPICE for others. A model reached only through
+        # a subcircuit child (e.g. a library-backed device inside a `.gsch`
+        # child) must still contribute its library include or inline code at
+        # circuit level, so each created subcircuit appends its own used
+        # models to the worklist. Sorted work keeps emitted order stable, and
+        # `processed` guards against shared dependencies and reference cycles.
+        pending = sorted(self.used_models)
+        processed = set()
+        while pending:
+            model_key_str = pending.pop(0)
+            if model_key_str in processed:
+                continue
+            processed.add(model_key_str)
             model_def = models[model_key_str]
             # Extract bare model ID for schematic lookup (models dict keys always
             # have "models:" prefix)
@@ -968,6 +979,7 @@ class NyanCircuit(NyanCADMixin, Circuit):
                         **model_params,
                     )
                     self.subcircuit(subcircuit)
+                    pending.extend(sorted(subcircuit.used_models - processed))
                 else:
                     # Add SPICE code / library includes for model entries
                     entry = self._select_model_entry(model_def, sim)
