@@ -2691,8 +2691,17 @@
 
 ;; Pointer event handlers for touch/stylus support
 
-;; @tags mosaic wire tool
+;; @tags editor keyboard shortcuts
+(defn suppress-middle-default!
+  "Cancel the browser default of a middle-button press, which also suppresses
+   the compatibility mousedown so Firefox/Chrome autoscroll never starts."
+  [e]
+  (when (= (.-button e) 1)
+    (.preventDefault e)))
+
+;; @tags mosaic wire tool, editor keyboard shortcuts
 (defn on-pointer-down-bg [e]
+  (suppress-middle-default! e)
   (cm/clear-context-menu)
   (let [id (.-pointerId e)
         entry {:x (.-clientX e) :y (.-clientY e)}]
@@ -2750,9 +2759,10 @@
   [e]
   (swap! ui update ::pointer-cache dissoc (.-pointerId e)))
 
-;; @tags mosaic clipboard, mosaic wire tool
+;; @tags mosaic clipboard, mosaic wire tool, editor keyboard shortcuts
 (defn on-pointer-down-element [k e]
   (.stopPropagation e)
+  (suppress-middle-default! e)
   (cm/clear-context-menu)
   (let [id (.-pointerId e)
         entry {:x (.-clientX e) :y (.-clientY e)}
