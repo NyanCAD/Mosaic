@@ -13,7 +13,7 @@
                      editable-model? edit-model send-to-agent resolve-symbol-url
                      init-extra! root model-cursor get-model-async renamable-model-name]]
             [clojure.spec.alpha :as s]
-            [cljs.core.async :refer [go <! put! promise-chan]]
+            [cljs.core.async :refer [go <! take!]]
             [clojure.math :as math]
             clojure.edn
             clojure.set
@@ -46,7 +46,9 @@
                       ::notebook-state ::embedded
                       ::pointer-cache {}
                       ::tab-index 0
-                      ::paste-staging nil}))
+                      ::paste-staging nil
+                      ::arm-result nil
+                      ::committing false}))
 
 
 (s/def ::zoom (s/coll-of number? :count 4))
@@ -69,6 +71,11 @@
 (s/def ::y number?)
 (s/def ::pointer-cache (s/map-of int? (s/keys :req-un [::x ::y])))
 (s/def ::tab-index nat-int?)
+;; Readiness stays outside device data; each result cell also identifies its arm.
+(s/def ::arm-result (s/nilable some?))
+;; Held across an accepted insertion's post-action and undo checkpoint so
+;; intervening placement actions are rejected rather than replayed.
+(s/def ::committing boolean?)
 ;; Shift-drag connectivity. ::stretch is {wire-id -> #{:start :end}} of endpoints
 ;; that follow the dragged devices: present (the map) while Shift is held during a
 ;; drag, nil otherwise. It is the single gate — the staging preview and the commit
@@ -77,7 +84,7 @@
 (s/def ::stretch (s/nilable (s/map-of string? set?)))
 (s/def ::paste-staging (s/nilable (s/map-of string? map?)))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-state ::pointer-cache ::tab-index]
-                    :opt [::dragging ::staging ::stretch ::paste-staging ::domain]))
+                    :opt [::dragging ::staging ::stretch ::paste-staging ::domain ::arm-result ::committing]))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
 
@@ -132,10 +139,18 @@
   (when (seq model-id)
     @(apply model-cursor modeldb (invocation/lookup-path (cm/model-key model-id) params))))
 
-(defonce ^{:doc "Cancellation generation captured by placement intents; advancing it prevents late insertion."}
-  placement-epoch (atom 0))
-(defonce ^{:doc "Completion channel of the last queued resolved placement, including its undo checkpoint. Cancellation does not bypass this queue."}
-  placement-tail (atom (go true)))
+;; @tags factory resolution
+(defn- factory-pending?
+  []
+  (let [st (::staging @ui)
+        cell (::arm-result @ui)]
+    (boolean (and st (:model st) cell (nil? @cell)))))
+
+;; @tags factory resolution
+(defn placement-busy?
+  "Block placement until resolution and undo settlement finish."
+  []
+  (boolean (or (factory-pending?) (::committing @ui))))
 
 (defonce undotree (cm/newundotree))
 
@@ -2251,65 +2266,50 @@
 
 ;; @tags factory resolution, nyanlib default contract, mosaic wire tool
 (defn- insert-staged! [dev model-def]
-  (let [;; Snap to grid on drop (staged x/y follow the cursor unrounded). Wire
-        ;; staging is already integer, so this is a no-op there.
-        resolved-type (effective-model-type (assoc model-def :generated true) dev)
-        dev (-> dev
-                (cond-> (:model dev)
-                  (assoc :type (if (contains? cm/device-types resolved-type) resolved-type "ckt")))
-                (update :x math/round) (update :y math/round))
-        named (update dev :name (fnil identity (make-name (:type dev))))
-        ;; Port devices (ground, supply, labels) keep a fixed/constant display
-        ;; :name, so it can't double as a unique id the way "R1", "C1", etc.
-        ;; do for other device types. Give ports their own numbered id instead,
-        ;; matching the scheme paste already uses for pasted port devices.
-        id-name (if (= "port" (:type named)) (make-name "port") (:name named))
-        id (str group sep id-name)
-        defaults (cm/model-prop-defaults model-def)
-        with-props (if defaults
-                     (update named :props #(merge defaults %))
-                     named)]
-    (swap! schematic assoc id with-props)
-    (post-action!)))
-
-;; @tags factory resolution
-(defn- queue-resolved-placement!
-  "Serialize a resolved intent through insertion and its undo checkpoint.
-   Return a completion channel; cancellation skips insertion but still releases
-   the queue, and insertion failures release it through finally."
-  [dev model-def epoch]
-  (let [previous @placement-tail
-        finished (promise-chan)]
-    ;; Only resolved commits enter this queue. Cancellation never bypasses an
-    ;; active undo transaction, even when a newer intent has already resolved.
-    (reset! placement-tail finished)
-    (go
-      (<! previous)
-      (try
-        (when (= epoch @placement-epoch)
-          (<! (insert-staged! dev model-def)))
-        (finally
-          (put! finished true))))))
+  ;; Keep admission closed through undo settlement, including preparation failures.
+  (swap! ui assoc ::committing true)
+  (try
+    (let [;; Snap to grid on drop (staged x/y follow the cursor unrounded). Wire
+          ;; staging is already integer, so this is a no-op there.
+          resolved-type (effective-model-type (assoc model-def :generated true) dev)
+          dev (-> dev
+                  (cond-> (:model dev)
+                    (assoc :type (if (contains? cm/device-types resolved-type) resolved-type "ckt")))
+                  (update :x math/round) (update :y math/round))
+          named (update dev :name (fnil identity (make-name (:type dev))))
+          ;; Port devices (ground, supply, labels) keep a fixed/constant display
+          ;; :name, so it can't double as a unique id the way "R1", "C1", etc. do
+          ;; for other device types. Give ports their own numbered id instead,
+          ;; matching the scheme paste already uses for pasted port devices.
+          id-name (if (= "port" (:type named)) (make-name "port") (:name named))
+          id (str group sep id-name)
+          defaults (cm/model-prop-defaults model-def)
+          with-props (if defaults
+                       (update named :props #(merge defaults %))
+                       named)]
+      (swap! schematic assoc id with-props)
+      (go
+        (try
+          (<! (post-action!))
+          (finally
+            (swap! ui assoc ::committing false)))))
+    (catch :default e
+      (swap! ui assoc ::committing false)
+      (throw e))))
 
 ;; @tags factory resolution, nyanlib default contract
 (defn commit-staged
-  "Commit a captured device intent, resolving component metadata before insertion.
-   Return a completion channel for non-nil dev, or nil for nil dev. The channel's
-   yielded value is unspecified; completion also covers failed or cancelled
-   resolution. Resolution failures alert without inserting a device."
+  "Insert ready placements; rejected actions complete without replay.
+   Return a completion channel, or nil for nil input."
   [dev]
   (when dev
-    (if-let [model (:model dev)]
-      (let [epoch @placement-epoch
-            result (apply get-model-async modeldb
-                          (invocation/lookup-path (cm/model-key model) (:props dev)))]
-        (go
-          (let [model-def (<! result)]
-            (when (= epoch @placement-epoch)
-              (if (instance? js/Error model-def)
-                (cm/alert (str "Cannot place component: " (ex-message model-def)))
-                (<! (queue-resolved-placement! dev model-def epoch)))))))
-      (insert-staged! dev nil))))
+    (let [cell (::arm-result @ui)
+          ready (when (and (:model dev) cell (identical? dev (::staging @ui)))
+                  @cell)]
+      (if (and (not (::committing @ui))
+               (or (not (:model dev)) ready))
+        (insert-staged! dev ready)
+        (go nil)))))
 
 ;; @tags mosaic clipboard, editor keyboard shortcuts
 (defn transform-selected [tf]
@@ -2539,6 +2539,11 @@
           pt (get @point-index [x y])
           on-port (or (seq (:ids pt)) (seq (:body-ids pt)))]
       (cond
+        ;; A busy admission gate (a factory arm still resolving, or an accepted
+        ;; insertion settling) rejects this continuation click: keep the wire
+        ;; gesture staged for a retry instead of clearing it or advancing to a
+        ;; segment that was never committed.
+        (placement-busy?) nil
         (same-tile? dev) (do (swap! ui assoc ; the dragged wire stayed at the same tile, exit
                                     ::staging nil
                                     ::dragging nil)
@@ -2546,9 +2551,13 @@
         on-port (do (swap! ui assoc ::staging nil ::dragging nil)
                     (commit-staged dev)
                     (maybe-restore-tool!))
-        :else (do (swap! ui assoc ::dragging nil)
-                  (go (<! (commit-staged dev))
-                      (add-wire-segment [x y])))))))
+        :else (let [staged @staging]
+                (swap! ui assoc ::dragging nil)
+                (go (<! (commit-staged dev))
+                    ;; Cancellation clears ::staging; a late continuation must
+                    ;; not resurrect the wire tool or a segment it never added.
+                    (when (= staged (::staging @ui))
+                      (add-wire-segment [x y]))))))))
 
 (defn select-connected []
   (let [schem @schematic
@@ -2588,8 +2597,9 @@
    0-arity: default behavior (keep wire tool if drawing wire, else cursor)
    1-arity: switch to specified tool and clear staging
 
-   Retires in-flight placement intents so late resolution cannot insert them;
-   an already-started insertion/undo transaction is allowed to finish.
+   Retires the pending placement arm result cell so a late resolution cannot
+   insert it; an already-started insertion/undo transaction keeps its own busy
+   gate.
 
    Also resets ::delta to zero and cleans ::selected against @schematic so a
    cancelled drag (paste or move) can't leak its pointer offset onto the
@@ -2597,7 +2607,7 @@
    flows to drag-end → end-ui, which applies the stale cursor-at-Esc −
    centroid offset to the newly selected instance."
   ([]
-   (swap! placement-epoch inc)
+   (swap! ui assoc ::arm-result nil)
    (let [uiv @ui]
      (if (or (::staging uiv) (::dragging uiv) (not= (::tool uiv) ::cursor))
        (let [tool (if (and (::staging uiv) (= (::tool uiv) ::wire)) ::wire ::cursor)]
@@ -2613,7 +2623,7 @@
      ;; Escape ends a port-armed wire, so the momentary restore fires here.
      (maybe-restore-tool!)))
   ([new-tool]
-   (swap! placement-epoch inc)
+   (swap! ui assoc ::arm-result nil)
    (let [uiv @ui]
      (swap! ui assoc
             ::dragging nil
@@ -2918,7 +2928,8 @@
       (= (::dragging @ui) ::box) (drag-end-box)
       (= (::dragging @ui) ::wire)
       (let [dev (update-keys @staging #{:rx :ry} math/round)]
-        (when-not (same-tile? dev)
+        (when (and (not (same-tile? dev))
+                   (not (placement-busy?)))
           (commit-staged dev)
           (swap! ui assoc ::staging nil ::dragging nil)
           (maybe-restore-tool!)))
@@ -2927,15 +2938,26 @@
       @paste-staging (commit-paste @paste-staging dx dy)
       :else (end-ui bg? selected dx dy))))
 
-;; @tags mosaic device tray, mosaic model picker
+;; @tags mosaic device tray, mosaic model picker, factory resolution
 (defn add-device [cell [x y] & args]
   (let [kwargs (apply array-map args)
         [ox oy] (staging-origin (assoc kwargs :type cell) [x y])
         mx (math/round ox)
-        my (math/round oy)]
-    (swap! ui assoc
-           ::staging (into {:transform cm/IV, :type cell :x mx :y my} kwargs)
-           ::tool ::device)))
+        my (math/round oy)
+        dev (into {:transform cm/IV, :type cell :x mx :y my} kwargs)
+        model (:model dev)
+        ;; A fresh cell distinguishes re-arming even the same invocation.
+        result (when model (r/atom nil))]
+    (swap! ui assoc ::staging dev ::tool ::device ::arm-result result)
+    (when model
+      (take! (apply get-model-async modeldb
+                    (invocation/lookup-path (cm/model-key model) (:props dev)))
+             (fn [model-def]
+               (when (identical? result (::arm-result @ui))
+                 (if (instance? js/Error model-def)
+                   (do (swap! ui assoc ::staging nil ::tool ::cursor ::arm-result nil)
+                       (cm/alert (str "Cannot place component: " (ex-message model-def))))
+                   (reset! result model-def))))))))
 
 (defn save-url []
   (let [blob (js/Blob. #js[(prn-str @schematic)]
@@ -3837,9 +3859,11 @@
         vx (* grid-size x)
         vy (* grid-size y)]
     (cond
-      ;; Only render staging when actively placing a device or drawing a wire
+      ;; Only render staging when actively placing a device or drawing a wire.
+      ;; A pending factory arm hides its ghost entirely (busy cursor instead).
       (and v (or (= tool ::device)
-                 (= (:type v) "wire")))
+                 (= (:type v) "wire"))
+           (not (factory-pending?)))
       [:g.toolstaging
        (get-model ::bg v ::stagingbg v)
        (get-model ::sym v ::stagingsym v)
@@ -3999,7 +4023,8 @@
                            :ref watch-canvas-box!
                            :height "100%"
                            :width "100%"
-                           :class [@tool] ; for export
+                           :class (cond-> [@tool] ; for export
+                                    (placement-busy?) (conj "busy"))
                            :view-box @zoom
                            :on-wheel scroll-zoom
                            :on-pointer-down on-pointer-down-bg
@@ -4084,15 +4109,19 @@
   (set! js/document.onkeydown (partial cm/keyboard-shortcuts immediate-shortcuts))
   (rdc/render root [schematic-ui]))
 
-;; @tags factory card dragging
-(defn- on-drop [e]
+;; @tags factory card dragging, mosaic device tray, factory resolution
+(defn on-drop
+  "Arm a dropped factory; placement still requires a fresh click."
+  [e]
   (.preventDefault e)
   (.stopPropagation e)
   (let [dt (.-dataTransfer e)
         fqn (some-> (.getData dt "text/x-gfp-factory") js/JSON.parse js->clj (get "factory"))]
-    (when (seq fqn)
+    (when (and (seq fqn)
+               (not (placement-busy?)))
       (let [[x y] (cm/viewbox-coord e)]
-        (commit-staged {:type "ckt" :model fqn :transform cm/IV :x x :y y})))))
+        (add-device (staged-type "ckt" (cm/model-key fqn)) [x y]
+                    :model fqn)))))
 
 (defn ^:export init []
   (.addEventListener js/document "dragover" #(.preventDefault %))

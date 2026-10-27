@@ -389,73 +389,19 @@
             (is (= "B" (:gfp/session (get @gfp model-key))))
             (done)))))))
 
-;; @tags factory resolution, mosaic wire tool
-(deftest model-less-placement-preserves-schematic-types
-  (async done
-    (reset! platform/schematic {})
-    (reset! platform/modeldb {})
-    (reset! editor/undotree @(cm/newundotree))
-    (go
-      (doseq [dev [{:type "wire" :x 1 :y 2 :rx 3 :ry 0 :variant "d"}
-                   {:type "port" :x 5 :y 2 :variant "emitter" :name "LS1"}
-                   {:type "text" :x 7 :y 2 :name "Note"}]]
-        (<! (editor/commit-staged dev)))
-      (is (= #{"wire" "port" "text"} (set (map :type (vals @platform/schematic)))))
-      (is (= [3 0] ((juxt :rx :ry) (first (filter #(= "wire" (:type %))
-                                                (vals @platform/schematic))))))
-      (done))))
-
-;; @tags factory resolution, nyanlib default contract
-(deftest simultaneous-lookups-commit-with-separate-undo-checkpoints
-  (async done
-    (reset! platform/schematic {})
-    (reset! platform/modeldb {})
-    (reset! editor/undotree @(cm/newundotree))
-    (let [reply (promise-chan)
-          checkpoints (atom [])
-          [first second] (with-redefs [platform/get-model-async (fn [_ & _keys] reply)]
-                           [(editor/commit-staged {:type "ckt" :model "pkg.cell" :x 1 :y 2})
-                            (editor/commit-staged {:type "ckt" :model "pkg.cell" :x 4 :y 5})])]
-      (add-watch editor/undotree :serial-placement
-                 (fn [_ _ _ _] (swap! checkpoints conj (count @platform/schematic))))
-      (put! reply {:type "straight"})
-      (go
-        (<! first)
-        (<! second)
-        (is (= [1 2] @checkpoints))
-        (is (= #{[1 2] [4 5]} (set (map (juxt :x :y) (vals @platform/schematic)))))
-        (remove-watch editor/undotree :serial-placement)
-        (done)))))
-
 ;; @tags factory resolution
-(deftest cancellation-preserves-an-active-placement-transaction
+(deftest authored-and-web-models-stay-local
   (async done
-    (reset! platform/schematic {})
-    (reset! platform/modeldb {model-key {:type "straight"}})
-    (reset! editor/undotree @(cm/newundotree))
-    (let [gate (promise-chan)
-          inserted (promise-chan)
-          previous-write platform/settled-write
-          checkpoints (atom [])]
-      (set! platform/settled-write gate)
-      (add-watch platform/schematic :first-insertion (fn [_ _ _ _] (put! inserted true)))
-      (add-watch editor/undotree :cancel-placement
-                 (fn [_ _ _ _] (swap! checkpoints conj (count @platform/schematic))))
-      (let [first (editor/commit-staged {:type "ckt" :model "pkg.cell" :x 1 :y 2})]
-        (go
-          (<! inserted)
-          (editor/cancel)
-          (let [second (editor/commit-staged {:type "ckt" :model "pkg.cell" :x 4 :y 5})]
-            (<! (timeout 0))
-            (is (= 1 (count @platform/schematic)))
-            (put! gate true)
-            (<! first)
-            (<! second)
-            (is (= [1 2] @checkpoints)))
-          (set! platform/settled-write previous-write)
-          (remove-watch platform/schematic :first-insertion)
-          (remove-watch editor/undotree :cancel-placement)
-          (done))))))
+    (let [cache (r/atom {})
+          authored {:generated false :type "amp"}
+          gfp (ja/make-gfp-atom (js/JSON.stringify (clj->js {model-key authored})) cache
+                               (fn [_] (throw (js/Error. "unexpected RPC"))))
+          web (r/atom {model-key authored})]
+      (go
+        (is (= "amp" (:type (<! (ja/get-async gfp model-key)))))
+        (is (= authored (<! (ja/get-async web model-key))))
+        (is (= "amp" @(ja/gfp-cursor web [model-key :type])))
+        (done)))))
 
 ;; @tags factory resolution
 (deftest failed-lookups-stay-stable-until-a-watcher-result
@@ -473,59 +419,392 @@
         (is (= [] (:ports (<! (ja/get-async gfp model-key)))))
         (done)))))
 
+;; ---------------------------------------------------------------------------
+;; Placement readiness gate (specs/factory_resolution.md § Placement)
+;; ---------------------------------------------------------------------------
+
+;; @tags factory resolution, mosaic model picker
+(defn- pick-factory!
+  "Arm a factory-backed device through the public tray/model-picker entry point,
+   as confirming `model-id` in the library picker does, at the last canvas mouse
+   position."
+  [model-id]
+  (reset! cm/modal-content nil)
+  (editor/arm-device! {:type "ckt" :picker-type ::editor/any} [3 4])
+  ((nth @cm/modal-content 2) model-id))
+
 ;; @tags factory resolution
-(deftest authored-and-web-models-stay-local
+(defn- canvas-click []
+  #js {:button 0 :stopPropagation (fn [])})
+
+;; @tags factory resolution, factory card dragging
+(defn- drop-event
+  "A drop event carrying `fqn` in the sidebar's `text/x-gfp-factory` payload.
+   Coordinates come from `cm/viewbox-coord`, which the drop tests redef."
+  [fqn]
+  #js {:preventDefault (fn [])
+       :stopPropagation (fn [])
+       :dataTransfer #js {:getData (fn [_] (js/JSON.stringify #js {:factory fqn}))}})
+
+;; @tags factory resolution
+(defn- placement-fixture!
+  "Reset the placement surfaces for one test; `modeldb` defaults to empty."
+  ([] (placement-fixture! {}))
+  ([modeldb]
+   (reset! platform/schematic {})
+   (reset! platform/modeldb modeldb)
+   (reset! editor/undotree @(cm/newundotree))
+   (swap! editor/ui assoc
+          ::editor/staging nil ::editor/arm-result nil ::editor/committing false
+          ::editor/dragging nil ::editor/tool ::editor/cursor)))
+
+;; @tags factory resolution
+(defn- await-ready!
+  "Yield until the armed placement leaves its busy state."
+  []
+  (go (loop [n 0]
+        (when (and (editor/placement-busy?) (< n 512))
+          (<! (timeout 0))
+          (recur (inc n))))))
+
+;; @tags factory resolution
+(defn- await-undo!
+  "Yield until the undo tree satisfies `pred` — the placement's undo checkpoint."
+  [pred]
+  (go (loop [n 0]
+        (when (and (not (pred)) (< n 512))
+          (<! (timeout 0))
+          (recur (inc n))))))
+
+;; @tags factory resolution, mosaic wire tool
+(deftest model-less-placement-preserves-schematic-types
   (async done
-    (let [cache (r/atom {})
-          authored {:generated false :type "amp"}
-          gfp (ja/make-gfp-atom (js/JSON.stringify (clj->js {model-key authored})) cache
-                               (fn [_] (throw (js/Error. "unexpected RPC"))))
-          web (r/atom {model-key authored})]
+    (placement-fixture!)
+    (go
+      (doseq [dev [{:type "wire" :x 1 :y 2 :rx 3 :ry 0 :variant "d"}
+                   {:type "port" :x 5 :y 2 :variant "emitter" :name "LS1"}
+                   {:type "text" :x 7 :y 2 :name "Note"}]]
+        (<! (editor/commit-staged dev)))
+      (is (= #{"wire" "port" "text"} (set (map :type (vals @platform/schematic)))))
+      (is (= [3 0] ((juxt :rx :ry) (first (filter #(= "wire" (:type %))
+                                                (vals @platform/schematic))))))
+      (done))))
+
+;; @tags factory resolution, nyanlib default contract, mosaic model picker
+(deftest factory-placement-lifecycle
+  ;; Arming a factory resolves the selected invocation and hides the ghost until
+  ;; it lands; a pre-readiness click is rejected and never replayed; once
+  ;; resolved a fresh click places it with resolved defaults, snapped
+  ;; coordinates, an allocated name, one undo checkpoint, and no resolution
+  ;; metadata in the saved device.
+  (async done
+    (placement-fixture!)
+    (let [reply (promise-chan)]
+      (with-redefs [platform/get-model-async (fn [_ & _] reply)]
+        (swap! editor/ui assoc ::editor/mouse [5.5 8.5])
+        (pick-factory! "models:pkg.cell")
+        (is (= "pkg.cell" (:model (::editor/staging @editor/ui))))
+        (is (nil? (editor/tool-elements)) "the ghost is hidden until resolved")
+        (is (editor/placement-busy?) "the canvas shows a busy cursor until resolved")
+        (is (empty? @platform/schematic) "arming stages, it does not insert")
+        (editor/drag-end (canvas-click))
+        (is (empty? @platform/schematic) "a pre-readiness click inserts nothing"))
+      (put! reply {:generated false :name "cell" :type "straight" :symbol "straight.svg"
+                   :props [{:name "length" :default 17}
+                           {:name "width" :default 0.5}]})
       (go
-        (is (= "amp" (:type (<! (ja/get-async gfp model-key)))))
-        (is (= authored (<! (ja/get-async web model-key))))
-        (is (= "amp" @(ja/gfp-cursor web [model-key :type])))
+        (<! (await-ready!))
+        (is (not (editor/placement-busy?)) "resolution clears the busy state")
+        (is (some? (editor/tool-elements)) "the preview appears once resolved")
+        (is (empty? @platform/schematic)
+            "resolution alone inserts nothing; the rejected click is not replayed")
+        (editor/drag-end (canvas-click))
+        (<! (await-undo! #(= @platform/schematic (cm/undo-state @editor/undotree))))
+        (let [[id device] (first @platform/schematic)
+              serialized (:doc' (ja/edit-message "{}" [id] device))]
+          (is (= 1 (count @platform/schematic)) "the fresh click places exactly once")
+          (is (= [4 7] [(:x device) (:y device)]) "coordinates snap to the grid")
+          (is (= "straight" (:type device)))
+          (is (= {:length 17 :width 0.5} (:props device)) "resolved defaults merge")
+          (is (string? (:name device)) "a name is allocated at insertion")
+          (is (= @platform/schematic (cm/undo-state @editor/undotree))
+              "the undo checkpoint holds the placed device")
+          (is (not (re-find #"straight\.svg|generated" serialized))
+              "the saved device serializes no resolved-model metadata"))
         (done)))))
 
 ;; @tags factory resolution, nyanlib default contract
-(deftest placement-awaits-resolution-and-keeps-click-intent
+(deftest warm-invocation-is-immediately-placeable
+  ;; An already-resolved invocation delivers synchronously through `take!`: the
+  ;; arm never enters the busy state, so the very next click places it.
   (async done
-    (reset! platform/schematic {})
-    (reset! platform/modeldb {})
-    (reset! editor/undotree @(cm/newundotree))
+    (placement-fixture!)
+    (let [reply (promise-chan)]
+      (put! reply {:type "straight" :props [{:name "length" :default 17}]})
+      (with-redefs [platform/get-model-async (fn [_ & _] reply)]
+        (swap! editor/ui assoc ::editor/mouse [5.5 8.5])
+        (pick-factory! "models:pkg.cell")
+        (is (not (editor/placement-busy?)) "a warm arm is ready synchronously")
+        (is (some? (editor/tool-elements)) "a warm arm previews at once"))
+      (go
+        (editor/drag-end (canvas-click))
+        (<! (await-undo! #(= @platform/schematic (cm/undo-state @editor/undotree))))
+        (let [device (first (vals @platform/schematic))]
+          (is (= [4 7] [(:x device) (:y device)]))
+          (is (= {:length 17} (:props device))))
+        (done)))))
+
+;; @tags factory resolution, nyanlib default contract
+(deftest explicit-props-parameterize-the-invocation
+  ;; Arming resolves the invocation selected by the explicit props; insertion
+  ;; keeps the explicit value and fills the rest from resolved defaults.
+  (async done
+    (placement-fixture!)
     (let [reply (promise-chan)
-          checkpoints (atom 0)
-          lookup (atom nil)
-          completion (with-redefs [platform/get-model-async (fn [_ & keys] (reset! lookup keys) reply)]
-                       (editor/commit-staged {:type "ckt" :model "pkg.cell" :x 3.2 :y 8.8
-                                              :props {:length 23}}))]
-      (add-watch editor/undotree :placement (fn [_ _ _ _] (swap! checkpoints inc)))
-      (is (empty? @platform/schematic))
-      (is (= [model-key :parameterizations "{\"length\":23}"] @lookup))
-      (swap! editor/ui assoc ::editor/mouse [100 200])
+          lookup (atom nil)]
+      (with-redefs [platform/get-model-async (fn [_ & keys] (reset! lookup keys) reply)]
+        (editor/add-device "ckt" [5.5 8.5] :model "pkg.cell" :props {:length 23})
+        (is (= [model-key :parameterizations "{\"length\":23}"] @lookup)
+            "arming resolves the invocation selected by the supplied props")
+        (is (empty? @platform/schematic)))
       (put! reply {:type "straight" :props [{:name "length" :default 17}
                                             {:name "width" :default 0.5}]})
       (go
-        (<! completion)
+        (<! (await-ready!))
+        (editor/drag-end (canvas-click))
+        (<! (await-undo! #(= @platform/schematic (cm/undo-state @editor/undotree))))
         (let [device (first (vals @platform/schematic))]
           (is (= 1 (count @platform/schematic)))
-          (is (= [3 9] [(:x device) (:y device)]))
-          (is (= "straight" (:type device)))
-          (is (= {:length 23 :width 0.5} (:props device)))
-          (is (= 1 @checkpoints)))
-        (remove-watch editor/undotree :placement)
+          (is (= {:length 23 :width 0.5} (:props device))
+              "explicit props win; resolved defaults fill the rest"))
         (done)))))
 
 ;; @tags factory resolution
-(deftest escape-cancels-pending-placement
+(deftest retired-arm-reply-neither-readies-nor-alerts
+  ;; Re-arming retires the previous arm's result cell: a late success or error
+  ;; from it can neither ready nor alert for the newer selection, which places
+  ;; its own model.
   (async done
-    (reset! platform/schematic {})
-    (let [reply (promise-chan)
-          completion (with-redefs [platform/get-model-async (fn [_ & _keys] reply)]
-                       (editor/commit-staged {:type "ckt" :model "pkg.cell" :x 2 :y 3}))]
-      (editor/cancel)
+    (go
+      (doseq [[kind stale] {:success {:type "stale" :props [{:name "length" :default 1}]}
+                            :error (ex-info "worker failed" {})}]
+        (placement-fixture!)
+        (let [stale-reply (promise-chan)
+              live-reply (promise-chan)
+              replies (atom [stale-reply live-reply])]
+          (with-redefs [platform/get-model-async
+                        (fn [_ & _] (let [r (first @replies)] (swap! replies rest) r))]
+            (swap! editor/ui assoc ::editor/mouse [5.5 8.5])
+            (pick-factory! "models:pkg.cell")
+            (pick-factory! "models:pkg.other")
+            (put! stale-reply stale))
+          ;; let the dispatched stale callback run
+          (<! (timeout 0))
+          (is (editor/placement-busy?) (str kind " reply leaves the live arm pending"))
+          (is (not (re-find #"Cannot place component" (str @cm/modal-content)))
+              (str kind " reply raises no alert"))
+          (put! live-reply {:type "coupler" :props [{:name "radius" :default 9}]})
+          (<! (await-ready!))
+          (editor/drag-end (canvas-click))
+          (<! (await-undo! #(= @platform/schematic (cm/undo-state @editor/undotree))))
+          (let [device (first (vals @platform/schematic))]
+            (is (= 1 (count @platform/schematic)) (str kind " reply inserts nothing"))
+            (is (= "coupler" (:type device)) (str kind " reply: the live selection places"))
+            (is (= {:radius 9} (:props device))))))
+      (done))))
+
+;; @tags factory resolution
+(deftest cancel-before-resolution-leaves-nothing-staged
+  (async done
+    (placement-fixture!)
+    (let [reply (promise-chan)]
+      (with-redefs [platform/get-model-async (fn [_ & _] reply)]
+        (pick-factory! "models:pkg.cell")
+        (editor/cancel))
       (put! reply {:type "straight"})
       (go
-        (<! completion)
-        (is (empty? @platform/schematic))
+        (<! (await-ready!))
+        (is (empty? @platform/schematic)
+            "cancelling before resolution leaves nothing staged or inserted")
+        (is (not (editor/placement-busy?)))
+        (is (nil? (editor/tool-elements)) "cancel clears the staged ghost")
         (done)))))
+
+;; @tags factory resolution
+(deftest resolution-failure-alerts-and-leaves-a-fresh-arm-placeable
+  ;; A failed resolution alerts and clears the pending placement without arming;
+  ;; a later, resolvable arm still previews and places on a fresh click.
+  (async done
+    (placement-fixture!)
+    (let [reply (promise-chan)]
+      (with-redefs [platform/get-model-async (fn [_ & _] reply)]
+        (swap! editor/ui assoc ::editor/mouse [5.5 8.5])
+        (pick-factory! "models:pkg.cell")
+        (put! reply (ex-info "worker failed" {:key model-key})))
+      (go
+        (<! (await-ready!))
+        (is (empty? @platform/schematic) "a resolution failure inserts nothing")
+        (is (re-find #"Cannot place component" (str @cm/modal-content))
+            "resolution failure alerts")
+        (is (not (editor/placement-busy?)) "failure leaves no stuck busy state")
+        (is (nil? (editor/tool-elements)) "failure clears the pending placement")
+        (reset! platform/modeldb
+                {model-key {:generated false :name "cell" :type "straight"
+                            :props [{:name "length" :default 5}]}})
+        (pick-factory! "models:pkg.cell")
+        (<! (await-ready!))
+        (editor/drag-end (canvas-click))
+        (<! (await-undo! #(= @platform/schematic (cm/undo-state @editor/undotree))))
+        (let [device (first (vals @platform/schematic))]
+          (is (= 1 (count @platform/schematic)))
+          (is (= "straight" (:type device)) "a fresh arm is not poisoned by the failure")
+          (is (= {:length 5} (:props device))))
+        (done)))))
+
+;; @tags factory resolution
+(deftest unready-factory-commit-does-not-insert
+  ;; `commit-staged` for a factory device with no armed, resolved result cell
+  ;; completes without inserting and starts no resolution itself.
+  (async done
+    (placement-fixture!)
+    (go
+      (<! (editor/commit-staged {:type "ckt" :model "pkg.cell" :x 1 :y 2}))
+      (is (empty? @platform/schematic)
+          "a factory commit outside the armed, resolved state inserts nothing")
+      (done))))
+
+;; @tags factory resolution, mosaic model picker
+(deftest insertion-transaction-holds-its-gate-through-the-undo-checkpoint
+  ;; An accepted insertion holds a busy admission gate through its post-action
+  ;; and undo checkpoint. Intervening clicks are rejected without replay, and
+  ;; Escape or re-arming cannot release the active transaction's gate; its
+  ;; checkpoint still lands exactly once and the re-armed device places fresh.
+  (async done
+    (placement-fixture!
+     {model-key {:generated false :name "cell" :type "straight"}
+      "models:pkg.other" {:generated false :name "other" :type "coupler"}})
+    (let [gate (promise-chan)
+          previous platform/settled-write
+          checkpoints (atom 0)]
+      (set! platform/settled-write gate)
+      (add-watch editor/undotree :busy-gate (fn [_ _ _ _] (swap! checkpoints inc)))
+      (swap! editor/ui assoc ::editor/mouse [5.5 8.5])
+      (pick-factory! "models:pkg.cell")
+      (go
+        (<! (await-ready!))
+        (editor/drag-end (canvas-click))
+        (is (= 1 (count @platform/schematic)) "the accepted click inserts once")
+        (is (editor/placement-busy?) "the gate is held through settlement")
+        (editor/drag-end (canvas-click))
+        (is (= 1 (count @platform/schematic))
+            "a click during settlement is rejected, not queued")
+        (editor/cancel)
+        (is (= 1 (count @platform/schematic)) "cancel does not release the transaction")
+        (is (editor/placement-busy?) "the gate survives cancel")
+        (pick-factory! "models:pkg.other")
+        (is (editor/placement-busy?) "re-arming cannot release the settling gate")
+        (editor/drag-end (canvas-click))
+        (is (= 1 (count @platform/schematic)) "a re-armed click is rejected while settling")
+        (put! gate true)
+        (<! (await-undo! #(= @platform/schematic (cm/undo-state @editor/undotree))))
+        (is (= 1 @checkpoints) "exactly one undo checkpoint for the one insertion")
+        (is (= @platform/schematic (cm/undo-state @editor/undotree)))
+        ;; the re-armed device is still armed and places on a fresh click
+        (<! (await-ready!))
+        (editor/drag-end (canvas-click))
+        (<! (await-undo! #(and (= 2 (count @platform/schematic))
+                               (= @platform/schematic (cm/undo-state @editor/undotree)))))
+        (is (= #{"straight" "coupler"} (set (map :type (vals @platform/schematic)))))
+        (set! platform/settled-write previous)
+        (remove-watch editor/undotree :busy-gate)
+        (done)))))
+
+;; @tags factory resolution
+(deftest synchronous-insertion-failure-releases-the-gate
+  ;; A throw in the synchronous insert prep must still release the admission
+  ;; gate, or every later placement is stranded.
+  (async done
+    (placement-fixture!
+     {model-key {:generated false :name "cell" :type "straight"
+                 :props [{:name "length" :default 17}]}})
+    (swap! editor/ui assoc ::editor/mouse [5.5 8.5])
+    (pick-factory! "models:pkg.cell")
+    (go
+      (<! (await-ready!))
+      (with-redefs [cm/model-prop-defaults (fn [_] (throw (js/Error. "prep failed")))]
+        (try (editor/drag-end (canvas-click))
+             (catch :default _ nil)))
+      (is (empty? @platform/schematic) "a failed prep inserts nothing")
+      (is (not (editor/placement-busy?)) "the synchronous failure releases the gate")
+      (editor/drag-end (canvas-click))
+      (<! (await-undo! #(= @platform/schematic (cm/undo-state @editor/undotree))))
+      (is (= 1 (count @platform/schematic)) "a fresh placement succeeds after the failed one")
+      (done))))
+
+;; @tags factory resolution, factory card dragging, mosaic device tray
+(deftest external-drop-arms-and-requires-a-fresh-click
+  ;; A cold or warm factory drop arms through the readiness gate and never
+  ;; inserts on drop: cold waits for resolution, warm is ready at once, and a
+  ;; single fresh click places it.
+  (async done
+    (go
+      (doseq [warm? [false true]]
+        (placement-fixture!)
+        (let [reply (promise-chan)]
+          (when warm?
+            (put! reply {:type "straight" :props [{:name "length" :default 17}]}))
+          (with-redefs [cm/viewbox-coord (fn [_] [3 4])
+                        platform/get-model-async (fn [_ & _] reply)]
+            (editor/on-drop (drop-event "pkg.cell")))
+          (is (empty? @platform/schematic) "a drop never inserts on drop")
+          (is (= warm? (not (editor/placement-busy?)))
+              "a cold drop is busy until it resolves; a warm drop is ready")
+          (when-not warm?
+            (put! reply {:type "straight" :props [{:name "length" :default 17}]}))
+          (<! (await-ready!))
+          (is (empty? @platform/schematic) "resolution alone does not insert on drop")
+          (editor/drag-end (canvas-click))
+          (<! (await-undo! #(= @platform/schematic (cm/undo-state @editor/undotree))))
+          (let [device (first (vals @platform/schematic))]
+            (is (= 1 (count @platform/schematic)))
+            (is (= "straight" (:type device)))
+            (is (= {:length 17} (:props device))))))
+      (done))))
+
+;; @tags factory resolution, factory card dragging
+(deftest drop-during-a-busy-placement-is-rejected
+  ;; A drop is a placement action: while an arm resolves or an accepted
+  ;; insertion settles it leaves the pending selection untouched and starts no
+  ;; new arm.
+  (async done
+    (go
+      (doseq [settling? [false true]]
+        (placement-fixture!
+         (if settling? {model-key {:generated false :name "cell" :type "straight"}} {}))
+        (let [reply (promise-chan)
+              gate (promise-chan)
+              previous platform/settled-write]
+          (set! platform/settled-write gate)
+          (with-redefs [platform/get-model-async (fn [_ & _] reply)]
+            (swap! editor/ui assoc ::editor/mouse [5.5 8.5])
+            (pick-factory! "models:pkg.cell"))
+          (when settling?
+            (put! reply {:type "straight"})
+            (<! (await-ready!))
+            (editor/drag-end (canvas-click))
+            (is (= 1 (count @platform/schematic))))
+          (let [cell (::editor/arm-result @editor/ui)
+                staged (::editor/staging @editor/ui)]
+            (with-redefs [cm/viewbox-coord (fn [_] [9 9])]
+              (editor/on-drop (drop-event "pkg.other")))
+            (is (identical? cell (::editor/arm-result @editor/ui))
+                "a busy drop does not retire the active arm")
+            (is (= staged (::editor/staging @editor/ui))
+                "a busy drop leaves the staged selection untouched"))
+          (put! gate true)
+          (put! reply {:type "straight"})
+          (<! (await-ready!))
+          (is (= (if settling? 1 0) (count @platform/schematic))
+              "a busy drop inserts nothing")
+          (set! platform/settled-write previous)))
+      (done))))

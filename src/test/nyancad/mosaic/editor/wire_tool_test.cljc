@@ -23,11 +23,13 @@
    The `circle.nc` handler in `schematic-dots` is gated on `nc?` and reads the
    reactive `point-index` track, so it is covered by manual testing rather than
    a unit test here — see the manual test plan in PR.md."
-  (:require [cljs.test :refer [deftest is testing]]
+  (:require [cljs.test :refer [deftest is testing async]]
+            [cljs.core.async :refer [go <! timeout]]
             [nyancad.mosaic.test-dommatrix]
             [nyancad.mosaic.editor :as e]
             [nyancad.mosaic.editor.platform-test :as pform]))
 
+;; @tags mosaic wire tool, factory resolution
 (defn- ui-reset []
   (swap! e/ui assoc
          ::e/dragging nil
@@ -39,7 +41,9 @@
          ::e/mouse-start [0 0]
          ::e/mouse [0 0]
          ::e/tool ::e/cursor
-         ::e/prev-tool nil))
+         ::e/prev-tool nil
+         ::e/arm-result nil
+         ::e/committing false))
 
 (defn- mock-event
   "Minimal JS pointer event for port-wire-start's guards. port-wire-start
@@ -280,6 +284,62 @@
       (finally
         (reset! pform/schematic {})
         (ui-reset)))))
+
+;; ---------------------------------------------------------------------------
+;; Busy admission gate — wire gestures survive a placement transaction
+;; ---------------------------------------------------------------------------
+;;
+;; While a factory arm resolves or an accepted insertion settles, a wire gesture
+;; is rejected without clearing it or advancing to a segment never committed; a
+;; cancellation during the accepted continuation's settle is not undone by it.
+
+;; @tags factory resolution, mosaic wire tool
+(deftest wire-gesture-survives-a-busy-placement-gate
+  (doseq [[label act] [["on-port click" #(e/add-wire [1 0] false)]
+                       ["continuation click" #(e/add-wire [7 7] false)]
+                       ["pointer-up" #(e/drag-end (mock-up-event))]]]
+    (testing label
+      (try
+        (reset! pform/schematic {})
+        (ui-reset)
+        (let [staged {:type "wire" :x 5 :y 0 :rx -4 :ry 0 :variant "d"}]
+          (swap! e/ui assoc ::e/committing true
+                 ::e/tool ::e/wire ::e/prev-tool ::e/cursor
+                 ::e/staging staged ::e/dragging ::e/wire)
+          (act)
+          (is (= staged (::e/staging @e/ui)) "the wire stays staged")
+          (is (= ::e/wire (::e/dragging @e/ui)) "still dragging")
+          (is (= ::e/wire (::e/tool @e/ui)) "no tool restore while busy")
+          (is (= ::e/cursor (::e/prev-tool @e/ui)) "restore still pending")
+          (is (empty? @pform/schematic) "nothing was committed"))
+        (finally
+          (reset! pform/schematic {})
+          (ui-reset))))))
+
+;; @tags mosaic wire tool, factory resolution
+(deftest cancel-during-accepted-continuation-does-not-restore-wire
+  (testing "cancelling while the accepted segment settles is not undone by the
+            continuation re-arming the wire"
+    (async done
+      (reset! pform/schematic {})
+      (ui-reset)
+      (swap! e/ui assoc ::e/tool ::e/wire ::e/prev-tool ::e/cursor
+             ::e/staging {:type "wire" :x 5 :y 0 :rx -4 :ry 0 :variant "d"}
+             ::e/dragging ::e/wire)
+      (e/add-wire [1 0] false)   ; accepted continuation: commits, then awaits
+      (e/cancel)                 ; Escape before the continuation resumes
+      (go
+        (loop [n 0]
+          (when (and (e/placement-busy?) (< n 512))
+            (<! (timeout 0))
+            (recur (inc n))))
+        (is (nil? (::e/staging @e/ui))
+            "the cancelled wire is not resurrected by the continuation")
+        (is (nil? (::e/dragging @e/ui)) "the cancelled gesture stays gone")
+        (is (= 1 (count @pform/schematic)) "the accepted segment committed once")
+        (reset! pform/schematic {})
+        (ui-reset)
+        (done)))))
 
 ;; ---------------------------------------------------------------------------
 ;; cancel — Escape restores for port-armed wires; sticky stays ::wire
