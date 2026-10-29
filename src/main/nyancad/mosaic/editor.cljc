@@ -941,10 +941,19 @@
    pname])
 
 ;; @tags factory resolution
+(defn- component-label
+  "Use the known component name even while metadata or artwork is unavailable."
+  [model model-def]
+  (or (some (fn [value]
+              (when (and (string? value) (not (clojure.string/blank? value))) value))
+            [(:name model-def) model])
+      "?"))
+
+;; @tags factory resolution
 (defn circuit-sym-box [k v]
   (let [model (:model v)
         model-def (model-entry model (:props v))
-        model-name (or (:name model-def) model)
+        model-name (component-label model model-def)
         ports (:ports model-def)
         has-model? (and model (seq model) model-def)
         has-ports? (and has-model? (seq ports))
@@ -1001,13 +1010,13 @@
            :text-anchor "middle"
            :dominant-baseline "middle"
            :transform (counter-rotate v cx cy)}
-          (if has-model? model-name "?")]])]]))
+          model-name]])]]))
 
 ;; @tags factory resolution
 (defn circuit-sym-amplifier [k v]
   (let [model (:model v)
         model-def (model-entry model (:props v))
-        model-name (or (:name model-def) model)
+        model-name (component-label model model-def)
         ports (:ports model-def)
         has-model? (and model (seq model) model-def)
         has-ports? (and has-model? (seq ports))
@@ -1080,7 +1089,7 @@
         :text-anchor "middle"
         :dominant-baseline "middle"
         :transform (counter-rotate v cx cy)}
-       (if has-model? model-name "?")]]]))
+       model-name]]]))
 
 ;; @tags mosaic die-component, factory resolution
 (defn circuit-sym-die [k v]

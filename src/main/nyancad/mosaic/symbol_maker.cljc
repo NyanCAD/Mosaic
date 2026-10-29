@@ -124,7 +124,9 @@
     "ellipse" (let [{:strs [cx cy rx ry]} a]
                 [(- cx rx) (- cy ry) (+ cx rx) (+ cy ry)])
     "text" (let [{:strs [x y]} a]
-             [x y x y])))
+             [x y x y])
+    "image" (let [{:strs [x y width height]} a]
+              [x y (+ x width) (+ y height)])))
 
 ;; @tags mosaic symbol maker
 (defn bounds-overlap?
@@ -148,7 +150,8 @@
       "lines" (assoc shape 1 (mapv (fn [arc] (mapv (fn [[x y]] [(shift x dx) (shift y dy)]) arc)) a))
       "rect" (assoc shape 1 (move-xy a "x" "y"))
       "ellipse" (assoc shape 1 (move-xy a "cx" "cy"))
-      "text" (assoc shape 1 (move-xy a "x" "y")))))
+      "text" (assoc shape 1 (move-xy a "x" "y"))
+      "image" (assoc shape 1 (move-xy a "x" "y")))))
 
 ;; @tags mosaic symbol maker
 (defn rect-between
@@ -211,7 +214,9 @@
                     a)
       "rect" [:rect (scaled ["x" "y" "width" "height"])]
       "ellipse" [:ellipse (scaled ["cx" "cy" "rx" "ry"])]
-      "text" [:text (scaled ["x" "y"]) (str (nth shape 2 ""))])))
+      "text" [:text (scaled ["x" "y"]) (str (nth shape 2 ""))]
+      "image" [:image (assoc (scaled ["x" "y" "width" "height"])
+                              :href (get a "href") :preserveAspectRatio "none")])))
 
 ;; @tags mosaic symbol maker
 (defn symbol-css
@@ -297,6 +302,12 @@
   [v]
   (and (number? v) (js/isFinite v)))
 
+ ;; @tags mosaic symbol maker
+(defn- embedded-svg-uri? [href]
+  (when (string? href)
+    (when-let [[_ encoded] (re-matches #"data:image/svg\+xml;base64,([A-Za-z0-9+/]+={0,2})" href)]
+      (zero? (mod (count encoded) 4)))))
+
 ;; @tags mosaic symbol maker
 (defn- valid-shape?
   "True when `shape` is a well-formed element the renderer can draw: a known
@@ -319,6 +330,9 @@
                 "ellipse" (and (coords? "cx" "cy" "rx" "ry")
                                (pos? (get attrs "rx")) (pos? (get attrs "ry")))
                 "text" (and (coords? "x" "y") (string? b))
+                "image" (and (coords? "x" "y" "width" "height")
+                             (pos? (get attrs "width")) (pos? (get attrs "height"))
+                             (embedded-svg-uri? (get attrs "href")))
                 false)))))
 
 ;; @tags mosaic symbol maker
@@ -375,3 +389,41 @@
                :label {:x label-x :y label-y :anchor anchor :baseline baseline
                        :text (cm/port-display-name port)}}))
           ports)))
+
+;; @tags mosaic symbol maker
+(defn catalog-entries
+  "Filter artwork by category and case-insensitive name/keywords, then order by
+   case-insensitive name with stable catalog IDs resolving equal names."
+  [catalog query category]
+  (let [query (str/lower-case (or query ""))]
+    (->> catalog
+         (filter (fn [{:keys [name keywords] entry-category :category}]
+                   (and (or (str/blank? category) (= category entry-category))
+                        (str/includes? (str/lower-case (str name " " (str/join " " keywords))) query))))
+         (sort-by (fn [{:keys [name id]}] [(str/lower-case name) id]))
+         vec)))
+
+;; @tags mosaic symbol maker
+(defn fit-image
+  "Fit an inert embedded image into the frame, centered with its source aspect.
+   The source SVG viewBox itself preserves a nonzero source coordinate origin."
+  [[w h] {:keys [href viewBox]}]
+  (let [[_ _ sw sh] viewBox
+        scale (min (/ w sw) (/ h sh))
+        width (tidy (* sw scale)) height (tidy (* sh scale))]
+    ["image" {"x" (tidy (/ (- w width) 2)) "y" (tidy (/ (- h height) 2))
+              "width" width "height" height "href" href}]))
+
+;; @tags mosaic symbol maker
+(defn resize-image
+  "Resize an image about its opposite corner. Keep aspect unless free? (Shift),
+   and retain a minimum 0.01-grid extent without changing its embedded source."
+  [[_ {:strs [width height] :as attrs}] [ax ay] [px py] free?]
+  (let [dx (- px ax) dy (- py ay)
+        scale (max (/ (js/Math.abs dx) width) (/ (js/Math.abs dy) height)
+                   (/ 0.01 width) (/ 0.01 height))
+        [w h] (if free? [(max 0.01 (js/Math.abs dx)) (max 0.01 (js/Math.abs dy))]
+                        [(* width scale) (* height scale)])]
+    ["image" (assoc attrs "x" (tidy (if (neg? dx) (- ax w) ax))
+                          "y" (tidy (if (neg? dy) (- ay h) ay))
+                          "width" (tidy w) "height" (tidy h))]))

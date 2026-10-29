@@ -18,7 +18,8 @@
             [nyancad.mosaic.jsatom :refer [vscode request!]]
             [nyancad.mosaic.jsatom.protocol :as protocol]
             [nyancad.mosaic.common :as cm]
-            [nyancad.mosaic.symbol-maker :as sm]))
+            [nyancad.mosaic.symbol-maker :as sm]
+            [nyancad.mosaic.symbol-maker.svg :as svg]))
 
 ;; @tags mosaic symbol maker
 (defn- injected
@@ -57,17 +58,38 @@
 
 ;; --- Document model ---
 
+ ;; @tags mosaic symbol maker
+(defonce ^:private parsed-cache (atom nil))
+
+;; @tags mosaic symbol maker
+(defn- parsed-document
+  "Validate imported images once per document text change, never per pointer render."
+  [text rel-path]
+  (let [key [text rel-path]]
+    (if (= key (:key @parsed-cache))
+      (:value @parsed-cache)
+      (let [{:keys [doc background]} (sm/svg->doc text)
+            doc (or doc {:version 1 :target (sm/infer-target rel-path) :frame [1 1] :shapes []})
+            value (try
+                    {:doc (if (> (:version doc) 1) (assoc doc :shapes [])
+                            (update doc :shapes
+                                    (fn [shapes]
+                                      (mapv (fn [shape]
+                                              (if (= "image" (first shape))
+                                                (assoc-in shape [1 "href"] (:href (svg/import-data-uri (get-in shape [1 "href"]))))
+                                                shape)) shapes))))
+                     :background (not-empty background)}
+                    (catch :default error {:doc (assoc doc :shapes []) :error (.-message error)}))]
+        (reset! parsed-cache {:key key :value value})
+        value))))
+
 ;; @tags mosaic symbol maker
 (defn- model
-  "Snapshot of the open file: {:doc :background :frame}. A file without
-   symbol maker metadata becomes an empty document for its inferred target
-   with its content as a locked background. :frame is the target's current
-   frame once resolved, else the recorded one."
+  "Current v1 document and model-driven frame; imported artwork stays opaque."
   [{:keys [text rel-path geometry]}]
-  (let [{:keys [doc background]} (sm/svg->doc text)
-        doc (or doc {:version 1 :target (sm/infer-target rel-path) :frame [1 1] :shapes []})]
-    {:doc doc
-     :background (not-empty background)
+  (let [{:keys [doc background error]} (parsed-document text rel-path)]
+    {:doc doc :background background :import-error error
+     :read-only? (> (:version doc) 1)
      :frame (or (:frame geometry) (:frame doc))}))
 
 ;; @tags mosaic symbol maker
@@ -78,7 +100,9 @@
 (defn- ready?
   "True once the target's frame is known, so edits record the right frame."
   ([] (ready? @state))
-  ([s] (sm/frame-ready? (:target (:doc (model s))) (:geometry s))))
+  ([s] (let [m (model s)]
+         (and (not (:read-only? m)) (nil? (:import-error m))
+              (sm/frame-ready? (:target (:doc m)) (:geometry s))))))
 
 ;; @tags mosaic symbol maker
 (defn- commit!
@@ -91,6 +115,25 @@
           svg (sm/doc->svg (assoc doc :frame frame :shapes (vec shapes)))]
       (swap! state assoc :text svg)
       (.postMessage vscode #js{:type "edit" :text svg}))))
+
+ ;; @tags mosaic symbol maker
+(defn- insert-source! [source]
+  (try
+    (let [shape (sm/fit-image (:frame (model @state)) (svg/import-source source))
+          shapes (current-shapes)]
+      (commit! (conj shapes shape))
+      (swap! state assoc :selected #{(count shapes)} :tool :select :edit-error nil :library? false))
+    (catch :default error (swap! state assoc :edit-error (.-message error)))))
+
+;; @tags mosaic symbol maker
+(defn- import-svg! []
+  (go
+    (let [^js response (<! (request! {:type "import-symbol-svg"}))]
+      (cond
+        (.-error response) (swap! state assoc :edit-error (.-error response))
+        (aget response "cancelled") nil
+        (string? (.-content response)) (insert-source! (.-content response))
+        :else (swap! state assoc :edit-error "Could not read SVG file")))))
 
 ;; --- Target ports ---
 
@@ -297,6 +340,9 @@
         shapes (current-shapes)]
     (swap! state assoc :drag nil)
     (case kind
+      :resize (when (not= (:point drag) current)
+                (commit! (assoc (vec shapes) (:index drag)
+                                (sm/resize-image (:original drag) (:anchor drag) current (.-shiftKey e)))))
       :move (let [delta (mapv - current start)]
               (when (not= delta [0 0])
                 (commit! (map-indexed (fn [i shape]
@@ -331,7 +377,7 @@
   (let [{:keys [selected]} @state]
     (swap! state assoc :token token)
     (when (seq selected)
-      (commit! (map-indexed (fn [i shape] (if (contains? selected i) (sm/with-token shape token) shape))
+      (commit! (map-indexed (fn [i shape] (if (and (contains? selected i) (not= "image" (first shape))) (sm/with-token shape token) shape))
                             (current-shapes))))))
 
 ;; @tags mosaic symbol maker
@@ -392,6 +438,12 @@
 .symbol-maker-canvas .selection-box { fill: none; stroke: var(--color-badge); stroke-dasharray: 3 2; pointer-events: none; }
 .symbol-maker-canvas .select-box { fill: #0000001a; stroke: var(--color-badge); pointer-events: none; }
 .symbol-maker-canvas .draft { opacity: 0.6; pointer-events: none; }
+.sm-library { padding: 8px; max-height: 40%; overflow: auto; }
+.sm-library-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; }
+.sm-library-items button { display: flex; flex-direction: column; align-items: center; }
+.sm-library-items img { width: 70px; height: 60px; object-fit: contain; background: white; }
+.symbol-maker-canvas .sm-shape image { pointer-events: all; }
+.symbol-maker-canvas .sm-resize-handle { fill: var(--color-badge); cursor: nwse-resize; }
 .symbol-maker-canvas .port-overlay { pointer-events: none; }
 .symbol-maker-canvas .port-overlay polyline { fill: none; stroke: var(--canvas-stroke); stroke-width: 2; }
 .symbol-maker-canvas .port-overlay circle { fill: var(--canvas-stroke); }
@@ -424,11 +476,13 @@
 
 ;; @tags mosaic symbol maker
 (defn- displayed-shapes
-  "Shapes as currently shown, including an in-progress move."
+  "Preview image resizing or the current selection move without a document edit."
   [shapes {:keys [drag selected]}]
-  (if (= :move (:kind drag))
-    (let [delta (mapv - (:current drag) (:start drag))]
-      (map-indexed (fn [i shape] (if (contains? selected i) (sm/translate-shape shape delta) shape)) shapes))
+  (case (:kind drag)
+    :resize (assoc (vec shapes) (:index drag)
+                   (sm/resize-image (:original drag) (:anchor drag) (:current drag) (:shift? drag)))
+    :move (let [delta (mapv - (:current drag) (:start drag))]
+            (map-indexed (fn [i shape] (if (contains? selected i) (sm/translate-shape shape delta) shape)) shapes))
     shapes))
 
 ;; @tags mosaic symbol maker
@@ -455,6 +509,7 @@
       :on-pointer-down #(on-canvas-down! frame %)
       :on-pointer-move on-canvas-move!
       :on-pointer-up on-canvas-up!
+      :on-pointer-cancel #(swap! state assoc :drag nil)
       :on-double-click #(when (= :line (:tool @state)) (finish-line!))
       :on-wheel #(on-wheel! frame %)
       :on-context-menu (fn [^js e] (.preventDefault e) (cancel!))}
@@ -490,9 +545,26 @@
                 (let [[x0 y0 x1 y1] (sm/shape-bounds shape)
                       pad 0.1]
                   ^{:key i}
-                  [:rect.selection-box {:x (px (- x0 pad)) :y (px (- y0 pad))
-                                        :width (px (+ (- x1 x0) pad pad))
-                                        :height (px (+ (- y1 y0) pad pad))}]))))
+                  [:g
+                   [:rect.selection-box {:x (px (- x0 pad)) :y (px (- y0 pad))
+                                         :width (px (+ (- x1 x0) pad pad))
+                                         :height (px (+ (- y1 y0) pad pad))}]
+                   (when (= "image" (first shape))
+                     (doall
+                      (for [[label point anchor] [["top left" [x0 y0] [x1 y1]]
+                                                  ["top right" [x1 y0] [x0 y1]]
+                                                  ["bottom left" [x0 y1] [x1 y0]]
+                                                  ["bottom right" [x1 y1] [x0 y0]]]]
+                        ^{:key label}
+                        [:rect.sm-resize-handle
+                         {:aria-label (str "Resize image " label)
+                          :x (- (px (first point)) 5) :y (- (px (second point)) 5) :width 10 :height 10
+                          :on-pointer-down (fn [event]
+                                             (when (and (= :select (:tool s)) (= 0 (.-button event))
+                                                        (not (pan-gesture? event s)) (ready? s))
+                                               (.stopPropagation event)
+                                               (start-drag! event {:kind :resize :index i :original (nth (:shapes doc) i)
+                                                                   :anchor anchor :point point :current point})))}])))]))))
            shapes)
      (when-let [shape (draft-shape s)]
        [:g.draft (sm/shape-hiccup shape)])
@@ -542,6 +614,8 @@
                :aria-label "Zoom to fit"
                :on-click #(swap! state assoc :zoom nil)}
       [:> icons/ArrowsFullscreen]]
+     [:button {:aria-label "Import SVG" :disabled locked? :on-click import-svg!} "Import SVG"]
+     [:button {:aria-label "Symbol Library" :disabled locked? :on-click #(swap! state update :library? not)} "Symbol Library"]
      [:span.sm-target (str (target-label (:target doc)) " · " (first frame) "×" (second frame))]]))
 
 ;; @tags mosaic symbol maker
@@ -583,6 +657,35 @@
                          nil))
         :on-blur finish-text!}])))
 
+ ;; @tags mosaic symbol maker
+(defn- library-picker [s]
+  (when (:library? s)
+    (let [category (:library-category s)
+          entries (sm/catalog-entries (:catalog s) (:library-query s) category)]
+      [:div.sm-library
+       [:input {:aria-label "Search symbols" :placeholder "Search symbols" :value (or (:library-query s) "")
+                :on-change #(swap! state assoc :library-query (.. % -target -value))}]
+       [:select {:aria-label "Symbol category" :value (or category "")
+                 :on-change #(swap! state assoc :library-category (.. % -target -value))}
+        [:option {:value ""} "All categories"]
+        (doall (for [category (sort (set (map :category (:catalog s))))]
+                 ^{:key category} [:option {:value category} category]))]
+       (when-not (seq entries) [:p "No symbols found"])
+       (into [:div.sm-library-items]
+             (map (fn [{:keys [id name svg]}]
+                    ^{:key id} [:button {:title name :aria-label (str "Insert " name) :on-click #(insert-source! svg)}
+                                [:img {:src (str "data:image/svg+xml;base64," (cm/b64encode svg)) :alt ""}]
+                                [:span name]])) entries)])))
+
+;; @tags mosaic symbol maker
+(defn- load-catalog! []
+  (when-let [url (injected "library-catalog-url")]
+    (-> (js/fetch url)
+        (.then (fn [response] (if (.-ok response) (.json response)
+                                (throw (js/Error. "Could not load symbol library")))))
+        (.then (fn [data] (swap! state assoc :catalog (js->clj data :keywordize-keys true))))
+        (.catch (fn [error] (swap! state assoc :edit-error (.-message error)))))))
+
 ;; @tags mosaic symbol maker
 (defn- symbol-maker []
   (let [s @state
@@ -591,6 +694,9 @@
      [:style editor-css]
      [toolbar m s]
      [frame-notice m s]
+     (when (:read-only? m) [:div.sm-notice "This symbol uses an unsupported metadata version and is read-only."])
+     (when-let [error (or (:edit-error s) (:import-error m))] [:div.sm-notice {:role "alert"} error])
+     [library-picker s]
      [:div.sm-canvas-wrap
       [canvas m s]
       [text-input s]]]))
@@ -611,7 +717,8 @@
             (swap! state assoc :text text :selected #{})
             (when (not= old-target (:target (:doc (model @state))))
               (swap! state assoc :geometry nil :load-error nil)
-              (load-geometry!)))))
+              (load-geometry!)
+  (load-catalog!)))))
 
       "factory-entries"
       (apply-entries! (protocol/decode-entries (.-value data)))
@@ -628,4 +735,5 @@
   (.addEventListener js/window "keydown" on-key-down!)
   (.addEventListener js/window "keyup" on-key-up!)
   (rdc/render @root [symbol-maker])
-  (load-geometry!))
+  (load-geometry!)
+  (load-catalog!))

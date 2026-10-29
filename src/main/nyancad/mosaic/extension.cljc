@@ -222,7 +222,7 @@
 ;; @tags on-demand symbol generation
 (def ^:private ^js host-api nil)
 
-;; @tags on-demand symbol generation, mosaic livewire interop, schematic reference context
+;; @tags on-demand symbol generation, mosaic livewire interop, schematic reference context, mosaic symbol maker
 (defn setup-message-router!
   "Install a single message handler that dispatches by type.
    atom-channels: atom of map group -> channel map (read-only channels omit :enqueue-edit!)
@@ -269,6 +269,26 @@
               (<p! (.postMessage webview
                      #js{:requestId (.-requestId message)
                          :error (or (.-message e) (str e))})))))
+
+        ;; Static artwork is selected by the host, then embedded by the webview.
+        "import-symbol-svg"
+        (go
+          (try
+            (let [selection (<p! (.showOpenDialog vscode/window
+                                   #js{:canSelectMany false :canSelectFolders false
+                                       :openLabel "Import SVG" :filters #js{:SVG #js["svg"]}}))
+                  uri (when selection (aget selection 0))]
+              (if uri
+                (let [stat (<p! (.. vscode/workspace -fs (stat uri)))
+                      _ (when (> (.-size stat) 1048576) (throw (js/Error. "SVG files must be at most 1 MiB")))
+                      bytes (<p! (.. vscode/workspace -fs (readFile uri)))
+                      _ (when (> (.-length bytes) 1048576) (throw (js/Error. "SVG files must be at most 1 MiB")))
+                      content (.decode (js/TextDecoder. "utf-8" #js{:fatal true}) bytes)]
+                  (<p! (.postMessage webview #js{:requestId (.-requestId message) :content content})))
+                (<p! (.postMessage webview #js{:requestId (.-requestId message) :cancelled true}))))
+            (catch :default error
+              (<p! (.postMessage webview #js{:requestId (.-requestId message)
+                                           :error (or (.-message error) "Could not read SVG file")})))))
 
         ;; Open a file in VS Code (create if missing, use custom editor)
         "open-file"
@@ -780,7 +800,8 @@
         csp (str "default-src 'none';"
                  " style-src " (.-cspSource webview) " 'unsafe-inline';"
                  " script-src 'nonce-" nonce "' 'unsafe-eval';"
-                 " img-src " (.-cspSource webview) " data: blob:;")]
+                 " img-src " (.-cspSource webview) " data: blob:;"
+                 " connect-src " (.-cspSource webview) ";")]
     (str "<!DOCTYPE html>
 <html>
 <head>
@@ -793,6 +814,7 @@
 <body>
   <input type=\"hidden\" id=\"document\" value=\"" (js/encodeURIComponent (.getText document)) "\">
   <input type=\"hidden\" id=\"relative-path\" value=\"" (js/encodeURIComponent rel-path) "\">
+  <input type=\"hidden\" id=\"library-catalog-url\" value=\"" (out-uri "symbols/catalog.json") "\">
   <div class=\"mosaic-app mosaic-symbol-maker\"></div>
   <script nonce=\"" nonce "\" src=\"" (out-uri "shared.js") "\"></script>
   <script nonce=\"" nonce "\" src=\"" (out-uri "symbol-maker.js") "\"></script>

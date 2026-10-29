@@ -340,3 +340,68 @@
   (is (nil? (sm/polyline-shape [[0 0] [0 0]] "ink")))
   (is (= ["text" {"x" 1.5 "y" 0 "token" "ink"} "t"]
          (sm/translate-shape ["text" {"x" 1 "y" 0.5 "token" "ink"} "t"] [0.5 -0.5]))))
+
+;; @tags mosaic symbol maker
+(deftest library-results-are-alphabetical-before-and-after-filtering
+  (let [catalog [{:id "z" :name "zeta" :category "RF" :keywords ["oscillator"]}
+                 {:id "b" :name "alpha" :category "RF" :keywords ["oscillator"]}
+                 {:id "m" :name "Beta" :category "MEMS" :keywords ["oscillator"]}
+                 {:id "a" :name "Alpha" :category "RF" :keywords ["Oscillator"]}
+                 {:id "c" :name "gamma" :category "RF" :keywords ["amplifier"]}]
+        entries (resolve 'nyancad.mosaic.symbol-maker/catalog-entries)]
+    (is (some? entries) "Library has one shared filtering and alphabetical ordering contract")
+    (when entries
+      (is (= ["a" "b" "m" "c" "z"] (mapv :id (entries catalog "" nil))))
+      (is (= ["a" "b" "z"] (mapv :id (entries catalog "OSCILLATOR" "RF"))))
+      (is (= ["a" "b"] (mapv :id (entries catalog "ALPHA" "RF"))))
+      (is (empty? (entries catalog "does not exist" "RF"))))))
+
+;; @tags mosaic symbol maker
+(deftest version-one-image-shapes-roundtrip-without-presentation-port-metadata
+  (let [href "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzEwIDIwIDQwIDIwJz48cGF0aCBkPSdNMTAgMjBoNDB2MjB6Jy8+PC9zdmc+"
+        shape ["image" {"x" 0 "y" 0.5 "width" 4 "height" 2 "href" href}]
+        doc {:version 1 :target nil :frame [4 3] :shapes [shape]}
+        raw (str "<svg><metadata id=\"gfp-symbol-maker\">" (js/JSON.stringify (clj->js doc)) "</metadata></svg>")
+        parsed (:doc (sm/svg->doc raw))]
+    (is (= doc parsed))
+    (is (not (contains? parsed :port-layout)))
+    (when (seq (:shapes parsed))
+      (is (str/includes? (sm/doc->svg parsed) "<image"))
+      (is (str/includes? (sm/doc->svg parsed) "data:image/svg+xml;base64,"))
+      (is (= [0 0.5 4 2.5] (sm/shape-bounds shape)))
+      (is (= ["image" {"x" 1 "y" -0.5 "width" 4 "height" 2 "href" href}]
+             (sm/translate-shape shape [1 -1]))))))
+
+;; @tags mosaic symbol maker
+(deftest static-image-fit-and-resize-preserve-the-self-contained-source
+  (let [fit (resolve 'nyancad.mosaic.symbol-maker/fit-image)
+        resize (resolve 'nyancad.mosaic.symbol-maker/resize-image)
+        imported {:href "data:image/svg+xml;base64,PHN2Zy8+" :viewBox [10 20 40 20]}]
+    (is (some? fit))
+    (is (some? resize))
+    (when (and fit resize)
+      (let [shape (fit [4 3] imported)]
+        (is (= ["image" {"x" 0 "y" 0.5 "width" 4 "height" 2 "href" (:href imported)}] shape))
+        (is (= ["image" {"x" 0 "y" 0.5 "width" 6 "height" 3 "href" (:href imported)}]
+               (resize shape [0 0.5] [6 2] false)))
+        (is (= ["image" {"x" 0 "y" 0.5 "width" 6 "height" 1.5 "href" (:href imported)}]
+               (resize shape [0 0.5] [6 2] true)))
+        (is (= ["image" {"x" -2 "y" -0.5 "width" 6 "height" 3 "href" (:href imported)}]
+               (resize shape [4 2.5] [-2 1] false)))
+        (is (= [0.01 0.01]
+               ((juxt #(get-in % [1 "width"]) #(get-in % [1 "height"]))
+                (resize shape [0 0.5] [0 0.5] true))))))))
+
+;; @tags mosaic symbol maker
+(deftest non-self-contained-image-shapes-are-not-restored
+  (doseq [href ["https://example.com/a.svg" "file:///a.svg" "data:text/html;base64,PHNjcmlwdD4="
+                "data:image/png;base64,YQ==" "data:image/svg+xml;base64,!"]]
+    (let [data {:version 1 :target nil :frame [1 1]
+                :shapes [["image" {"x" 0 "y" 0 "width" 1 "height" 1 "href" href}]]}
+          raw (str "<svg><metadata id=\"gfp-symbol-maker\">" (js/JSON.stringify (clj->js data)) "</metadata></svg>")]
+      (is (= [] (:shapes (:doc (sm/svg->doc raw)))) href))))
+
+;; @tags mosaic symbol maker
+(deftest future-metadata-version-is-preserved-for-read-only-ui
+  (let [raw "<svg><metadata id=\"gfp-symbol-maker\">{\"version\":2,\"frame\":[1,1],\"shapes\":[]}</metadata></svg>"]
+    (is (= 2 (:version (:doc (sm/svg->doc raw)))))))
