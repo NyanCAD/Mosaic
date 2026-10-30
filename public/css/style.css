@@ -601,10 +601,16 @@ html {
     width: 100%;
 }
 
-.mosaic-libman .properties input[type="checkbox"] {
+/* Both props editors size every control to the full controls track (see the
+   `width: 100%` rules above), which is right for text/number inputs but wrong
+   for a checkbox: it stretches across the track, and — a grid item stretches
+   by default — to the height of a wrapped label's row. Pin it to its intrinsic
+   size, to the start of its cell, and to the middle of the row. */
+.mosaic-libman .properties input[type="checkbox"],
+.mosaic-editor .properties input[type="checkbox"] {
     width: auto;
     justify-self: start;
-    /* Left align checkbox within its grid cell */
+    align-self: center;
 }
 
 .mosaic-app .properties h4 {
