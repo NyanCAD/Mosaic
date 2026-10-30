@@ -611,6 +611,11 @@ html {
     width: auto;
     justify-self: start;
     align-self: center;
+    /* `.field-with-extra > :first-child` (line ~392) grows its first child, the
+       model text input, across the controls track. A checkbox in that row
+       ("Add to template" mode) wants none of it; for the grid-scoped rows above
+       this is inert. */
+    flex: none;
 }
 
 .mosaic-app .properties h4 {
