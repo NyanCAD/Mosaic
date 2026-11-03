@@ -2250,17 +2250,8 @@
   (let [pad 0.1
         pw (* bw pad) ph (* bh pad)
         cx (- bx pw) cy (- by ph)
-        cw (+ bw (* 2 pw)) ch (+ bh (* 2 ph))
-        cw (max cw grid-size) ch (max ch grid-size)
-        content-ar (/ cw ch)
-        container-ar (/ container-w container-h)]
-    (if (> container-ar content-ar)
-      (let [new-w (* ch container-ar)
-            dx (/ (- new-w cw) 2)]
-        [(- cx dx) cy new-w ch])
-      (let [new-h (/ cw container-ar)
-            dy (/ (- new-h ch) 2)]
-        [cx (- cy dy) cw new-h]))))
+        cw (max (+ bw (* 2 pw)) grid-size) ch (max (+ bh (* 2 ph)) grid-size)]
+    (cm/fit-aspect [cx cy cw ch] container-w container-h)))
 
 ;; @tags mosaic viewport zoom
 (defn zoom-to-fit []

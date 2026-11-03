@@ -82,6 +82,44 @@
       (when (str/ends-with? path ".gsch.svg")
         {:kind "nyancir" :id (subs path 0 (- (count path) (count ".svg")))}))))
 
+;; --- Viewport ---
+
+;; @tags mosaic symbol maker
+(def ^:private fit-margin
+  "Grid units of clearance the fit leaves beside the frame for port stubs and
+   labels."
+  1.5)
+
+;; @tags mosaic symbol maker
+(def ^:private canvas-span
+  "Side of the square the grid and the outside-frame shade cover, centred on
+   the viewBox: the schematic editor's grid background uses the same magnitude.
+   Large enough that a pane resized before the editor re-renders still lands on
+   grid instead of on the letterbox band."
+  (* 1000 cm/grid-size))
+
+;; @tags mosaic symbol maker
+(defn fit-viewbox
+  "ViewBox for `frame` in a `[width height]` pane of CSS pixels: the frame plus
+   `fit-margin` on each side, expanded to the pane's aspect ratio so SVG's
+   default preserveAspectRatio cannot letterbox the canvas. A nil or
+   non-positive pane keeps the frame-only box (#5493)."
+  [[w h] [pane-w pane-h]]
+  (let [margin (* fit-margin cm/grid-size)]
+    (cm/fit-aspect [(- margin) (- margin)
+                    (+ (* w cm/grid-size) margin margin)
+                    (+ (* h cm/grid-size) margin margin)]
+                   pane-w pane-h)))
+
+;; @tags mosaic symbol maker
+(defn canvas-bounds
+  "`[x y width height]` the grid and the outside-frame shade cover for a
+   viewBox: a `canvas-span` square centred on it."
+  [[vx vy vw vh]]
+  [(- (+ vx (/ vw 2)) (/ canvas-span 2))
+   (- (+ vy (/ vh 2)) (/ canvas-span 2))
+   canvas-span canvas-span])
+
 ;; --- Shapes ---
 
 ;; @tags mosaic symbol maker

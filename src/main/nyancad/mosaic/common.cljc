@@ -310,6 +310,25 @@
         tp (.matrixTransform p m)]
     [(/ (.-x tp) grid-size) (/ (.-y tp) grid-size)]))
 
+;; @tags mosaic viewport zoom, mosaic symbol maker
+(defn fit-aspect
+  "Expand `[x y w h]` along its shorter axis, centred, until it has the
+   container's aspect ratio. SVG's default preserveAspectRatio=\"xMidYMid meet\"
+   then scales the box to fill the container instead of letterboxing it, which
+   would leave a band with no background outside the viewBox. A non-positive
+   container or box size returns the box unchanged."
+  [[x y w h] container-w container-h]
+  (if (or (not (pos? container-w)) (not (pos? container-h))
+          (not (pos? w)) (not (pos? h)))
+    [x y w h]
+    (let [container-ar (/ container-w container-h)
+          box-ar (/ w h)]
+      (if (> container-ar box-ar)
+        (let [new-w (* h container-ar)]
+          [(- x (/ (- new-w w) 2)) y new-w h])
+        (let [new-h (/ w container-ar)]
+          [x (- y (/ (- new-h h) 2)) w new-h])))))
+
 (defn initial [device-type]
   (case device-type
     "resistor" "R"

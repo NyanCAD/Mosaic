@@ -4,8 +4,9 @@
 
 (ns nyancad.mosaic.symbol-maker-test
   "Contract tests for the symbol maker's pure core: the drawing frame derived
-   from model ports, grid snapping, and the self-contained SVG file format.
-   Expected values are hand-computed from specs/mosaic_symbol_maker.md."
+   from model ports, grid snapping, the canvas fit, and the self-contained SVG
+   file format. Expected values are hand-computed from
+   specs/mosaic_symbol_maker.md."
   (:require [cljs.test :refer [deftest is testing]]
             [clojure.string :as str]
             [nyancad.mosaic.test-dommatrix]
@@ -405,3 +406,41 @@
 (deftest future-metadata-version-is-preserved-for-read-only-ui
   (let [raw "<svg><metadata id=\"gfp-symbol-maker\">{\"version\":2,\"frame\":[1,1],\"shapes\":[]}</metadata></svg>"]
     (is (= 2 (:version (:doc (sm/svg->doc raw)))))))
+
+;; @tags mosaic symbol maker
+(deftest fit-viewbox-matches-the-pane-aspect
+  (testing "a wide pane widens the viewBox about the frame, which keeps its margin"
+    (let [[x y w h] (sm/fit-viewbox [2 1] [1000 400])]
+      (is (approx= 2.5 (/ w h)))
+      (is (approx= -200 x))
+      (is (approx= -75 y))
+      (is (approx= 500 w))
+      (is (approx= 200 h))))
+  (testing "a tall pane heightens it"
+    (let [[x y w h] (sm/fit-viewbox [2 1] [400 1000])]
+      (is (approx= 0.4 (/ w h)))
+      (is (approx= -75 x))
+      (is (approx= -287.5 y))
+      (is (approx= 250 w))
+      (is (approx= 625 h))))
+  (testing "the frame and its 1.5-unit margin stay inside the fitted box"
+    (doseq [pane [[1000 400] [400 1000] [250 200]]]
+      (let [[x y w h] (sm/fit-viewbox [2 1] pane)]
+        (is (<= x -75) (str "pane " pane))
+        (is (<= y -75) (str "pane " pane))
+        (is (>= (+ x w) 175) (str "pane " pane))
+        (is (>= (+ y h) 125) (str "pane " pane)))))
+  (testing "a pane that is not laid out yet keeps the frame-only box"
+    (is (= [-75 -75 250 200] (sm/fit-viewbox [2 1] nil)))
+    (is (= [-75 -75 250 200] (sm/fit-viewbox [2 1] [0 0])))))
+
+;; @tags mosaic symbol maker
+(deftest canvas-bounds-cover-the-fitted-viewbox
+  (doseq [pane [[1000 400] [400 1000] nil]]
+    (let [[vx vy vw vh] (sm/fit-viewbox [2 1] pane)
+          [gx gy gw gh] (sm/canvas-bounds [vx vy vw vh])]
+      (is (<= gx vx) (str "pane " pane))
+      (is (<= gy vy) (str "pane " pane))
+      (is (>= (+ gx gw) (+ vx vw)) (str "pane " pane))
+      (is (>= (+ gy gh) (+ vy vh)) (str "pane " pane))
+      (is (>= gw (* 10 vw)) (str "pane " pane)))))

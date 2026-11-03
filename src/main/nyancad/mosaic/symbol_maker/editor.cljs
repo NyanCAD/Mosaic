@@ -194,14 +194,22 @@
 ;; --- Viewport ---
 
 ;; @tags mosaic symbol maker
+(defn- pane-size
+  "The canvas pane in CSS pixels, or nil before the wrapper is in the DOM.
+   Symbol Maker has no resize hook, so this is read at render time and the grid
+   covers the canvas far past the viewBox: a pane resized before the next
+   re-render still lands on grid instead of on a band (#5493)."
+  []
+  (when-let [^js el (js/document.querySelector ".sm-canvas-wrap")]
+    [(.-clientWidth el) (.-clientHeight el)]))
+
+;; @tags mosaic symbol maker
 (defn- fit-zoom
   "Viewbox showing the frame plus a margin wide enough for port stubs and
-   labels."
-  [[w h]]
-  (let [g cm/grid-size
-        margin 1.5]
-    [(- (* margin g)) (- (* margin g))
-     (* (+ w margin margin) g) (* (+ h margin margin) g)]))
+   labels, expanded to the pane's aspect ratio so no band of the canvas is left
+   without background."
+  [frame]
+  (sm/fit-viewbox frame (pane-size)))
 
 ;; @tags mosaic symbol maker
 (defn- client-delta->local
@@ -500,7 +508,8 @@
 (defn- canvas
   [{:keys [doc background frame]} s]
   (let [[w h] frame
-        [vx vy vw vh :as zoom] (or (:zoom s) (fit-zoom frame))
+        zoom (or (:zoom s) (fit-zoom frame))
+        [gx gy gw gh] (sm/canvas-bounds zoom)
         {:keys [selected drag geometry]} s
         shapes (displayed-shapes (:shapes doc) s)]
     [:svg.mosaic-canvas.symbol-maker-canvas
@@ -520,9 +529,9 @@
       [:pattern#sm-major {:width cm/grid-size :height cm/grid-size :patternUnits "userSpaceOnUse"}
        [:rect {:width cm/grid-size :height cm/grid-size :fill "url(#sm-minor)"}]
        [:path.grid-major {:d (str "M " cm/grid-size " 0 L 0 0 0 " cm/grid-size)}]]]
-     [:rect {:x vx :y vy :width vw :height vh :fill "url(#sm-major)"}]
+     [:rect {:x gx :y gy :width gw :height gh :fill "url(#sm-major)"}]
      [:path.outside {:fill-rule "evenodd"
-                     :d (str "M " vx " " vy " h " vw " v " vh " h " (- vw) " Z "
+                     :d (str "M " gx " " gy " h " gw " v " gh " h " (- gw) " Z "
                              "M 0 0 h " (px w) " v " (px h) " h " (- (px w)) " Z")}]
      [:rect.frame {:x 0 :y 0 :width (px w) :height (px h)}]
      (when background
