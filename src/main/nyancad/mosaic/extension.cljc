@@ -792,7 +792,10 @@
 (defn- get-symbol-html
   "Generate webview HTML for the symbol maker. `rel-path` is the document's
    workspace-relative path, used to infer the target of a file without
-   symbol maker metadata."
+   symbol maker metadata. Every injected hidden value is percent-encoded for
+   the webview's one `decodeURIComponent`, including the catalog URL: its
+   `.asWebviewUri` result is already percent-encoded, so encoding it again
+   keeps an installation path containing `#` or `?` out of the URL fragment."
   [^js document ^js webview rel-path]
   (let [out-uri (fn [file]
                   (.asWebviewUri webview (uri-join bundle-uri file)))
@@ -814,7 +817,7 @@
 <body>
   <input type=\"hidden\" id=\"document\" value=\"" (js/encodeURIComponent (.getText document)) "\">
   <input type=\"hidden\" id=\"relative-path\" value=\"" (js/encodeURIComponent rel-path) "\">
-  <input type=\"hidden\" id=\"library-catalog-url\" value=\"" (out-uri "symbols/catalog.json") "\">
+  <input type=\"hidden\" id=\"library-catalog-url\" value=\"" (js/encodeURIComponent (str (out-uri "symbols/catalog.json"))) "\">
   <div class=\"mosaic-app mosaic-symbol-maker\"></div>
   <script nonce=\"" nonce "\" src=\"" (out-uri "shared.js") "\"></script>
   <script nonce=\"" nonce "\" src=\"" (out-uri "symbol-maker.js") "\"></script>

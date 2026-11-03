@@ -5,8 +5,12 @@
 (ns nyancad.mosaic.extension-test
   "Message-router contract for `read-file`: an absolute packaged symbol path is
    read verbatim, while relative names still resolve against the workspace
-   root. See specs/on_demand_symbol_generation.md (Mosaic Bridge)."
+   root. Also the injection contract for the symbol maker: every hidden input
+   the webview reads through `injected` is written percent-encoded by the host.
+   See specs/on_demand_symbol_generation.md (Mosaic Bridge) and
+   specs/mosaic_symbol_maker.md."
   (:require [cljs.test :refer [deftest is testing async]]
+            [clojure.string :as str]
             ["vscode" :as vscode]
             [nyancad.mosaic.extension :as ext]))
 
@@ -148,3 +152,58 @@
          (is (= [["/workspace/schematics/amp.gsch.svg" "<svg>preview</svg>"]]
                 writes)))
        done))))
+
+;; @tags mosaic symbol maker
+(defn- as-webview-uri
+  "Percent-encode a filesystem path the way VS Code's `asWebviewUri` does: file
+   path segments are escaped, so a `#` or `?` in the installation directory
+   surfaces as `%23` / `%3F` instead of becoming a URI fragment or query."
+  [path]
+  (str "vscode-webview://test"
+       (str/join "/" (map js/encodeURIComponent (str/split path #"/")))))
+
+;; @tags mosaic symbol maker
+(defn- symbol-maker-webview
+  "VS Code stand-in for the symbol maker's webview. `asWebviewUri` behaves like
+   the real host's — see `as-webview-uri` — and `installation` stands in for the
+   extension's installation directory, here one containing a `#`, the case a
+   second decode truncates."
+  [installation]
+  (let [uris (atom [])]
+    {:webview #js{:asWebviewUri
+                  (fn [^js uri]
+                    (let [url (as-webview-uri
+                               (str installation
+                                    "/"
+                                    (str/join
+                                     "/"
+                                     (take-last 2 (str/split (.-path uri)
+                                                             #"/")))))]
+                      (swap! uris conj url)
+                      url))
+                  :cspSource "vscode-webview://test"}
+     :uris uris}))
+
+;; @tags mosaic symbol maker
+(defn- hidden-input
+  "Raw `value` attribute of the hidden input `id` in injected webview HTML."
+  [html id]
+  (second (re-find (re-pattern (str "id=\"" id "\" value=\"([^\"]*)\"")) html)))
+
+;; @tags mosaic symbol maker
+(deftest symbol-maker-injects-the-catalog-url-encoded-once
+  (testing "the webview's single decode reproduces the host's webview URI exactly"
+    (let [{:keys [webview uris]} (symbol-maker-webview
+                                  "/home/user/extensions#test/mosaic/out")
+          html (#'ext/get-symbol-html #js{:getText (fn [] "<svg/>")}
+                                      webview "symbols/test.svg")
+          host-url (some #(when (str/includes? % "catalog.json") %)
+                         @uris)
+          injected (hidden-input html "library-catalog-url")]
+      (is (str/includes? host-url "%23")
+          "the fixture exercises a percent-escaped installation path")
+      (is (= (js/encodeURIComponent host-url) injected)
+          "the host percent-encodes the injection, as its sibling inputs do")
+      (is (= host-url (js/decodeURIComponent injected))
+          "decoding the injected value once — what `injected` does — yields the
+           host's URI unchanged, so `#` cannot truncate the catalog request"))))
