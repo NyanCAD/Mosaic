@@ -78,8 +78,7 @@
            #(edit-url model-id)))
        (fn [model-id]
          #(model-context-menu % db model-id))
-       #(when-not (some #{%} @selcat)
-          (swap! selcat conj %))]]
+       #(cm/add-tag! selcat %)]]
 
      ;; Available models section (platform-specific: web shows remote DB, VS Code is no-op)
      [remote-models-section selcat filter-text]]))
@@ -224,12 +223,7 @@
       [:div.models-header
        [:h2 "Models: "
         (if (seq @selcat)
-          (for [tag @selcat]
-            [:span.tag-badge.active
-             {:key tag
-              :class (when (cm/parse-prop-tag tag) "prop-tag")
-              :on-click #(swap! selcat (fn [v] (vec (remove #{tag} v))))}
-             tag " \u00d7"])
+          [cm/selected-tag-badges selcat]
           "All models")]
        [cm/dbfield :input {:type "text" :placeholder "Filter models..." :class "filter-input"}
         filter-text identity reset!]]

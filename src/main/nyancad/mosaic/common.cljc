@@ -783,6 +783,51 @@
                 (and tags-match props-match name-match)))
             models)))
 
+(defn add-tag!
+  "Add tag to selected-atom unless it is already selected.
+   The tag-badge click handler, shared between libman's model list and the
+   editor's model picker."
+  [selected-atom tag]
+  (swap! selected-atom (fn [v] (if (some #{tag} v) v (conj v tag)))))
+
+(defn selected-tag-badges
+  "Render every tag in selected-atom as a chip; clicking one removes it.
+   Shared between libman's header and the editor's model picker. This is the
+   only affordance that reaches all selected tags: the tag tree covers just
+   the first two tags of the models it was built from, and row badges exist
+   only while rows are visible, so a tag can otherwise filter the list
+   invisibly with no way to clear it. Callers own the empty-selection
+   fallback."
+  [selected-atom]
+  [:<>
+   (doall (for [tag @selected-atom]
+            [:span.tag-badge.active
+             {:key tag
+              :class (when (parse-prop-tag tag) "prop-tag")
+              :on-click #(swap! selected-atom (fn [v] (vec (remove #{tag} v))))}
+             tag " ×"]))])
+
+(defn model-row-content
+  "Shared row content for model lists — the libman radio rows and the
+   editor's model picker rows: schematic/code icon, display name, and tag
+   badges (the type badge plus tags beyond the first two, which form the
+   tag tree). on-tag-click, when given, makes badges clickable filters."
+  [model model-id on-tag-click]
+  (let [schem? (not (has-code-models? model))
+        icon (if schem? schemmodel codemodel)
+        type-badge (str "type:" (:type model "ckt"))
+        extra-tags (drop 2 (:tags model))
+        all-badges (cons type-badge extra-tags)]
+    [:span [icon] " " (get model :name model-id)
+     (for [tag all-badges]
+       [:span.tag-badge {:key tag
+                         :class [(when (parse-prop-tag tag) "prop-tag")
+                                 (when on-tag-click "clickable")]
+                         :on-click (when on-tag-click
+                                     #(do (.stopPropagation %)
+                                          (on-tag-click tag)))}
+        tag])]))
+
 (defn model-list
   "Render a list of models as radio buttons.
    selected-atom: atom holding selected model id
@@ -796,21 +841,8 @@
   ([selected-atom models on-dblclick on-contextmenu on-tag-click]
    (if (seq models)
      [radiobuttons selected-atom
-      (doall (for [[model-id model] models
-                   :let [schem? (not (has-code-models? model))
-                         icon (if schem? schemmodel codemodel)
-                         type-badge (str "type:" (:type model "ckt"))
-                         extra-tags (drop 2 (:tags model))
-                         all-badges (cons type-badge extra-tags)]]
-               [[:span [icon] " " (get model :name model-id)
-                 (for [tag all-badges]
-                   [:span.tag-badge {:key tag
-                                     :class [(when (parse-prop-tag tag) "prop-tag")
-                                             (when on-tag-click "clickable")]
-                                     :on-click (when on-tag-click
-                                                 #(do (.stopPropagation %)
-                                                      (on-tag-click tag)))}
-                    tag])]
+      (doall (for [[model-id model] models]
+               [[model-row-content model model-id on-tag-click]
                 model-id
                 (get model :name model-id)]))
       on-dblclick
