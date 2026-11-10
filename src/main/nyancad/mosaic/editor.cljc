@@ -1287,7 +1287,7 @@
 ;; spec for when to deref this track vs. call the builder directly.
 (def point-index (r/track #(build-point-index @schematic)))
 
-;; --- Alt-drag connectivity: stretch wires attached to dragged devices ----
+;; --- Ctrl-drag connectivity: stretch wires attached to dragged devices ----
 
 (defn connected-wire-ends
   "{wire-id -> #{:start :end}}: non-selected wires whose endpoint sits on a

@@ -1112,6 +1112,7 @@
       [[wire] "W" "Wire"]
       [[eraser] "E" "Eraser"]
       [[move] "Space" "Pan (hold)"]
+      [[move] "Ctrl+Drag" "Move, keeping wires attached"]
       [[rotatecw] "S" "Spin CW"]
       [[rotateccw] "Shift+S" "Spin CCW"]
       [[mirror-vertical] "F" "Flip X"]
