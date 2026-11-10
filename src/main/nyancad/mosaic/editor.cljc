@@ -3076,6 +3076,14 @@
               :on-click #(delete-selected)}
           [cm/delete]]]]])))
 
+(defn gesture-active?
+  "True while the user is dragging something or placing a staged device, wire
+   or paste. Floating panels use this to stop catching the pointer, so a panel
+   that opens under the cursor (selecting a device selects it into the sidebar)
+   cannot swallow the drop."
+  [uiv]
+  (boolean (or (::dragging uiv) (::staging uiv) (::paste-staging uiv))))
+
 (defn schematic-ui []
   [:div.mosaic-container (theme-attrs)
    [:div.menu.chrome.chrome-float
@@ -3085,7 +3093,7 @@
      [:div.devicetray.chrome.chrome-float
       [device-tray]]
      (when-let [sel (seq @selected)]
-       [:div.sidebar
+       [:div.sidebar {:class (when (gesture-active? @ui) "passthrough")}
         (doall (for [key sel]
                  ^{:key key} [deviceprops key]))])
      [:svg.mosaic-canvas (merge (theme-attrs)

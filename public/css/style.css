@@ -845,6 +845,13 @@ html {
     box-sizing: border-box;
 }
 
+/* While a drag or placement is in progress the panel stops catching the pointer,
+   so a drop under it still reaches the canvas. Dimmed to show it is inert. */
+.mosaic-container .sidebar.passthrough {
+    pointer-events: none;
+    opacity: 0.4;
+}
+
 .mosaic-container .sidebar h1 {
     background-color: var(--color-accent);
     color: var(--color-accent-text);
