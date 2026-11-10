@@ -2117,7 +2117,15 @@
 
 ;; Pointer event handlers for touch/stylus support
 
+(defn suppress-middle-default!
+  "Cancel the browser default of a middle-button press, which also suppresses
+   the compatibility mousedown so Firefox/Chrome autoscroll never starts."
+  [e]
+  (when (= (.-button e) 1)
+    (.preventDefault e)))
+
 (defn on-pointer-down-bg [e]
+  (suppress-middle-default! e)
   (let [id (.-pointerId e)
         entry {:x (.-clientX e) :y (.-clientY e)}]
     ;; Update double-click tracking state (consumed by element handler)
@@ -2175,6 +2183,7 @@
 
 (defn on-pointer-down-element [k e]
   (.stopPropagation e)
+  (suppress-middle-default! e)
   (let [id (.-pointerId e)
         entry {:x (.-clientX e) :y (.-clientY e)}
         paste? (some? @paste-staging)
