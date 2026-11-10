@@ -676,8 +676,7 @@
 (def download (r/adapt-react-class icons/Download))
 (def sync-active (r/adapt-react-class icons/ArrowRepeat))
 (def sync-done (r/adapt-react-class icons/Check))
-(def text (r/adapt-react-class icons/Paragraph))
-(def namei (r/adapt-react-class icons/Fonts))
+(def text-annotation-icon (r/adapt-react-class icons/TextLeft))
 (def edit (r/adapt-react-class icons/PencilSquare))
 (def help (r/adapt-react-class icons/QuestionCircle))
 (def external-link (r/adapt-react-class icons/BoxArrowUpRight))
@@ -1083,6 +1082,7 @@
                "npn" (rc/inline "icons/npn.svg")
                "pnp" (rc/inline "icons/pnp.svg")
                "port" (rc/inline "icons/port.svg")
+               "port-label" (rc/inline "icons/port-label.svg")
                "ground" (rc/inline "icons/ground.svg")
                "supply" (rc/inline "icons/supply.svg")
                "straight" (rc/inline "icons/straight.svg")
@@ -1190,7 +1190,8 @@
       [[mirror-horizontal] "Shift+F" "Flip Y"]
       [[delete] "Del" "Delete"]
       [[zoom-in] "Scroll" "Zoom"]
-      [[text] "T" "Text"]
+      [[text-annotation-icon] "T" "Text annotation"]
+      [[device-icon "port-label"] "Shift+T" "Port label"]
       [[zoom-fit] "Home" "Zoom to fit"]]]
 
     [shortcut-table "Actions"

@@ -2769,10 +2769,10 @@
               :class (device-active "port" nil)
               :on-pointer-up #(add-device "port" (cm/viewbox-coord %))}
      [cm/device-icon "port"]]
-    [:button {:title "Add wire label [t]"
+    [:button {:title "Add wire label [shift+t]"
               :class (device-active "port" "text")
               :on-pointer-up #(add-label (cm/viewbox-coord %))}
-     [cm/namei]]
+     [cm/device-icon "port-label"]]
     [:button {:title "Add ground [g]"
               :class (device-active "port" "ground")
               :on-pointer-up #(add-gnd (cm/viewbox-coord %))}
@@ -2781,10 +2781,10 @@
               :class (device-active "port" "supply")
               :on-pointer-up #(add-supply (cm/viewbox-coord %))}
      [cm/device-icon "supply"]]
-    [:button {:title "Add text area [shift+t]"
+    [:button {:title "Add text area [t]"
               :class (device-active "text")
               :on-pointer-up #(add-device "text" (cm/viewbox-coord %))}
-     [cm/text]]]
+     [cm/text-annotation-icon]]]
    [:button {:title "Add resistor [r]"
              :class (device-active "resistor")
              :on-pointer-up #(add-device "resistor" (cm/viewbox-coord %))}
