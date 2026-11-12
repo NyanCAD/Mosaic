@@ -603,6 +603,7 @@
      "ring-single"     (lr (p :left 1) (p :right 2))
      "ring-double"     (lr (p :left 1) (p :left 3) (p :right 2) (p :right 4))
      "coupler"         (lr (p :left 1) (p :left 3) (p :right 2) (p :right 4))
+     "coupler-ring"    (lr (p :left 1) (p :top 2) (p :top 3) (p :right 4))
      "splitter-1x2"    (lr (p :left 1) (p :right 2) (p :right 3))
      "mmi-1x2"         (lr (p :left 1) (p :right 2) (p :right 3))
      "mzi-1x2"         (lr (p :left 1) (p :right 2) (p :right 3))
