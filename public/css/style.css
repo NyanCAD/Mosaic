@@ -1252,6 +1252,14 @@ rect.select {
     cursor: url(icons/eraser.svg) 6 14, crosshair;
 }
 
+/* Port dots advertise the port-press wire gesture with the wire tool's
+   pencil — scoped to the cursor tool, the only state in which the dots'
+   pointer-down handler acts (see specs/mosaic_wire_tool.md §Port dots). */
+.mosaic-canvas.cursor circle.port,
+.mosaic-canvas.cursor circle.nc {
+    cursor: url(icons/pencil.svg) 0 16, crosshair;
+}
+
 /* Propagate effective color-scheme to :root so <html>'s UA-default
    background matches the theme. VS Code applies .vscode-dark/.vscode-light
    to <body> only, which leaves <html>'s default bg tied to the OS
@@ -1274,6 +1282,8 @@ rect.select {
     .mosaic-canvas.probe { cursor: url(icons/search-light.svg) 5 5, crosshair; }
     .mosaic-canvas.eraser .wire:hover,
     .mosaic-canvas.eraser .device { cursor: url(icons/eraser-light.svg) 6 14, crosshair; }
+    .mosaic-canvas.cursor circle.port,
+    .mosaic-canvas.cursor circle.nc { cursor: url(icons/pencil-light.svg) 0 16, crosshair; }
 }
 .dark-cursors .mosaic-canvas.pan,
 .vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.pan { cursor: url(icons/arrows-move-light.svg) 6 0, grab; }
@@ -1285,6 +1295,10 @@ rect.select {
 .dark-cursors .mosaic-canvas.eraser .device,
 .vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.eraser .wire:hover,
 .vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.eraser .device { cursor: url(icons/eraser-light.svg) 6 14, crosshair; }
+.dark-cursors .mosaic-canvas.cursor circle.port,
+.dark-cursors .mosaic-canvas.cursor circle.nc,
+.vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.cursor circle.port,
+.vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.cursor circle.nc { cursor: url(icons/pencil-light.svg) 0 16, crosshair; }
 
 body.vscode-dark,
 body.vscode-light {
@@ -1419,7 +1433,7 @@ g.device.selected path {
 }
 
 circle.nc {
-    fill: none;
+    fill: transparent;
     stroke: var(--canvas-nc);
     stroke-dasharray: 1 4;
 }
