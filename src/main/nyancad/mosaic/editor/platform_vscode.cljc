@@ -18,16 +18,21 @@
 
 (def group (.-value (js/document.getElementById "group")))
 (defonce schematic (json-atom "schematic"
-                    (js/decodeURIComponent (.-value (js/document.getElementById "document")))
-                    (r/atom {})
-                    (injected-version "document-version")))
-(set-validator! schematic
-                #(or (s/valid? :nyancad.mosaic.common/schematic %) (.log js/console (pr-str %) (s/explain-str :nyancad.mosaic.common/schematic %))))
+                     (js/decodeURIComponent (.-value (js/document.getElementById "document")))
+                     (r/atom {})
+                     (injected-version "document-version")))
+;; ClojureScript's set-validator! does not re-validate the current value, so
+;; check the initial document here: if it is invalid, clear the cache so no
+;; invalid data sits in it. The validator's cm/alert side effect fires on the
+;; check, so the user is told.
+(let [v #(or (s/valid? :nyancad.mosaic.common/schematic %) (cm/alert (s/explain-str :nyancad.mosaic.common/schematic %)))]
+  (when-not (v @schematic) (reset! (.-cache schematic) {}))
+  (set-validator! schematic v))
 ;; Secondary modeldb atom — initialized from models.nyanlib injected by extension
 (defonce modeldb (json-atom "models"
-                   (js/decodeURIComponent (.-value (js/document.getElementById "models")))
-                   (r/atom {})
-                   (injected-version "models-version")))
+                    (js/decodeURIComponent (.-value (js/document.getElementById "models")))
+                    (r/atom {})
+                    (injected-version "models-version")))
 (defonce snapshots (r/atom {}))
 (defonce simulations (r/atom (sorted-map)))
 (defonce local (r/atom {}))

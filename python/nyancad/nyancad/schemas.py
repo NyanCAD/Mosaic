@@ -304,6 +304,11 @@ class ModelMetadata(BaseModel):
     symbol: str | None = Field(
         None, description="URL to image rendered inside the schematic symbol"
     )
+    artwork_transform: tuple[float, float, float, float, float, float] | None = Field(
+        None,
+        alias="artwork-transform",
+        description="Six-number matrix applied only to built-in schematic artwork",
+    )
 
 
 # Discriminated union - Pydantic routes to Wire or Component based on 'type' field

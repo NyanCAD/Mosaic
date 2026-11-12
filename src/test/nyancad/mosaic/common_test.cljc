@@ -10,7 +10,40 @@
    are hand-computed from the contract — not copied from the current CLJS
    output."
   (:require [cljs.test :refer [deftest is testing]]
+            [nyancad.mosaic.test-dommatrix]
             [nyancad.mosaic.common :as cm]))
+
+;; ---------------------------------------------------------------------------
+;; Radio groups
+;; ---------------------------------------------------------------------------
+
+(deftest radiobuttons-expose-group-and-accessible-names
+  (let [selected (atom :alpha)
+        view (cm/radiobuttons "test-group" selected
+                              [["Alpha" :alpha "Choose alpha"]
+                               ["Beta" :beta "Choose beta"]])
+        inputs (map #(nth % 2) (second view))
+        attrs (map second inputs)]
+    (testing "every option belongs to the explicit named group"
+      (is (= ["test-group" "test-group"] (map :name attrs))))
+    (testing "tooltips provide concise accessible names"
+      (is (= ["Choose alpha" "Choose beta"] (map :aria-label attrs))))
+    (testing "the selected value controls checked state"
+      (is (= [true false] (map :checked attrs))))
+    (testing "the default handler updates the cursor"
+      ((:on-change (second attrs)) nil)
+      (is (= :beta @selected)))))
+
+(deftest radiobuttons-delegate-custom-change-handler
+  (let [selected (atom :alpha)
+        changed (atom nil)
+        view (cm/radiobuttons "test-group" selected
+                              [["Beta" :beta "Choose beta"]]
+                              nil nil #(reset! changed %))
+        attrs (-> view second first (nth 2) second)]
+    ((:on-change attrs) nil)
+    (is (= :beta @changed))
+    (is (= :alpha @selected) "custom handlers own the state update")))
 
 ;; ---------------------------------------------------------------------------
 ;; Sorted coord list — bisect-left, insert, dissjoc, set-coord, remove-coord,
@@ -380,6 +413,97 @@
     (let [matched (into {} (cm/filter-models sample-models ["analog"] "nmos"))]
       (is (= #{"models:nmos-ihp"} (set (keys matched)))))))
 
+;; Contract (filter-models ordering): with non-empty search text, matches are
+;; ranked best-first by match class — exact name (case-insensitive), then name
+;; prefix, then word-boundary (the query starts right after `_` or `-`), then
+;; plain substring — with ties broken by shorter name first, then
+;; alphabetically (case-insensitive). With no search text, iteration order is
+;; preserved: ranking is a property of search results.
+
+;; @tags mosaic model picker
+(def ^:private rank-sample-models
+  ;; Array-map: insertion order is the expected no-search order.
+  {"models:m.bondEPI_EAM_ch3" {:name "bondEPI_EAM_ch3" :type "ckt"}
+   "models:m.o_cwdm_100G_EAM_ch0" {:name "o_cwdm_100G_EAM_ch0_1271nm_high_ind_term"
+                                   :type "ckt"}
+   "models:m.SEAM_ch0" {:name "SEAM_ch0" :type "ckt"}
+   "models:m._EAM" {:name "_EAM" :type "ckt"}
+   "models:m.EAM_ch0" {:name "EAM_ch0" :type "ckt"}
+   "models:m.EAM" {:name "EAM" :type "ckt"}
+   "models:m.SS-EAM" {:name "SS-EAM" :type "ckt"}})
+
+;; @tags mosaic model picker
+(deftest filter-models-ranks-by-match-class
+  (testing "exact beats prefix beats word-boundary (after _ or -) beats substring"
+    (let [names (map (fn [[_ m]] (:name m))
+                     (cm/filter-models rank-sample-models [] "eam"))]
+      (is (= ["EAM"                                    ; exact, case-insensitive
+              "EAM_ch0"                                ; prefix
+              "_EAM"                                   ; word-boundary, shortest name
+              "SS-EAM"                                 ; word-boundary after -
+              "bondEPI_EAM_ch3"                        ; word-boundary, longer
+              "o_cwdm_100G_EAM_ch0_1271nm_high_ind_term"
+              "SEAM_ch0"]                               ; plain substring
+             names))))
+  (testing "an uppercase query ranks the same"
+    (let [names (map (fn [[_ m]] (:name m))
+                     (cm/filter-models rank-sample-models [] "EAM"))]
+      (is (= "EAM" (first names))))))
+
+;; @tags mosaic model picker
+(deftest filter-models-ties-alphabetical-within-class
+  (let [models {"models:m.q_EAM" {:name "q_EAM"}
+                "models:m.b_EAM" {:name "b_EAM"}}]
+    (is (= ["b_EAM" "q_EAM"]
+           (map (fn [[_ m]] (:name m)) (cm/filter-models models [] "eam"))))))
+
+;; @tags mosaic model picker
+(deftest filter-models-prefix-ties-on-name-length
+  (let [models {"models:m.EAM_longer" {:name "EAM_longer"}
+                "models:m.EAM_x" {:name "EAM_x"}}]
+    (is (= ["EAM_x" "EAM_longer"]
+           (map (fn [[_ m]] (:name m)) (cm/filter-models models [] "EAM"))))))
+
+;; @tags mosaic model picker
+(deftest filter-models-no-search-text-keeps-iteration-order
+  (is (= (vec rank-sample-models)
+         (vec (cm/filter-models rank-sample-models [] "")))))
+
+;; Contract (model-search-rank): 0 exact (case-insensitive), 1 prefix,
+;; 2 word-boundary (query starts right after `_` or `-`), 3 substring, nil no
+;; match; an empty query ranks 0 — everything matches.
+
+;; @tags mosaic model picker
+(deftest model-search-rank-classes
+  (is (= 0 (cm/model-search-rank "EAM" "eam")) "exact, case-insensitive")
+  (is (= 1 (cm/model-search-rank "EAM_ch3" "eam")) "prefix")
+  (is (= 2 (cm/model-search-rank "bondEPI_EAM" "eam")) "word-boundary after _")
+  (is (= 2 (cm/model-search-rank "SS-EAM" "eam")) "word-boundary after -")
+  (is (= 3 (cm/model-search-rank "SEAM" "eam")) "plain substring")
+  (is (nil? (cm/model-search-rank "WG" "eam")) "no match")
+  (is (= 0 (cm/model-search-rank "anything" "")) "empty query matches all")
+  (is (nil? (cm/model-search-rank "ab" "abc")) "query longer than name")
+  (is (nil? (cm/model-search-rank "" "a")) "empty name never matches"))
+
+;; @tags mosaic model picker
+(deftest model-search-rank-scanning-occurrences
+  (is (= 2 (cm/model-search-rank "xEAM_EAM" "eam"))
+      "a later occurrence after a boundary outranks the earlier substring")
+  (is (= 3 (cm/model-search-rank "xEAMxEAM" "eam"))
+      "repeated occurrences with no boundary stay plain substrings"))
+
+;; Contract (private-cell?): true iff the display name (falling back to the
+;; id, exactly as filter-models reads it) starts with `_` — the gdsfactory
+;; private-cell convention. A display-only predicate: pickers may hide these
+;; entries from their lists; resolution never filters on it (#1139, #1182,
+;; #1059).
+
+;; @tags mosaic model picker
+(deftest private-cell-is-underscore-prefixed-name
+  (is (true? (cm/private-cell? ["models:m._EAM" {:name "_EAM"}])))
+  (is (false? (cm/private-cell? ["models:m.EAM" {:name "EAM"}])))
+  (is (false? (cm/private-cell? ["models:m.a_b" {:name "a_b"}]))))
+
 ;; Contract (build-tag-index): produce a two-level hierarchy from the first
 ;; two tags of each model. The result is `{first-tag {second-tag {}}}`.
 ;; Models with no tags don't appear.
@@ -484,3 +608,210 @@
       ;; After fully redoing, the current state should be the last one we did.
       ;; Peek via undo-state (or an extra redo stays put):
       (is (= {:x 3} (cm/redo ut))))))
+
+;; ---------------------------------------------------------------------------
+;; World-frame flips — flip-x, flip-y
+;; ---------------------------------------------------------------------------
+;;
+;; Contract: `flip-x`/`flip-y` mirror a transform about the screen's
+;; vertical/horizontal axis by *pre-multiplying* the reflection, so the flip
+;; axis does not "rotate" with the device. A rotation of 90° is the matrix
+;; [0 1 -1 0 0 0]; a local-frame (post-multiply) flip of that rotation would
+;; give [0 -1 -1 0 0 0], which these tests reject. `flip-x`/`flip-y`/`rotate-cw`
+;; operate on DOMMatrix values; `via-mat` threads a `[a b c d e f]` vector
+;; through a DOMMatrix and back via `cm/transform-vec` so the assertions read in
+;; transform-vector form.
+
+(defn- via-mat [mat-fn v]
+  (cm/transform-vec (mat-fn (js/DOMMatrixReadOnly. (clj->js v)))))
+
+(deftest flip-x-mirrors-about-vertical-axis
+  (testing "identity flips to diag(-1, 1)"
+    (is (= [-1 0 0 1 0 0] (via-mat cm/flip-x [1 0 0 1 0 0]))))
+  (testing "pre-multiplies (world frame), so rotate-90 then flip-x is world-mirrored"
+    (is (= [0 1 1 0 0 0] (via-mat cm/flip-x [0 1 -1 0 0 0])))
+    ;; Not the local-frame (post-multiply) result:
+    (is (not= [0 -1 -1 0 0 0] (via-mat cm/flip-x [0 1 -1 0 0 0]))))
+  (testing "negates the x column including translation"
+    (is (= [-1 0 0 1 -10 20] (via-mat cm/flip-x [1 0 0 1 10 20]))))
+  (testing "applying the same flip twice is the identity"
+    (is (= [0 1 -1 0 0 0]
+           (via-mat cm/flip-x (via-mat cm/flip-x [0 1 -1 0 0 0]))))))
+
+(deftest flip-y-mirrors-about-horizontal-axis
+  (testing "identity flips to diag(1, -1)"
+    (is (= [1 0 0 -1 0 0] (via-mat cm/flip-y [1 0 0 1 0 0]))))
+  (testing "pre-multiplies (world frame) for a rotated transform"
+    (is (= [0 -1 -1 0 0 0] (via-mat cm/flip-y [0 1 -1 0 0 0]))))
+  (testing "negates the y column including translation"
+    (is (= [1 0 0 -1 10 -20] (via-mat cm/flip-y [1 0 0 1 10 20]))))
+  (testing "applying the same flip twice is the identity"
+    (is (= [0 1 -1 0 0 0]
+           (via-mat cm/flip-y (via-mat cm/flip-y [0 1 -1 0 0 0]))))))
+
+(defn- round6 [v] (mapv #(/ (js/Math.round (* 1e6 %)) 1e6) v))
+
+(deftest rotate-cw-is-world-frame
+  (testing "identity rotates 90° clockwise"
+    (is (= [0 1 -1 0 0 0] (round6 (via-mat cm/rotate-cw [1 0 0 1 0 0])))))
+  (testing "pre-multiplies (world frame), so it stays clockwise even when the
+            transform is flipped — the flip+rotate 'backwards' bug"
+    (is (= [0 -1 -1 0 0 0] (round6 (via-mat cm/rotate-cw [-1 0 0 1 0 0]))))
+    ;; Not the local-frame (post-multiply) result, which reverses under a mirror:
+    (is (not= [0 1 1 0 0 0] (round6 (via-mat cm/rotate-cw [-1 0 0 1 0 0])))))
+  (testing "clockwise then counter-clockwise returns to identity"
+    (is (= [1 0 0 1 0 0]
+           (round6 (via-mat cm/rotate-ccw (via-mat cm/rotate-cw [1 0 0 1 0 0])))))))
+
+(deftest rotate-ccw-is-world-frame
+  (testing "identity rotates 90° counter-clockwise"
+    (is (= [0 -1 1 0 0 0] (round6 (via-mat cm/rotate-ccw [1 0 0 1 0 0])))))
+  (testing "pre-multiplies (world frame) even when flipped"
+    (is (= [0 1 1 0 0 0] (round6 (via-mat cm/rotate-ccw [-1 0 0 1 0 0]))))))
+
+;; ---------------------------------------------------------------------------
+;; union-rect — bounding rect of a selection
+;; ---------------------------------------------------------------------------
+;;
+;; Contract (spec "mosaic selection toolbar"): reduce `{:x :y :width :height}`
+;; rects to the smallest rect containing all of them, nil for nothing. Rects
+;; arrive in SVG user units from the tile math in selection-anchor-rect, so
+;; coordinates may be negative and are not integers in general.
+
+(deftest union-rect-of-nothing-is-nil
+  (testing "empty or nil input has no bounding rect"
+    (is (nil? (cm/union-rect [])))
+    (is (nil? (cm/union-rect nil)))))
+
+(deftest union-rect-of-one-is-itself
+  (testing "a single rect is its own bounding rect"
+    (is (= {:x 10 :y 20 :width 30 :height 40}
+           (cm/union-rect [{:x 10 :y 20 :width 30 :height 40}])))))
+
+(deftest union-rect-spans-disjoint-rects
+  (testing "spans from the left/top-most edge to the right/bottom-most edge"
+    ;; left edge 0, top edge 0, right edge 90+10=100, bottom edge 40+10=50
+    (is (= {:x 0 :y 0 :width 100 :height 50}
+           (cm/union-rect [{:x 0 :y 0 :width 10 :height 10}
+                           {:x 90 :y 40 :width 10 :height 10}]))))
+  (testing "order of the inputs does not matter"
+    (is (= (cm/union-rect [{:x 0 :y 0 :width 10 :height 10}
+                           {:x 90 :y 40 :width 10 :height 10}])
+           (cm/union-rect [{:x 90 :y 40 :width 10 :height 10}
+                           {:x 0 :y 0 :width 10 :height 10}])))))
+
+(deftest union-rect-keeps-the-enclosing-rect
+  (testing "a rect fully inside another does not grow the result"
+    (is (= {:x 0 :y 0 :width 100 :height 100}
+           (cm/union-rect [{:x 0 :y 0 :width 100 :height 100}
+                           {:x 25 :y 25 :width 10 :height 10}])))))
+
+(deftest union-rect-handles-negative-coordinates
+  (testing "content left of / above the viewport origin still bounds correctly"
+    ;; left -50, top -20, right 0+5=5, bottom 0+5=5
+    (is (= {:x -50 :y -20 :width 55 :height 25}
+           (cm/union-rect [{:x -50 :y -20 :width 10 :height 10}
+                           {:x 0 :y 0 :width 5 :height 5}])))))
+
+;; ---------------------------------------------------------------------------
+;; inset-rect — tile rect to tetris body rect
+;; ---------------------------------------------------------------------------
+;;
+;; Contract (spec "mosaic selection toolbar"): shrink a rect by the same amount
+;; on all four sides. The toolbar insets the selection's tile rect by half a
+;; grid cell, in user units, so the bar clears the port circles at any zoom.
+
+(deftest inset-rect-shrinks-on-every-side
+  (testing "both edges of each axis move in, so the size drops by twice d"
+    (is (= {:x 35 :y 45 :width 30 :height 80}
+           (cm/inset-rect {:x 10 :y 20 :width 80 :height 130} 25))))
+  (testing "an inset of zero is the identity"
+    (is (= {:x 10 :y 20 :width 80 :height 130}
+           (cm/inset-rect {:x 10 :y 20 :width 80 :height 130} 0))))
+  (testing "half a grid cell is what the toolbar uses"
+    ;; a single 4-cell tile at the origin: 200x200 user units -> 150x150 body
+    (is (= {:x 25 :y 25 :width 150 :height 150}
+           (cm/inset-rect {:x 0 :y 0 :width 200 :height 200}
+                          (/ cm/grid-size 2))))))
+
+;; ---------------------------------------------------------------------------
+;; user->screen — viewBox to viewport pixels
+;; ---------------------------------------------------------------------------
+;;
+;; Contract (spec "mosaic selection toolbar"): the scale and offset the browser
+;; applies for `xMidYMid meet` — the tighter axis sets the scale, the leftover
+;; slack on the other axis is split evenly, and the viewBox origin shifts to
+;; the canvas box's origin. Derived from ::zoom and the canvas box rather than
+;; read back off the DOM, so it is current in the render that changed ::zoom.
+
+(deftest user->screen-matches-the-box-when-aspect-ratios-agree
+  (testing "no letterboxing: scale is the plain ratio and the origin lines up"
+    ;; 1000x800 viewBox into a 500x400 box at the viewport origin -> k = 0.5
+    (is (= {:k 0.5 :dx 0.0 :dy 0.0}
+           (cm/user->screen [0 0 1000 800]
+                            {:left 0 :top 0 :width 500 :height 400}))))
+  (testing "the canvas box offset carries straight into dx/dy"
+    (is (= {:k 0.5 :dx 30.0 :dy 70.0}
+           (cm/user->screen [0 0 1000 800]
+                            {:left 30 :top 70 :width 500 :height 400})))))
+
+(deftest user->screen-pans-with-the-viewbox-origin
+  (testing "a viewBox scrolled right moves content left by origin times scale"
+    ;; vx = 100 at k = 0.5 -> dx = -50
+    (is (= {:k 0.5 :dx -50.0 :dy -25.0}
+           (cm/user->screen [100 50 1000 800]
+                            {:left 0 :top 0 :width 500 :height 400})))))
+
+(deftest user->screen-letterboxes-the-slack-axis
+  (testing "a box wider than the viewBox centres the content horizontally"
+    ;; k = min(1000/1000, 400/800) = 0.5; slack = 1000 - 1000·0.5 = 500, halved
+    (is (= {:k 0.5 :dx 250.0 :dy 0.0}
+           (cm/user->screen [0 0 1000 800]
+                            {:left 0 :top 0 :width 1000 :height 400}))))
+  (testing "a box taller than the viewBox centres the content vertically"
+    ;; k = min(500/1000, 800/800) = 0.5; slack = 800 - 800·0.5 = 400, halved
+    (is (= {:k 0.5 :dx 0.0 :dy 200.0}
+           (cm/user->screen [0 0 1000 800]
+                            {:left 0 :top 0 :width 500 :height 800})))))
+
+;; ---------------------------------------------------------------------------
+;; rect->screen — user-unit rect through a user->screen
+;; ---------------------------------------------------------------------------
+;;
+;; Contract (spec "mosaic selection toolbar"): positions scale and translate,
+;; sizes only scale. The canvas transform has no rotation, so a rect stays a
+;; rect.
+
+(deftest rect->screen-scales-sizes-and-translates-positions
+  (testing "position takes the offset, size does not"
+    (is (= {:x 120 :y 90 :width 60 :height 80}
+           (cm/rect->screen {:k 2 :dx 100 :dy 50}
+                            {:x 10 :y 20 :width 30 :height 40}))))
+  (testing "an identity transform leaves the rect untouched"
+    (is (= {:x 10 :y 20 :width 30 :height 40}
+           (cm/rect->screen {:k 1 :dx 0 :dy 0}
+                            {:x 10 :y 20 :width 30 :height 40}))))
+  (testing "a panned canvas can push the rect off-viewport"
+    (is (= {:x -95 :y -40 :width 15 :height 20}
+           (cm/rect->screen {:k 0.5 :dx -100 :dy -50}
+                            {:x 10 :y 20 :width 30 :height 40})))))
+
+(deftest rect->screen-composes-with-user->screen
+  (testing "a tile at the viewBox origin lands at the canvas box origin"
+    (let [t (cm/user->screen [0 0 1000 800] {:left 30 :top 70 :width 500 :height 400})]
+      (is (= {:x 30.0 :y 70.0 :width 25.0 :height 25.0}
+             (cm/rect->screen t {:x 0 :y 0 :width 50 :height 50}))))))
+
+;; ---------------------------------------------------------------------------
+;; alert — returns nil so validator or-short-circuit is falsey on rejection
+;; ---------------------------------------------------------------------------
+;; Contract (spec "validator function"): cm/alert fires the modal as a side
+;; effect and returns nil, so #(or (s/valid? ::spec %) (cm/alert ...)) returns
+;; falsey when the spec fails. reset! returns its new value (a truthy Hiccup
+;; vector); if alert returned that, the validator would never reject.
+
+(deftest alert-returns-nil
+  (testing "alert returns nil even though reset! returns the new value"
+    (let [ret (cm/alert "test message")]
+      (is (nil? ret) "alert must return nil so validators see a falsey rejection"))
+    (is (some? @cm/modal-content) "modal-content should have been set as a side effect")))

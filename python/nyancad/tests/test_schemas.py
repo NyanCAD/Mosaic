@@ -313,6 +313,25 @@ class TestModelMetadata:
         assert m.models is None
         assert m.ports is None
 
+    def test_artwork_transform_uses_six_number_wire_matrix(self):
+        m = ModelMetadata.model_validate(
+            {
+                "_id": "models:intel.gc_1310nm_te",
+                "name": "gc_1310nm_te",
+                "artwork-transform": [-1, 0, 0, 1, 0, 0],
+            }
+        )
+        assert m.artwork_transform == (-1, 0, 0, 1, 0, 0)
+
+        with pytest.raises(ValidationError):
+            ModelMetadata.model_validate(
+                {
+                    "_id": "models:invalid",
+                    "name": "Invalid",
+                    "artwork-transform": [1, 0, 0, 1],
+                }
+            )
+
 
 # ---------------------------------------------------------------------------
 # Device discriminated union

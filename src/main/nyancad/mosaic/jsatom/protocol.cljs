@@ -13,6 +13,7 @@
    through an injected `post!` fn so tests can supply an in-memory transport."
   (:require ["jsonc-parser" :as jsonc]
             [nyancad.mosaic.jsatom.util :refer [doc->state]]
+            [cljs.core.async :refer [chan put! close!]]
             reagent.ratom))
 
 (defn value->js
@@ -60,22 +61,39 @@
       (let [doc' (jsonc/applyEdits doc (.-update incoming))]
         {:doc doc' :version incoming-version :cache (doc->state doc')}))))
 
-(defn- pouch-swap! [^js ja f x & args]
-  (let [old @(.-cache ja)
-        data (apply f old x args)]
-    (when-let [v (.-validator ja)]
-      (when-not (v data)
-        (throw (ex-info "Validator rejected reference state" {:val data}))))
-    (reset! (.-cache ja) data)
-    (let [grp (.-group ja)
-          post (.-post ja)]
-      (doseq [[path value] (changed-paths x data)]
-        (swap! (.-version ja) inc)
-        (let [{:keys [ops doc']} (edit-message @(.-document ja) path value)]
-          (post #js{:type "update" :group grp :update ops})
-          (reset! (.-document ja) doc'))))))
+(defn- pouch-swap!
+  "Apply f to the current cache subset (keyed by x), validate, and post edits.
+   Returns a channel that carries the new cache value on success or the
+   ex-info on validator rejection; the exception never propagates
+   synchronously to the caller. The validator's cm/alert side effect is the
+   user-facing rejection signal; the channel value is for chaining via done?."
+  [^js ja f x & args]
+  (let [ch (chan 1)]
+    (try
+      (let [old @(.-cache ja)
+            data (apply f old x args)]
+        (when-let [v (.-validator ja)]
+          (when-not (v data)
+            (throw (ex-info "Validator rejected reference state"
+                          {:validator-rejected true :val data}))))
+        (reset! (.-cache ja) data)
+        (let [grp (.-group ja)
+              post (.-post ja)]
+          (doseq [[path value] (changed-paths x data)]
+            (swap! (.-version ja) inc)
+            (let [{:keys [ops doc']} (edit-message @(.-document ja) path value)]
+              (post #js{:type "update" :group grp :update ops})
+              (reset! (.-document ja) doc'))))
+        (put! ch data))
+      (catch :default e
+        (when-not (:validator-rejected (ex-data e))
+          (js/console.error e))
+        (put! ch e))
+      (finally
+        (close! ch)))
+    ch))
 
-(deftype JsAtom [group document version cache post ^:mutable validator]
+(deftype JsAtom [group document version cache post ^:mutable validator ^:mutable done?]
   IAtom
 
   IDeref
@@ -83,9 +101,9 @@
 
   ISwap
   (-swap! [_a _f]        (throw (js/Error "JsAtom assumes first argument is a key")))
-  (-swap! [a f x]        (pouch-swap! a f x))
-  (-swap! [a f x y]      (pouch-swap! a f x y))
-  (-swap! [a f x y more] (apply pouch-swap! a f x y more))
+  (-swap! [a f x]        (set! (.-done? a) (pouch-swap! a f x)))
+  (-swap! [a f x y]      (set! (.-done? a) (pouch-swap! a f x y)))
+  (-swap! [a f x y more] (set! (.-done? a) (apply pouch-swap! a f x y more)))
 
   IWatchable
   (-notify-watches [_this old new] (-notify-watches cache old new))
@@ -103,27 +121,46 @@
    Returns {:atom <JsAtom> :receive! (fn [^js msg])}, where `receive!` should be
    invoked for every host->webview message; it filters by group, applies
    accepted \"update\" echoes, and adopts authoritative \"resync\" snapshots the
-   host sends when it had to reject an edit."
+   host sends when it had to reject an edit.
+
+   The initial `reset! cache (doc->state doc)` runs before the validator is
+   set (set-validator! is called by the platform after this returns). ClojureScript's
+   set-validator! does not re-validate the current value, so the platform must
+   check the initial cache itself and clear it if invalid (see
+   platform_vscode.cljc) — otherwise an invalid initial document would sit in
+   the cache.
+
+   The `receive!` paths re-check the validator on every incoming message
+   (by then the validator is set). On rejection, the incoming value is
+   dropped and the cache keeps its previous state; the validator has
+   already alerted."
   ([group doc cache post!] (make-json-atom group doc cache post! 1))
   ([group doc cache post! init-version]
    (reset! cache (doc->state doc))
    (let [document (atom doc)
          version  (atom init-version)
-         ja       (JsAtom. group document version cache post! nil)
+         ja       (JsAtom. group document version cache post! nil nil)
+         accept!  (fn [new-doc new-ver new-cache]
+                    (if-let [v (.-validator ja)]
+                      (when (v new-cache)
+                        (reset! document new-doc)
+                        (reset! version  new-ver)
+                        (reset! cache    new-cache))
+                      (do
+                        (reset! document new-doc)
+                        (reset! version  new-ver)
+                        (reset! cache    new-cache))))
          receive! (fn [^js msg]
-                    (when (= (.-group msg) group)
-                      (case (.-type msg)
-                        "update"
-                        (when-let [res (apply-echo @document @version msg)]
-                          (reset! document (:doc res))
-                          (reset! version  (:version res))
-                          (reset! cache    (:cache res)))
+                     (when (= (.-group msg) group)
+                       (case (.-type msg)
+                         "update"
+                         (when-let [res (apply-echo @document @version msg)]
+                           (accept! (:doc res) (:version res) (:cache res)))
 
-                        "resync"
-                        (let [text (.-text msg)]
-                          (reset! document text)
-                          (reset! version  (.-version msg))
-                          (reset! cache    (doc->state text)))
+                         "resync"
+                         (let [text (.-text msg)
+                               new-cache (doc->state text)]
+                           (accept! text (.-version msg) new-cache))
 
-                        nil)))]
-     {:atom ja :receive! receive!})))
+                         nil)))]
+      {:atom ja :receive! receive!})))

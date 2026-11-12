@@ -227,12 +227,43 @@
         val (get v idx)]
     (and (vector? val) (= xy (kf val)))))
 
-(defn transform [[a b c d e f]]
-  (.fromMatrix js/DOMMatrixReadOnly
-               #js {:a a, :b b, :c c, :d d, :e e, :f f}))
+(defn transform
+  "Convert a six-number wire transform into a composable DOMMatrix."
+  [matrix]
+  (js/DOMMatrixReadOnly. (clj->js matrix)))
 (defn transform-vec [obj]
   [(.-a obj) (.-b obj) (.-c obj) (.-d obj) (.-e obj) (.-f obj)])
 (defn point [x y] (.fromPoint js/DOMPointReadOnly (clj->js {:x x :y y})))
+
+(defn flip-x
+  "World-frame horizontal flip: pre-multiply `m` by the vertical-axis reflection
+   diag(-1, 1) so the mirror is applied about the screen's vertical axis
+   regardless of `m`'s current rotation. `.multiply` post-multiplies, so the
+   reflection is the receiver and `m` the argument. Takes and returns a
+   DOMMatrix, for use with `transform-selected`."
+  [m]
+  (.multiply (js/DOMMatrixReadOnly. #js [-1 0 0 1 0 0]) m))
+
+(defn flip-y
+  "World-frame vertical flip: pre-multiply `m` by the horizontal-axis reflection
+   diag(1, -1). See `flip-x`."
+  [m]
+  (.multiply (js/DOMMatrixReadOnly. #js [1 0 0 -1 0 0]) m))
+
+(defn rotate-cw
+  "World-frame 90° clockwise rotation: pre-multiply `m` by rotate(90) so the
+   on-screen direction is consistent regardless of `m`'s current mirror. A
+   local-frame (post-multiply) rotation reverses under a reflection — the flip
+   plus rotate bug — which this avoids. Takes and returns a DOMMatrix, for use
+   with `transform-selected`."
+  [m]
+  (.multiply (.rotate (js/DOMMatrixReadOnly.) 90) m))
+
+(defn rotate-ccw
+  "World-frame 90° counter-clockwise rotation: pre-multiply by rotate(-90).
+   See `rotate-cw`."
+  [m]
+  (.multiply (.rotate (js/DOMMatrixReadOnly.) -90) m))
 
 ;; Top-level values and extensions that touch browser APIs at load time.
 ;; Both :web and :vscode run in a DOM context, so we fall through to the
@@ -338,7 +369,7 @@
 ;; Port-name keys are keywords in the in-memory representation (round-trip
 ;; through json->clj keywordizes object keys); net-name values are strings.
 (s/def ::nets (s/map-of keyword? string?))
-(s/def ::net string?)
+(s/def ::net (s/nilable string?))
 
 (defmulti device-spec :type)
 ;; Components require a :name — the schematic renders by name and the
@@ -395,8 +426,10 @@
 (s/def ::props (s/coll-of ::parameter :kind vector?))
 
 (s/def ::symbol (s/nilable string?))
+(s/def ::artwork-transform ::transform)
 (s/def ::model-def (s/keys :req-un [::name]
-                           :opt-un [::type ::tags ::ports ::models ::props ::symbol]))
+                           :opt-un [::type ::tags ::ports ::models ::props ::symbol
+                                    ::artwork-transform]))
 (s/def ::modeldb (s/map-of string? ::model-def))
 
 (defn model-prop-defaults
@@ -549,6 +582,34 @@
    "mmi-2x2"     {:min-dims [1 3]}
    "mzi-2x2"     {:min-dims [1 3]}})
 
+(def default-ports
+  "Ports of the built-in photonic symbols, for devices placed without a model
+   (or whose model lists no ports). Each entry is what a model would declare, so
+   `port-perimeter` / `port-locations` and `shape-opts` turn it into exactly the
+   cells the symbol's artwork draws its port leads at. A model with ports
+   replaces these. Names follow the numbering the symbols originally shipped
+   with: left to right, top to bottom."
+  (let [p (fn [side n] {:name (str n) :side side :type "photonic"})
+        lr (fn [& ports] (vec ports))]
+    {"straight"        (lr (p :left 1) (p :right 2))
+     "taper"           (lr (p :left 1) (p :right 2))
+     "transition"      (lr (p :left 1) (p :right 2))
+     "spiral"          (lr (p :left 1) (p :right 2))
+     "bend"            (lr (p :left 1) (p :top 2))
+     "sbend"           (lr (p :left 1) (p :right 2))
+     "terminator"      (lr (p :left 1))
+     "grating-coupler" (lr (p :left 1))
+     "crossing"        (lr (p :left 1) (p :right 2) (p :top 3) (p :bottom 4))
+     "ring-single"     (lr (p :left 1) (p :right 2))
+     "ring-double"     (lr (p :left 1) (p :left 3) (p :right 2) (p :right 4))
+     "coupler"         (lr (p :left 1) (p :left 3) (p :right 2) (p :right 4))
+     "coupler-ring"    (lr (p :left 1) (p :top 2) (p :top 3) (p :right 4))
+     "splitter-1x2"    (lr (p :left 1) (p :right 2) (p :right 3))
+     "mmi-1x2"         (lr (p :left 1) (p :right 2) (p :right 3))
+     "mzi-1x2"         (lr (p :left 1) (p :right 2) (p :right 3))
+     "mmi-2x2"         (lr (p :left 1) (p :left 3) (p :right 2) (p :right 4))
+     "mzi-2x2"         (lr (p :left 1) (p :left 3) (p :right 2) (p :right 4))}))
+
 (defn port-perimeter
   "Calculate device perimeter [width height] based on ports.
    Ports are [{:name :side :type}]. Optional type string looks up min-dims in shape-opts."
@@ -627,6 +688,7 @@
 (def cursor (r/adapt-react-class icons/HandIndex))
 (def eraser (r/adapt-react-class icons/Eraser))
 (def move (r/adapt-react-class icons/ArrowsMove))
+(def move-attached (r/adapt-react-class icons/Link45deg))
 (def wire (r/adapt-react-class icons/Pencil))
 (def label (r/adapt-react-class icons/Tag))
 (def delete (r/adapt-react-class icons/Trash))
@@ -645,8 +707,7 @@
 (def download (r/adapt-react-class icons/Download))
 (def sync-active (r/adapt-react-class icons/ArrowRepeat))
 (def sync-done (r/adapt-react-class icons/Check))
-(def text (r/adapt-react-class icons/Paragraph))
-(def namei (r/adapt-react-class icons/Fonts))
+(def text-annotation-icon (r/adapt-react-class icons/TextLeft))
 (def edit (r/adapt-react-class icons/PencilSquare))
 (def help (r/adapt-react-class icons/QuestionCircle))
 (def external-link (r/adapt-react-class icons/BoxArrowUpRight))
@@ -667,15 +728,19 @@
 (def upload (r/adapt-react-class icons/Upload))
 
 (defn radiobuttons
-  ([cursor m] (radiobuttons cursor m nil nil nil))
-  ([cursor m dblclk ctxclk] (radiobuttons cursor m dblclk ctxclk nil))
-  ([cursor m dblclk ctxclk on-change]
+  "Render rows as one named radio group. Each row is [label value tooltip]."
+  ([group-name cursor m] (radiobuttons group-name cursor m nil nil nil))
+  ([group-name cursor m dblclk ctxclk]
+   (radiobuttons group-name cursor m dblclk ctxclk nil))
+  ([group-name cursor m dblclk ctxclk on-change]
    [:<>
     (doall (for [[label name disp] m]
              [:<> {:key name}
               [:input {:type "radio"
                        :id name
+                       :name group-name
                        :value name
+                       :aria-label disp
                        :checked (= name @cursor)
                        :on-change #(if on-change
                                      (on-change name)
@@ -733,53 +798,136 @@
     (when idx
       [(subs tag 0 idx) (subs tag (inc idx))])))
 
+;; @tags mosaic model picker
+(defn model-search-rank
+  "Relevance rank of query against a display name, smaller is better:
+   0 exact name (case-insensitive), 1 name prefix, 2 word-boundary match
+   (the query starts right after a `_` or `-`), 3 plain substring, nil no
+   match. An empty query ranks 0 — everything matches. cm/filter-models
+   ranks search results by [rank, name length, name]."
+  [name query]
+  (let [lname (clojure.string/lower-case name)
+        lquery (clojure.string/lower-case query)
+        boundary? #{\_ \-}]
+    (cond
+      (empty? lquery) 0
+      (= lname lquery) 0
+      (clojure.string/starts-with? lname lquery) 1
+      (loop [i (clojure.string/index-of lname lquery)]
+        (when (some? i)
+          (if (and (pos? i) (boundary? (nth lname (dec i))))
+            true
+            (recur (clojure.string/index-of lname lquery (inc i))))))
+      2
+      (clojure.string/includes? lname lquery) 3
+      :else nil)))
+
+;; @tags mosaic model picker
+(defn private-cell?
+  "True iff the entry's display name starts with `_` — the gdsfactory
+   private-cell convention. The name is read like cm/filter-models reads
+   it (`:name`, falling back to the id), str-guarded against a nil name.
+   A display-only predicate: pickers may hide these entries from their
+   lists; resolution never filters on it (#1139, #1182, #1059)."
+  [[model-id model]]
+  (clojure.string/starts-with? (str (get model :name model-id)) "_"))
+
+;; @tags mosaic model picker
 (defn filter-models
   "Filter models by active tags and search text.
    sel-tags: vector of active tags. Plain tags match via set containment on :tags.
-   Property tags like \"type:ckt\" match the corresponding model field."
+   Property tags like \"type:ckt\" match the corresponding model field.
+   With search text, matches are ranked best-first: exact name, prefix,
+   word-boundary, substring — ties on shorter name, then alphabetically.
+   Without search text, iteration order is preserved."
   [models sel-tags search-text]
   (let [plain-tags (set (remove parse-prop-tag sel-tags))
-        prop-tags (keep parse-prop-tag sel-tags)]
-    (filter (fn [[model-id model]]
-              (let [model-tags (set (or (:tags model) []))
-                    model-name (get model :name model-id)
-                    tags-match (every? model-tags plain-tags)
-                    props-match (every? (fn [[k v]] (= (str (get model (keyword k))) v)) prop-tags)
-                    name-match (or (empty? search-text)
-                                   (clojure.string/includes?
-                                    (clojure.string/lower-case model-name)
-                                    (clojure.string/lower-case search-text)))]
-                (and tags-match props-match name-match)))
-            models)))
+        prop-tags (keep parse-prop-tag sel-tags)
+        name-fn (fn [[model-id model]] (get model :name model-id))
+        matches (filter (fn [entry]
+                          (let [model (second entry)
+                                model-tags (set (or (:tags model) []))
+                                tags-match (every? model-tags plain-tags)
+                                props-match (every? (fn [[k v]]
+                                                      (= (str (get model (keyword k))) v))
+                                                    prop-tags)]
+                            (and tags-match props-match)))
+                        models)]
+    (if (empty? search-text)
+      matches
+      (->> matches
+           (keep (fn [entry]
+                   (let [model-name (name-fn entry)]
+                     (when-let [rank (model-search-rank model-name search-text)]
+                       [[rank
+                         (count model-name)
+                         (clojure.string/lower-case model-name)]
+                        entry]))))
+           (sort-by first)
+           (map second)))))
+
+(defn add-tag!
+  "Add tag to selected-atom unless it is already selected.
+   The tag-badge click handler, shared between libman's model list and the
+   editor's model picker."
+  [selected-atom tag]
+  (swap! selected-atom (fn [v] (if (some #{tag} v) v (conj v tag)))))
+
+(defn selected-tag-badges
+  "Render every tag in selected-atom as a chip; clicking one removes it.
+   Shared between libman's header and the editor's model picker. This is the
+   only affordance that reaches all selected tags: the tag tree covers just
+   the first two tags of the models it was built from, and row badges exist
+   only while rows are visible, so a tag can otherwise filter the list
+   invisibly with no way to clear it. Callers own the empty-selection
+   fallback."
+  [selected-atom]
+  [:<>
+   (doall (for [tag @selected-atom]
+            [:span.tag-badge.active
+             {:key tag
+              :class (when (parse-prop-tag tag) "prop-tag")
+              :on-click #(swap! selected-atom (fn [v] (vec (remove #{tag} v))))}
+             tag " ×"]))])
+
+(defn model-row-content
+  "Shared row content for model lists — the libman radio rows and the
+   editor's model picker rows: schematic/code icon, display name, and tag
+   badges (the type badge plus tags beyond the first two, which form the
+   tag tree). on-tag-click, when given, makes badges clickable filters."
+  [model model-id on-tag-click]
+  (let [schem? (not (has-code-models? model))
+        icon (if schem? schemmodel codemodel)
+        type-badge (str "type:" (:type model "ckt"))
+        extra-tags (drop 2 (:tags model))
+        all-badges (cons type-badge extra-tags)]
+    [:span [icon] " " (get model :name model-id)
+     (for [tag all-badges]
+       [:span.tag-badge {:key tag
+                         :class [(when (parse-prop-tag tag) "prop-tag")
+                                 (when on-tag-click "clickable")]
+                         :on-click (when on-tag-click
+                                     #(do (.stopPropagation %)
+                                          (on-tag-click tag)))}
+        tag])]))
 
 (defn model-list
   "Render a list of models as radio buttons.
+   group-name: unique radio-group name
    selected-atom: atom holding selected model id
    models: seq of [model-id model] pairs
    on-dblclick: optional (fn [model-id] -> event-handler) for double-click
    on-contextmenu: optional (fn [model-id] -> event-handler) for right-click
    on-tag-click: optional (fn [tag] -> nil) called when a tag badge is clicked"
-  ([selected-atom models] (model-list selected-atom models nil nil nil))
-  ([selected-atom models on-dblclick on-contextmenu]
-   (model-list selected-atom models on-dblclick on-contextmenu nil))
-  ([selected-atom models on-dblclick on-contextmenu on-tag-click]
+  ([group-name selected-atom models]
+   (model-list group-name selected-atom models nil nil nil))
+  ([group-name selected-atom models on-dblclick on-contextmenu]
+   (model-list group-name selected-atom models on-dblclick on-contextmenu nil))
+  ([group-name selected-atom models on-dblclick on-contextmenu on-tag-click]
    (if (seq models)
-     [radiobuttons selected-atom
-      (doall (for [[model-id model] models
-                   :let [schem? (not (has-code-models? model))
-                         icon (if schem? schemmodel codemodel)
-                         type-badge (str "type:" (:type model "ckt"))
-                         extra-tags (drop 2 (:tags model))
-                         all-badges (cons type-badge extra-tags)]]
-               [[:span [icon] " " (get model :name model-id)
-                 (for [tag all-badges]
-                   [:span.tag-badge {:key tag
-                                     :class [(when (parse-prop-tag tag) "prop-tag")
-                                             (when on-tag-click "clickable")]
-                                     :on-click (when on-tag-click
-                                                 #(do (.stopPropagation %)
-                                                      (on-tag-click tag)))}
-                    tag])]
+     [radiobuttons group-name selected-atom
+      (doall (for [[model-id model] models]
+               [[model-row-content model model-id on-tag-click]
                 model-id
                 (get model :name model-id)]))
       on-dblclick
@@ -964,6 +1112,41 @@
 
 (defonce context-content (r/atom {:x 0 :y 0 :body nil}))
 
+(defn union-rect
+  "Smallest rect containing every rect in `rects`, each `{:x :y :width :height}`.
+   Returns nil for an empty sequence."
+  [rects]
+  (when (seq rects)
+    (let [left (apply min (map :x rects))
+          top (apply min (map :y rects))
+          right (apply max (map #(+ (:x %) (:width %)) rects))
+          bottom (apply max (map #(+ (:y %) (:height %)) rects))]
+      {:x left :y top :width (- right left) :height (- bottom top)})))
+
+(defn inset-rect
+  "Shrink `rect` by `d` on every side."
+  [{:keys [x y width height]} d]
+  {:x (+ x d) :y (+ y d)
+   :width (- width (* 2 d)) :height (- height (* 2 d))})
+
+(defn user->screen
+  "Scale `:k` and offsets `:dx`/`:dy` mapping SVG user units to viewport px for
+   the viewBox `[vx vy vw vh]` drawn into the canvas box `{:left :top :width
+   :height}` under `xMidYMid meet` — the tighter axis sets the scale and the
+   slack is split evenly. Derived from state rather than read back off the DOM,
+   so it is current in the render that changed the viewBox."
+  [[vx vy vw vh] {:keys [left top width height]}]
+  (let [k (min (/ width vw) (/ height vh))]
+    {:k k
+     :dx (+ left (/ (- width (* vw k)) 2) (* (- vx) k))
+     :dy (+ top (/ (- height (* vh k)) 2) (* (- vy) k))}))
+
+(defn rect->screen
+  "Map a rect from SVG user units to viewport px through a `user->screen`."
+  [{:keys [k dx dy]} {:keys [x y width height]}]
+  {:x (+ (* x k) dx) :y (+ (* y k) dy)
+   :width (* width k) :height (* height k)})
+
 (defn contextmenu []
   (let [{:keys [:x :y :body]} @context-content]
     [:div.contextmenu.window
@@ -990,13 +1173,17 @@
 (defn alert [text]
   (reset! modal-content
           [:div [:p text]
-           [:button {:on-click #(reset! modal-content nil)} "Ok"]]))
+           [:button {:on-click #(reset! modal-content nil)} "Ok"]])
+  nil)
 
 (defn set-context-menu [x y body]
   (reset! context-content {:x x :y y :body body}))
 
 (defn clear-context-menu []
   (swap! context-content assoc :body nil))
+
+(defn clear-modal []
+  (reset! modal-content nil))
 
 ;; Onboarding popup for first-time users
 (defn device-icon [name]
@@ -1012,6 +1199,7 @@
                "npn" (rc/inline "icons/npn.svg")
                "pnp" (rc/inline "icons/pnp.svg")
                "port" (rc/inline "icons/port.svg")
+               "port-label" (rc/inline "icons/port-label.svg")
                "ground" (rc/inline "icons/ground.svg")
                "supply" (rc/inline "icons/supply.svg")
                "straight" (rc/inline "icons/straight.svg")
@@ -1035,6 +1223,8 @@
                "photodiode" (rc/inline "icons/photodiode.svg")
                "modulator" (rc/inline "icons/modulator.svg")
                "grating-coupler" (rc/inline "icons/grating-coupler.svg")
+               "wave" (rc/inline "icons/wave.svg")
+               "bolt" (rc/inline "icons/bolt.svg")
                "")]
     [:span.device-icon {:dangerouslySetInnerHTML (r/unsafe-html icon)}]))
 
@@ -1112,13 +1302,15 @@
       [[wire] "W" "Wire"]
       [[eraser] "E" "Eraser"]
       [[move] "Space" "Pan (hold)"]
+      [[move-attached] "Ctrl+Drag" "Move, keeping wires attached"]
       [[rotatecw] "S" "Spin CW"]
       [[rotateccw] "Shift+S" "Spin CCW"]
       [[mirror-vertical] "F" "Flip X"]
       [[mirror-horizontal] "Shift+F" "Flip Y"]
       [[delete] "Del" "Delete"]
       [[zoom-in] "Scroll" "Zoom"]
-      [[text] "T" "Text"]
+      [[text-annotation-icon] "T" "Text annotation"]
+      [[device-icon "port-label"] "Shift+T" "Port label"]
       [[zoom-fit] "Home" "Zoom to fit"]]]
 
     [shortcut-table "Actions"

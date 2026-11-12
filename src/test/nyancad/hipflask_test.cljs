@@ -210,3 +210,21 @@
           (<! (swap! pa assoc "grp:x" {:n 7}))
           (is (= 7 (get-in @pa ["grp:x" :n]))))
         (done)))))
+
+;; Contract (spec invariant 2 & 5): when the validator rejects, the write is
+;; aborted (cache unchanged) and the ex-info lands on the done? channel as a
+;; value — it never escapes the go block as an uncaught exception.
+(deftest validator-rejection-puts-ex-info-on-done
+  (testing "a rejecting validator aborts the write; done? carries the ex-info, not nil"
+    (async done
+      (go
+        (let [db (mem-db)
+              pa (hf/pouch-atom db "grp")]
+          (<! (hf/done? pa))
+          (set-patom-validator! pa (constantly false)) ; reject everything
+          (let [result (<! (swap! pa assoc "grp:x" {:n 7}))]
+            (is (instance? js/Error result)
+                (str "done? should carry the ex-info, got: " (pr-str result)))
+            (is (not (contains? @pa "grp:x"))
+                "cache must NOT contain the rejected write")))
+        (done)))))

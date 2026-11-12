@@ -25,6 +25,8 @@ html {
     --color-shadow: light-dark(#00000033, #00000066);
     --color-accent: var(--vscode-button-background, light-dark(#0e1a32, #89b4fa));
     --color-accent-text: var(--vscode-button-foreground, light-dark(white, #1e1e2e));
+    --color-badge: var(--vscode-badge-background, light-dark(#4a9eff, #89b4fa));
+    --color-badge-text: var(--vscode-badge-foreground, light-dark(white, #1e1e2e));
     --color-input-bg: var(--vscode-input-background, light-dark(#00000008, #1e1e2e));
     --color-input-border: var(--vscode-input-border, light-dark(#2222220d, #585b70));
     --color-hover: var(--vscode-list-hoverBackground, light-dark(#00000007, #45475a));
@@ -254,6 +256,65 @@ html {
     list-style-type: none;
 }
 
+/* Carries the selection's screen rect so the bar can be placed against it in
+   CSS. Invisible and inert — it exists only to be an anchor.
+
+   The z-index lives here, not on the bar: position: fixed makes this element a
+   stacking context, so a z-index on the bar inside it could never lift the bar
+   over .content (z-index 1), and both would paint behind the canvas. 999 keeps
+   the bar below .contextmenu/.modal (1000), so the properties popup the
+   Parameters button opens draws over the bar rather than under it. */
+.mosaic-app .selection-anchor {
+    position: fixed;
+    z-index: 999;
+    pointer-events: none;
+    anchor-name: --selection;
+}
+
+.mosaic-app .selection-toolbar {
+    /* Percentage translate resolves against the bar's own border box, so this
+       centres it and lifts it clear of the anchor without anyone measuring it.
+       Baseline path: no flip, no viewport clamp. */
+    position: absolute;
+    left: 50%;
+    top: 0;
+    transform: translate(-50%, calc(-100% - 8px));
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    padding: 0 0.25em;
+    border-radius: 7px;
+    white-space: nowrap;
+}
+
+/* Where anchor positioning exists, hand the flip and the viewport clamp to the
+   browser: anchor-center keeps the bar inside its containing block, and
+   flip-block drops it under the selection when there is no room above. */
+@supports (position-area: block-start) {
+    .mosaic-app .selection-toolbar {
+        position: fixed;
+        left: auto;
+        top: auto;
+        transform: none;
+        position-anchor: --selection;
+        position-area: block-start;
+        justify-self: anchor-center;
+        position-try-fallbacks: flip-block;
+        margin: 8px;
+    }
+}
+
+.mosaic-app .selection-toolbar .toolbar-group {
+    display: flex;
+    align-items: center;
+}
+
+.mosaic-app .selection-toolbar .toolbar-group + .toolbar-group {
+    border-left: 1px solid var(--color-border);
+    margin-left: 0.25em;
+    padding-left: 0.25em;
+}
+
 /* Model selector popup */
 .mosaic-app .model-selector-popup {
     min-width: 500px;
@@ -272,6 +333,17 @@ html {
     width: 100%;
     box-sizing: border-box;
     margin-bottom: 10px;
+}
+
+.mosaic-app .model-selector-popup .hide-private-cells {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: -4px 0 10px;
+    font-size: 12px;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    user-select: none;
 }
 
 .mosaic-app .model-popup-content {
@@ -544,10 +616,21 @@ html {
     width: 100%;
 }
 
-.mosaic-libman .properties input[type="checkbox"] {
+/* Both props editors size every control to the full controls track (see the
+   `width: 100%` rules above), which is right for text/number inputs but wrong
+   for a checkbox: it stretches across the track, and — a grid item stretches
+   by default — to the height of a wrapped label's row. Pin it to its intrinsic
+   size, to the start of its cell, and to the middle of the row. */
+.mosaic-libman .properties input[type="checkbox"],
+.mosaic-editor .properties input[type="checkbox"] {
     width: auto;
     justify-self: start;
-    /* Left align checkbox within its grid cell */
+    align-self: center;
+    /* `.field-with-extra > :first-child` (line ~392) grows its first child, the
+       model text input, across the controls track. A checkbox in that row
+       ("Add to template" mode) wants none of it; for the grid-scoped rows above
+       this is inert. */
+    flex: none;
 }
 
 .mosaic-app .properties h4 {
@@ -560,14 +643,22 @@ html {
     justify-self: start;
 }
 
-.mosaic-libman input[type="radio"],
-.model-selector-popup input[type="radio"] {
-    display: none;
+.mosaic-libman input[type="radio"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.mosaic-libman input[type="radio"]:focus-visible+label {
+    outline: 2px solid SelectedItem;
+    outline-offset: 1px;
 }
 
 .mosaic-libman input[type="radio"]+label,
 .mosaic-libman .remote-model,
-.model-selector-popup input[type="radio"]+label {
+.model-selector-popup .model-row {
     display: block;
     padding: 10px 15px;
     margin-top: 5px;
@@ -576,7 +667,8 @@ html {
 
 .mosaic-libman input[type="radio"]:checked+label,
 .mosaic-libman .remote-model:active,
-.model-selector-popup input[type="radio"]:checked+label {
+.model-selector-popup .model-row.active,
+.model-selector-popup .model-row:hover {
     background-color: rgba(0, 0, 0, 0.041);
     border-radius: 7px;
 }
@@ -597,7 +689,7 @@ html {
 }
 
 .mosaic-libman .schematics label svg,
-.model-selector-popup label svg {
+.model-selector-popup .model-row svg {
     font-size: 1.5em;
     vertical-align: middle;
     margin-right: 0.2em;
@@ -690,11 +782,18 @@ html {
     flex-direction: column;
 }
 
-.mosaic-container .menu {
-    grid-row: 1;
-    background-color: var(--color-surface);
+/* Lightweight floating chrome shared by the menu bar, the devicetray and the
+   selection toolbar — surface background, subtle shadow, light hairline border.
+   Distinct from .window, the heavier popup/panel styling. Radius and padding
+   stay per-element. */
+.mosaic-container .chrome-float {
+    background: var(--color-surface);
     box-shadow: 0px 0px 8px #00000008;
     border: 0.5px solid var(--color-border-light);
+}
+
+.mosaic-container .menu {
+    grid-row: 1;
     z-index: 2;
     display: flex;
     justify-content: space-between;
@@ -747,22 +846,37 @@ html {
     /* Lower z-index than notebook */
 }
 
-.mosaic-container .devicetray {
+/* Shell that centers the tray along the bottom edge. Centered with auto margins,
+   not translateX(-50%): a transform would make the shell the containing block
+   for the flyout's position: fixed backdrop. */
+.mosaic-container .devicetray-anchor {
     position: absolute;
-    top: 25px;
-    left: 25px;
-    background: var(--color-surface) 0% 0% no-repeat padding-box;
-    box-shadow: 0px 0px 8px #00000008;
-    border: 0.5px solid var(--color-border-light);
+    bottom: 25px;
+    left: 0;
+    right: 0;
+    width: fit-content;
+    margin: 0 auto;
+    max-width: calc(100% - 50px);
+    display: flex;
+    flex-direction: row;
+}
+
+/* The filler occupies a slot without painting one. It shares the slot's box
+   declarations (below) rather than restating them, so its width cannot drift
+   from a real slot's. */
+.mosaic-container .devicetray-anchor>.tray-filler {
+    visibility: hidden;
+}
+
+.mosaic-container .devicetray {
     border-radius: 15px;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    /* Wrap rather than scroll: overflow must stay visible on both axes, because
+       the caret band and the flyout are positioned above each button box, and an
+       overflow-x scroller computes overflow-y to auto and clips them. */
+    flex-wrap: wrap;
     padding: 0.5em;
-    max-height: calc(100% - 50px);
-    /* overflow-y: auto; */
-    /* overflow-x: visible; */
-    max-width: 5em;
-    box-sizing: border-box;
     user-select: none;
     -webkit-user-select: none;
 }
@@ -782,6 +896,13 @@ html {
     box-sizing: border-box;
 }
 
+/* While a drag or placement is in progress the panel stops catching the pointer,
+   so a drop under it still reaches the canvas. Dimmed to show it is inert. */
+.mosaic-container .sidebar.passthrough {
+    pointer-events: none;
+    opacity: 0.4;
+}
+
 .mosaic-container .sidebar h1 {
     background-color: var(--color-accent);
     color: var(--color-accent-text);
@@ -798,9 +919,17 @@ html {
     padding: 20px;
 }
 
+/* This rule sizes every chrome control in em, so all of them have to resolve em
+   against the same base. `a` and `label` inherit .mosaic-app's 16px; `button`
+   would otherwise keep the UA font-size (~13.3px), making an identically
+   declared box ~12% smaller and every em offset measured from a button
+   undershoot by a fifth. Buttons in the chrome hold only icons, so there is no
+   text to reflow. */
 .mosaic-container .chrome a,
 .mosaic-container .chrome button,
-.mosaic-container .chrome label {
+.mosaic-container .chrome label,
+.mosaic-container .devicetray-anchor>.tray-filler {
+    font-size: inherit;
     padding: 0.5em;
     margin: 0.75em 0.5em;
     background-color: var(--color-surface);
@@ -820,8 +949,10 @@ html {
 }
 
 
+/* label too, so radiobuttons-driven controls hover like the rest of the chrome */
 .mosaic-container .chrome a:hover,
-.mosaic-container .chrome button:hover {
+.mosaic-container .chrome button:hover,
+.mosaic-container .chrome label:hover {
     background-color: var(--color-hover);
 }
 
@@ -841,11 +972,27 @@ html {
 }
 
 .mosaic-container .chrome input[type="radio"] {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
 }
 
-.mosaic-container .devicetray button {
-    padding: 0.7em;
+.mosaic-container .chrome input[type="radio"]:focus-visible+label {
+    outline: 2px solid SelectedItem;
+    outline-offset: 1px;
+}
+
+/* Tray controls are visually tuned, so these are the em values that reproduce
+   the sizes they were tuned at. They read smaller than the chrome defaults
+   because they used to resolve against the UA font-size, not .mosaic-app's
+   16px; the numbers moved when the base was unified, the rendered box did not.
+   0.6 + 0.4 side padding+margin is exactly 2em, so a slot is 25px + 32px. */
+.mosaic-container .devicetray button,
+.mosaic-container .devicetray-anchor>.tray-filler {
+    padding: 0.6em;
+    margin: 0.6em 0.4em;
     width: 25px;
     height: 25px;
     display: inline-block;
@@ -856,67 +1003,123 @@ html {
     height: 25px;
 }
 
-.mosaic-container .devicetray details {
-    position: relative;
-}
-
-.mosaic-container .devicetray summary {
-    list-style-type: none;
-    cursor: pointer;
-}
-
-.mosaic-container .devicetray details summary::after {
-    /* Reset conflicting positioning from global rule */
-    position: absolute;
-    float: none;
-    top: auto;
-    left: auto;
-
-    /* Position in bottom right */
-    bottom: 0.8em;
-    right: 0.7em;
-
-    /* Override padding and rotation for devicetray */
-    padding: 2px;
-    transform: rotate(45deg);
-    /* closed = down ▼ */
-}
-
-.mosaic-container .devicetray details[open] summary::after {
-    transform: rotate(-45deg);
-    /* open = right ▶ */
-}
-
-.mosaic-container .devicetray details summary:has(button.active)::after {
-    border-color: var(--color-accent-text);
-    /* white triangle when button is active */
-}
-
-.mosaic-container .devicetray details .tray {
-    position: absolute;
-    top: 0;
-    left: 120%;
+/* Domain rocker at the right end of the tray. It stretches to the tray's
+   content height, so border-left is a full-height separator; the gap after that
+   border is padding, not margin, so the tab pair sits evenly inset. */
+.mosaic-container .devicetray .domain-switch {
     display: flex;
     flex-direction: row;
-    background: var(--color-surface) 0% 0% no-repeat padding-box;
-    /* box-shadow: 0px 0px 8px #00000008; */
-    border: 0.5px solid var(--color-border-light);
-    border-radius: 5px;
-    z-index: 0;
+    align-items: center;
+    border-left: 0.5px solid var(--color-border-light);
+    padding-left: 0.5em;
 }
 
-.mosaic-container .devicetray details .tray::before {
+/* labels, not buttons: cm/radiobuttons renders hidden radio + label pairs.
+   Scaled like the tray buttons above, so a tab is 16px + 2em = 32px wide. */
+.mosaic-container .devicetray .domain-switch label {
+    width: 16px;
+    height: 16px;
+    padding: 0.3em;
+    margin: 0.6em 0.2em;
+}
+
+.mosaic-container .devicetray .domain-switch svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Split-button flyout group The wrapper
+   carries the standard button margins and the inner buttons carry none. */
+.mosaic-container .devicetray .split-tray {
+    position: relative;
+    display: inline-block;
+    /* align-self keeps the wrapper exactly the button box against the flex row's
+       stretch; the slit's and flyout's offsets are measured against it */
+    align-self: flex-start;
+    /* the tray button margin, so a group's box matches a flat button's */
+    margin: 0.6em 0.4em;
+}
+
+.mosaic-container .devicetray .split-tray>button:first-child {
+    margin: 0;
+}
+
+.mosaic-container .devicetray .split-tray>button.slit {
+    position: absolute;
+    left: 0;
+    right: 0;
+    /* the chrome above the button: 0.6em wrapper margin + 0.5em tray padding */
+    top: -1.1em;
+    height: 1.1em;
+    /* width: auto overrides the base 25px so left/right: 0 can stretch it */
+    width: auto;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+    border-radius: 5px;
+}
+
+.mosaic-container .devicetray .split-tray>button.slit::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    padding: 3px;
+    /* chevron: right+bottom strokes of a square, rotated — same construction
+       as the global details triangles */
+    border: solid var(--color-text-strong);
+    border-width: 0 1px 1px 0;
+    /* closed = up ▲ */
+    transform: translate(-50%, -50%) rotate(-135deg);
+}
+
+.mosaic-container .devicetray .split-tray>button.slit.open::after {
+    /* open = down ▼ */
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.mosaic-container .devicetray .split-tray>button.slit:hover {
+    background: var(--color-hover);
+}
+
+/* Transparent overlay behind an open flyout: clicking anywhere else closes
+   it (and keeps at most one flyout open at a time). */
+.mosaic-container .devicetray .tray-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+}
+
+.mosaic-container .devicetray .split-tray .tray {
+    position: absolute;
+    /* cancel the flyout buttons' own 0.4em side margin, lining the variant
+       column up with the tray button and centering the flyout on it */
+    left: -0.4em;
+    /* button (100% of the wrapper) + caret band + the nub's own 14px reach */
+    bottom: calc(100% + 1.1em + 14px);
+    display: flex;
+    /* reverse so the first variant is the one nearest the button */
+    flex-direction: column-reverse;
+    background: var(--color-surface) 0% 0% no-repeat padding-box;
+    border: 0.5px solid var(--color-border-light);
+    border-radius: 5px;
+    z-index: 21;
+}
+
+.mosaic-container .devicetray .split-tray .tray::before {
     content: "";
     position: absolute;
     z-index: -1;
-    top: calc(50% - 10px);
-    left: -10px;
+    left: calc(50% - 10px);
+    bottom: -10px;
     transform: rotate(45deg);
     width: 20px;
     height: 20px;
     background: var(--color-surface);
-    border-left: 0.5px solid var(--color-border-light);
+    /* bottom+right meet at the corner rotate(45deg) turns downward */
     border-bottom: 0.5px solid var(--color-border-light);
+    border-right: 0.5px solid var(--color-border-light);
 }
 
 .mosaic-editor .properties {
@@ -973,11 +1176,6 @@ g.device {
     transform-origin: center;
     user-select: none;
     -webkit-user-select: none;
-}
-
-g.staging,
-g.toolstaging g.device {
-    transition: all 70ms ease-out;
 }
 
 @media (hover: none) {
@@ -1104,6 +1302,14 @@ rect.select {
     cursor: url(icons/eraser.svg) 6 14, crosshair;
 }
 
+/* Port dots advertise the port-press wire gesture with the wire tool's
+   pencil — scoped to the cursor tool, the only state in which the dots'
+   pointer-down handler acts (see specs/mosaic_wire_tool.md §Port dots). */
+.mosaic-canvas.cursor circle.port,
+.mosaic-canvas.cursor circle.nc {
+    cursor: url(icons/pencil.svg) 0 16, crosshair;
+}
+
 /* Propagate effective color-scheme to :root so <html>'s UA-default
    background matches the theme. VS Code applies .vscode-dark/.vscode-light
    to <body> only, which leaves <html>'s default bg tied to the OS
@@ -1126,6 +1332,8 @@ rect.select {
     .mosaic-canvas.probe { cursor: url(icons/search-light.svg) 5 5, crosshair; }
     .mosaic-canvas.eraser .wire:hover,
     .mosaic-canvas.eraser .device { cursor: url(icons/eraser-light.svg) 6 14, crosshair; }
+    .mosaic-canvas.cursor circle.port,
+    .mosaic-canvas.cursor circle.nc { cursor: url(icons/pencil-light.svg) 0 16, crosshair; }
 }
 .dark-cursors .mosaic-canvas.pan,
 .vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.pan { cursor: url(icons/arrows-move-light.svg) 6 0, grab; }
@@ -1137,6 +1345,10 @@ rect.select {
 .dark-cursors .mosaic-canvas.eraser .device,
 .vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.eraser .wire:hover,
 .vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.eraser .device { cursor: url(icons/eraser-light.svg) 6 14, crosshair; }
+.dark-cursors .mosaic-canvas.cursor circle.port,
+.dark-cursors .mosaic-canvas.cursor circle.nc,
+.vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.cursor circle.port,
+.vscode-dark .mosaic-container:not(.light-cursors) .mosaic-canvas.cursor circle.nc { cursor: url(icons/pencil-light.svg) 0 16, crosshair; }
 
 body.vscode-dark,
 body.vscode-light {
@@ -1271,7 +1483,7 @@ g.device.selected path {
 }
 
 circle.nc {
-    fill: none;
+    fill: transparent;
     stroke: var(--canvas-nc);
     stroke-dasharray: 1 4;
 }
@@ -2076,22 +2288,24 @@ svg.eyesore {
     background: var(--color-border);
 }
 
+/* --color-badge, not --color-accent: the open tag-tree node already uses the
+   accent, and two near-but-different blues side by side read as a clash */
 .mosaic-app .tag-badge.active {
     cursor: pointer;
-    background: #4a9eff;
-    color: var(--color-accent-text);
+    background: var(--color-badge);
+    color: var(--color-badge-text);
 }
 
 .mosaic-app .tag-badge.active:hover {
-    background: #3080e0;
+    background: color-mix(in srgb, var(--color-badge) 85%, black);
 }
 
 .mosaic-app .tag-badge.prop-tag {
-    background: #d4e8ff;
-    color: #1a5fa0;
+    background: color-mix(in srgb, var(--color-badge) 18%, transparent);
+    color: var(--color-text-strong);
 }
 
 .mosaic-app .tag-badge.prop-tag.active {
-    background: #1a5fa0;
-    color: var(--color-accent-text);
+    background: color-mix(in srgb, var(--color-badge) 70%, black);
+    color: var(--color-badge-text);
 }

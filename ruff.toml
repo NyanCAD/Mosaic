@@ -32,6 +32,10 @@ ignore = [
     "ARG001",
     # Too many arguments
     "PLR0913",
+    # Too many positional arguments (same objection as PLR0913)
+    "PLR0917",
+    # Missing copyright notice: files carry REUSE (SPDX-FileCopyrightText) headers
+    "CPY001",
     # f-string in logging
     "G004",
     # Partial executable path / subprocess shell

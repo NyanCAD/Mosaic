@@ -82,8 +82,18 @@
            docs (find-docs (<p! result))]
        (into {} (map (juxt :_id identity)) docs)))))
 
-(defn- init-cache [db group cache]
-  (go (reset! cache (<! (get-group db group nil (empty @cache))))))
+(defn- init-cache
+  "Fetch the group's docs from PouchDB and reset! the cache with them,
+   unless a validator is set on `pa` and it rejects the incoming docs.
+   On rejection the cache stays at its constructed initial value; the
+   validator has already alerted the user via `cm/alert`."
+  [db group ^PAtom pa]
+  (go
+    (let [cache (.-cache pa)
+          docs (<! (get-group db group nil (empty @cache)))]
+      (when (or (not (.-validator pa))
+                ((.-validator pa) docs))
+        (reset! cache docs)))))
 
 (defn watch-changes [db & patoms]
   ; browsers allow 6 concurrent requests per domain
@@ -96,22 +106,25 @@
                                 :heartbeat false
                                 :include_docs true
                                 :attachments true})
-        groups-atom (atom (into {} (map (fn [pa] [(.-group pa) (.-cache pa)]) patoms)))]
+        groups-atom (atom (into {} (map (fn [^PAtom pa] [(.-group pa) pa]) patoms)))]
     (.on ch "change" (fn [change]
                        (let [doc (json->clj ^js (.-doc change))
                              id (get doc :_id)
                              del? (get doc :_deleted)
                              group (first (split id sep))]
-                         (when-let [cache (get @groups-atom group)]
-                           (when-not (or (= (get doc :_rev) (get-in @cache [id :_rev]))
-                                         (and del? (not (contains? @cache id))))
-                             (if del?
-                               (swap! cache dissoc id)
-                               (swap! cache assoc id doc)))))))
+                         (when-let [^PAtom pa (get @groups-atom group)]
+                           (let [cache (.-cache pa)
+                                 validator (.-validator pa)]
+                             (when-not (or (= (get doc :_rev) (get-in @cache [id :_rev]))
+                                           (and del? (not (contains? @cache id))))
+                               (if del?
+                                 (swap! cache dissoc id)
+                                 (when (or (not validator) (validator (assoc @cache id doc)))
+                                   (swap! cache assoc id doc)))))))))
     groups-atom))
 
 (defn add-watch-group [groups patom]
-  (swap! groups assoc (.-group patom) (.-cache patom)))
+  (swap! groups assoc (.-group patom) patom))
 
 (defn- pouch-swap! [db cache done? validator f x & args]
   (letfn [(prepare [old new] ; get the new values, filling in _id, _ref, _deleted
@@ -143,25 +156,34 @@
     ; build a map with only the keys to update
     (go
       (<! done?) ; sequentialize operations to avoid needless conflicts, over twice as fast
-      (loop [docs (into {} (map (let [c @cache] #(vector % (get c %)))) (keyset x))]
-        (let [updocs (apply f docs (if (set? x) (keys docs) x) args)] ; apply f
-          (when (and validator (not (validator updocs)))
-            (throw (ex-info "Validator rejected reference state" {:docs updocs})))
-          (if (= docs updocs)
-            @cache ; nothing changed, no need to do anything
-            (let [prepdocs (prepare docs updocs) ; prepare for sending to PouchDB
-                  res (<p! (bulkdocs db prepdocs)) ; try to put the updated docs
-                  ;400 errors get thrown, not returned
-                  errdocs (reduce dissok updocs res) ; remove the OK docs from the active set
-                  donedocs (reduce assok updocs res)] ; update the revisions of the OK docs
-              ; update OK docs in the cach, we're done with them
-              ; we use tombstone-into here, so that nil values from assok get removed from the cache
-              (swap! cache tombstone-into donedocs)
-              (if (empty? errdocs) ; are there any conflicst left to retry?
-                @cache ; done
-                ; fetch the latest documents from the DB for all conflicts
-                (let [p (alldocs db (clj->js {:include_docs true :keys (keys errdocs)}))]
-                  (recur (docs-into {} (<p! p)))))))))))) ; recur with remaining documents
+      (try
+        (loop [docs (into {} (map (let [c @cache] #(vector % (get c %)))) (keyset x))]
+          (let [updocs (apply f docs (if (set? x) (keys docs) x) args)] ; apply f
+            (when (and validator (not (validator updocs)))
+              (throw (ex-info "Validator rejected reference state"
+                              {:validator-rejected true :docs updocs})))
+            (if (= docs updocs)
+              @cache ; nothing changed, no need to do anything
+              (let [prepdocs (prepare docs updocs) ; prepare for sending to PouchDB
+                    res (<p! (bulkdocs db prepdocs)) ; try to put the updated docs
+                    ;400 errors get thrown, not returned
+                    errdocs (reduce dissok updocs res) ; remove the OK docs from the active set
+                    donedocs (reduce assok updocs res)] ; update the revisions of the OK docs
+                ; update OK docs in the cach, we're done with them
+                ; we use tombstone-into here, so that nil values from assok get removed from the cache
+                (swap! cache tombstone-into donedocs)
+                (if (empty? errdocs) ; are there any conflicst left to retry?
+                  @cache ; done
+                  ; fetch the latest documents from the DB for all conflicts
+                  (let [p (alldocs db (clj->js {:include_docs true :keys (keys errdocs)}))]
+                    (recur (docs-into {} (<p! p))))))))) ; recur with remaining documents
+        (catch :default e
+          ;; The done? channel carries the error as a value. A validator
+          ;; rejection has already alerted the user; anything else (a PouchDB or
+          ;; network failure) must not disappear silently.
+          (when-not (:validator-rejected (ex-data e))
+            (js/console.error e))
+          e))))) ; ex-info lands on done? as a value; never escapes the go block
 
 (deftype PAtom [db group cache ^:mutable done? ^:mutable validator]
   IAtom
@@ -183,8 +205,8 @@
 (defn pouch-atom
   ([db group] (pouch-atom db group (atom {})))
   ([db group cache]
-   (PAtom. db group cache
-           (init-cache db group cache)
-           nil)))
+   (let [pa (PAtom. db group cache nil nil)]
+     (set! (.-done? pa) (init-cache db group pa))
+     pa)))
 
 (defn done? [^PAtom pa] (.-done? pa))
