@@ -1411,7 +1411,7 @@
 (defn commit-stretch
   "PAtom merge fn (map-keyed swap): move each wire's flagged end(s) by (dx,dy) and
    snap to the grid. A stretch that collapses a wire onto a single cell deletes it
-   (nil tombstone) — like `same-tile?` refuses zero-length wires when drawing; the
+   (dissoc, never a nil value: the schematic validator rejects `{id nil}`) — like `same-tile?` refuses zero-length wires when drawing; the
    coincident ports stay connected via the shared cell, so nothing disconnects.
    Guards on (contains? s id) so conflict retries — which refetch only the still-
    conflicting subset while the full `stretch` map is re-passed — don't fabricate
@@ -1422,7 +1422,9 @@
                  (let [w (-> (stretch-wire (get s id) ends dx dy)
                              (update :x math/round)  (update :y math/round)
                              (update :rx math/round) (update :ry math/round))]
-                   (assoc s id (when-not (and (zero? (:rx w)) (zero? (:ry w))) w)))
+                   (if (and (zero? (:rx w)) (zero? (:ry w)))
+                     (dissoc s id)
+                     (assoc s id w)))
                  s))
              sch stretch))
 
@@ -2044,7 +2046,11 @@
   (when (and (.-isPrimary e)
              (= (.-button e) 0)
              (not (pen-eraser? e))
-             (= ::cursor (::tool @ui)))
+             (= ::cursor (::tool @ui))
+             ;; Dropping a pasted ghost can land on one of its own port dots.
+             (not (::paste-staging @ui))
+             (not (::staging @ui))
+             (not (::dragging @ui)))
     (momentary-tool! ::wire)))
 
 (defn maybe-restore-tool!

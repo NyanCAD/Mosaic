@@ -347,3 +347,14 @@
       (is (= :circle.port (first el)))
       (is (= e/port-wire-start (get (second el) :on-pointer-down))
           "circle.port presses launch the momentary wire tool"))))
+
+(deftest port-wire-start-noop-while-a-paste-ghost-is-staged
+  (testing "dropping a paste can press one of the ghost's own port dots; that
+            click must place the paste, not start a wire"
+    (try
+      (ui-reset)
+      (swap! e/ui assoc ::e/paste-staging {"R1" {:type "resistor"}})
+      (e/port-wire-start (mock-event))
+      (is (= ::e/cursor (::e/tool @e/ui)))
+      (is (nil? (::e/prev-tool @e/ui)))
+      (finally (ui-reset)))))

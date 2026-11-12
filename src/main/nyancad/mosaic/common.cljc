@@ -658,6 +658,7 @@
 (def cursor (r/adapt-react-class icons/HandIndex))
 (def eraser (r/adapt-react-class icons/Eraser))
 (def move (r/adapt-react-class icons/ArrowsMove))
+(def move-attached (r/adapt-react-class icons/Link45deg))
 (def wire (r/adapt-react-class icons/Pencil))
 (def label (r/adapt-react-class icons/Tag))
 (def delete (r/adapt-react-class icons/Trash))
@@ -1274,7 +1275,7 @@
       [[wire] "W" "Wire"]
       [[eraser] "E" "Eraser"]
       [[move] "Space" "Pan (hold)"]
-      [[move] "Ctrl+Drag" "Move, keeping wires attached"]
+      [[move-attached] "Ctrl+Drag" "Move, keeping wires attached"]
       [[rotatecw] "S" "Spin CW"]
       [[rotateccw] "Shift+S" "Spin CCW"]
       [[mirror-vertical] "F" "Flip X"]
