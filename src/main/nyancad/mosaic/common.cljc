@@ -1150,6 +1150,9 @@
 (defn clear-context-menu []
   (swap! context-content assoc :body nil))
 
+(defn clear-modal []
+  (reset! modal-content nil))
+
 ;; Onboarding popup for first-time users
 (defn device-icon [name]
   (let [icon (case name

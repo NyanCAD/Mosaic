@@ -3544,7 +3544,7 @@
                 #{:delete} delete-selected
                 #{:w} #(cancel ::wire)
                 #{:e} #(cancel ::eraser)
-                #{:escape} cancel
+                #{:escape} #(do (cm/clear-context-menu) (cancel) (cm/clear-modal))
                 #{(keyword " ")} maybe-restore-tool!
                 #{:s}        (fn [_] (transform-selected cm/rotate-cw))
                 #{:shift :s} (fn [_] (transform-selected cm/rotate-ccw))

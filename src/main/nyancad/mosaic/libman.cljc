@@ -247,9 +247,10 @@
    [cm/contextmenu]
    [cm/modal]])
 
-(def shortcuts {})
+(def shortcuts {#{:escape} #(do (cm/clear-context-menu) (cm/clear-modal))})
 
 (defn ^:dev/after-load render []
+  (set! js/document.onkeyup (partial cm/keyboard-shortcuts shortcuts))
   (rdc/render root [library-manager]))
 
 (defn ^:export init []
