@@ -14,7 +14,7 @@
    VSCode-specific wiring: the acquireVsCodeApi transport, the window message
    listener, and the read-file request/response channel."
   (:require [nyancad.mosaic.jsatom.protocol :as protocol]
-            [cljs.core.async :refer [put! promise-chan]]))
+            [cljs.core.async :refer [put! promise-chan chan close!]]))
 
 (defonce vscode (js/acquireVsCodeApi))
 
@@ -69,4 +69,6 @@
     new cache value on success or the ex-info on validator rejection. Matches
    the hipflask/done? API so editor code can chain writes uniformly."
   [^js ja]
-  (.-done? ja))
+  ;; Before the first swap! there is no mutation to wait for: hand back a closed
+  ;; channel, which <! reads as nil, like the old `(go nil)`.
+  (or (.-done? ja) (doto (chan) close!)))

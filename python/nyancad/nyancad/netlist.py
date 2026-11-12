@@ -140,9 +140,9 @@ def _foreign_library_language(entry, sim):
     if (
         sim.lower() == "vacask"
         and entry.get("library")
-        and entry.get("language", "").lower() == "spice"
+        and (entry.get("language") or "").lower() == "spice"
     ):
-        implementation = entry.get("implementation", "").lower()
+        implementation = (entry.get("implementation") or "").lower()
         if implementation in ("ngspice", "xyce"):
             return implementation
     return None
@@ -680,10 +680,10 @@ class NyanCADMixin:
             return None
         accepted = _SIM_LANGUAGES.get(sim.lower(), ("spice",))
         for entry in entries:
-            if entry.get("implementation", "").lower() == sim.lower():
+            if (entry.get("implementation") or "").lower() == sim.lower():
                 return entry
         for entry in entries:
-            if entry.get("language", "").lower() in accepted:
+            if (entry.get("language") or "").lower() in accepted:
                 return entry
         for entry in entries:
             if _foreign_library_language(entry, sim):

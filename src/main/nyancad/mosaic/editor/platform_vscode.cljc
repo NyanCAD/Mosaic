@@ -21,10 +21,10 @@
                      (js/decodeURIComponent (.-value (js/document.getElementById "document")))
                      (r/atom {})
                      (injected-version "document-version")))
-;; If the initial document is invalid, clear the cache before registering
-;; the validator so set-validator!'s re-validation passes. The validator's
-;; cm/alert side effect has already fired on the check. JS is single-threaded
-;; so the check-then-clear-then-set sequence is race-free.
+;; ClojureScript's set-validator! does not re-validate the current value, so
+;; check the initial document here: if it is invalid, clear the cache so no
+;; invalid data sits in it. The validator's cm/alert side effect fires on the
+;; check, so the user is told.
 (let [v #(or (s/valid? :nyancad.mosaic.common/schematic %) (cm/alert (s/explain-str :nyancad.mosaic.common/schematic %)))]
   (when-not (v @schematic) (reset! (.-cache schematic) {}))
   (set-validator! schematic v))

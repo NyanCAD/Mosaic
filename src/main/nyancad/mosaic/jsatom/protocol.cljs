@@ -74,7 +74,8 @@
             data (apply f old x args)]
         (when-let [v (.-validator ja)]
           (when-not (v data)
-            (throw (ex-info "Validator rejected reference state" {:val data}))))
+            (throw (ex-info "Validator rejected reference state"
+                          {:validator-rejected true :val data}))))
         (reset! (.-cache ja) data)
         (let [grp (.-group ja)
               post (.-post ja)]
@@ -85,6 +86,8 @@
               (reset! (.-document ja) doc'))))
         (put! ch data))
       (catch :default e
+        (when-not (:validator-rejected (ex-data e))
+          (js/console.error e))
         (put! ch e))
       (finally
         (close! ch)))
@@ -121,10 +124,10 @@
    host sends when it had to reject an edit.
 
    The initial `reset! cache (doc->state doc)` runs before the validator is
-   set (set-validator! is called by the platform after this returns). When
-   set-validator! is subsequently called, it re-validates the current cache
-   and clears it if the validator rejects — so an invalid initial document
-   surfaces as an alert and an empty cache, not as invalid data sitting in
+   set (set-validator! is called by the platform after this returns). ClojureScript's
+   set-validator! does not re-validate the current value, so the platform must
+   check the initial cache itself and clear it if invalid (see
+   platform_vscode.cljc) — otherwise an invalid initial document would sit in
    the cache.
 
    The `receive!` paths re-check the validator on every incoming message

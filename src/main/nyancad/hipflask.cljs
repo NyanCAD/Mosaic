@@ -119,7 +119,7 @@
                                            (and del? (not (contains? @cache id))))
                                (if del?
                                  (swap! cache dissoc id)
-                                 (when (or (not validator) (validator doc))
+                                 (when (or (not validator) (validator (assoc @cache id doc)))
                                    (swap! cache assoc id doc)))))))))
     groups-atom))
 
@@ -160,7 +160,8 @@
         (loop [docs (into {} (map (let [c @cache] #(vector % (get c %)))) (keyset x))]
           (let [updocs (apply f docs (if (set? x) (keys docs) x) args)] ; apply f
             (when (and validator (not (validator updocs)))
-              (throw (ex-info "Validator rejected reference state" {:docs updocs})))
+              (throw (ex-info "Validator rejected reference state"
+                              {:validator-rejected true :docs updocs})))
             (if (= docs updocs)
               @cache ; nothing changed, no need to do anything
               (let [prepdocs (prepare docs updocs) ; prepare for sending to PouchDB
@@ -177,6 +178,11 @@
                   (let [p (alldocs db (clj->js {:include_docs true :keys (keys errdocs)}))]
                     (recur (docs-into {} (<p! p))))))))) ; recur with remaining documents
         (catch :default e
+          ;; The done? channel carries the error as a value. A validator
+          ;; rejection has already alerted the user; anything else (a PouchDB or
+          ;; network failure) must not disappear silently.
+          (when-not (:validator-rejected (ex-data e))
+            (js/console.error e))
           e))))) ; ex-info lands on done? as a value; never escapes the go block
 
 (deftype PAtom [db group cache ^:mutable done? ^:mutable validator]

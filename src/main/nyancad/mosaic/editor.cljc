@@ -134,21 +134,24 @@
    own splits, independence from reactive timing)."
   []
   (go
-    (<! (done? schematic))
-    (cm/newdo undotree @schematic)
-    (let [pt-idx (build-point-index @schematic)]
-      (doseq [[w coords] (build-wire-split-index @schematic pt-idx)]
-        (split-wire w coords pt-idx)
-        (<! (done? schematic))))
-    (<! (done? schematic))
-    (let [sch      @schematic
-          pt-idx   (build-point-index sch)
-          networks (build-wire-networks sch pt-idx)
-          nets     (build-netlist networks)
-          net-types (build-net-type-index networks pt-idx)
-          updates  (build-net-annotations sch nets net-types)]
-      (when (seq updates)
-        (swap! schematic (partial merge-with merge) updates)))))
+    ;; A write the validator rejected leaves the schematic unchanged and puts the
+    ;; error on `done?`; there is nothing to checkpoint, split or annotate.
+    (let [result (<! (done? schematic))]
+      (when-not (instance? js/Error result)
+        (cm/newdo undotree @schematic)
+        (let [pt-idx (build-point-index @schematic)]
+          (doseq [[w coords] (build-wire-split-index @schematic pt-idx)]
+            (split-wire w coords pt-idx)
+            (<! (done? schematic))))
+        (<! (done? schematic))
+        (let [sch      @schematic
+              pt-idx   (build-point-index sch)
+              networks (build-wire-networks sch pt-idx)
+              nets     (build-netlist networks)
+              net-types (build-net-type-index networks pt-idx)
+              updates  (build-net-annotations sch nets net-types)]
+          (when (seq updates)
+            (swap! schematic (partial merge-with merge) updates)))))))
 
 (defn restore [state]
   (let [;; Ensure keys are strings (schematic uses string device IDs)
@@ -3391,18 +3394,24 @@
   ;; `::zoom`, the selection toolbar's placement is pure.
   (r/atom nil))
 
+(defonce ^:private canvas-observer (atom nil))
+
 (defn watch-canvas-box!
   "Mirror the canvas's viewport rect into `canvas-box` and keep it current as
    the element resizes. Passed by name as the canvas's `:ref` so React runs it
    on mount and unmount only, never per render."
   [^js el]
+  (some-> @canvas-observer .disconnect)
+  (reset! canvas-observer nil)
   (when el
     (let [read! (fn []
                   (let [^js r (.getBoundingClientRect el)]
                     (reset! canvas-box {:left (.-left r) :top (.-top r)
-                                        :width (.-width r) :height (.-height r)})))]
+                                        :width (.-width r) :height (.-height r)})))
+          observer (js/ResizeObserver. read!)]
       (read!)
-      (.observe (js/ResizeObserver. read!) el))))
+      (.observe observer el)
+      (reset! canvas-observer observer))))
 
 (defn selected-devices
   "The ids in `sel` that name devices in `sch` — `::selected` mixes devices,
@@ -3453,16 +3462,16 @@
                 :height (str (:height anchor) "px")}}
        [:div.selection-toolbar.chrome.chrome-float
         [:div.toolbar-group
-         [:a {:title "Rotate selected clockwise [r]"
+         [:a {:title "Rotate selected clockwise [s]"
               :on-click #(transform-selected cm/rotate-cw)}
           [cm/rotatecw]]
-         [:a {:title "Rotate selected counter-clockwise [shift+r]"
+         [:a {:title "Rotate selected counter-clockwise [shift+s]"
               :on-click #(transform-selected cm/rotate-ccw)}
           [cm/rotateccw]]
-         [:a {:title "Flip horizontally [x]"
+         [:a {:title "Flip horizontally [f]"
               :on-click #(transform-selected cm/flip-x)}
           [cm/mirror-vertical]]
-         [:a {:title "Flip vertically [y]"
+         [:a {:title "Flip vertically [shift+f]"
               :on-click #(transform-selected cm/flip-y)}
           [cm/mirror-horizontal]]]
         [:div.toolbar-group
