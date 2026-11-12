@@ -1112,11 +1112,6 @@
 
 (defonce context-content (r/atom {:x 0 :y 0 :body nil}))
 
-(def overlay-margin
-  "Gap in px kept between a floating overlay and the viewport edge, and between
-   the selection toolbar and the geometry it anchors to."
-  8)
-
 (defn union-rect
   "Smallest rect containing every rect in `rects`, each `{:x :y :width :height}`.
    Returns nil for an empty sequence."

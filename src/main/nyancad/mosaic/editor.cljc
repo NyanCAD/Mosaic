@@ -81,6 +81,7 @@
 (defonce selected (r/cursor ui [::selected]))
 (defonce delta (r/cursor ui [::delta]))
 (defonce staging (r/cursor ui [::staging]))
+(defonce dragging (r/cursor ui [::dragging]))
 (defonce paste-staging (r/cursor ui [::paste-staging]))
 (defonce notebook-state (r/cursor ui [::notebook-state]))
 (defonce tab-index (r/cursor ui [::tab-index]))
@@ -697,7 +698,10 @@
    symbol's default ports (`cm/default-ports`), else nil. A model that lists no
    ports counts as no model, so the symbol keeps its shape."
   [{:keys [model type]}]
-  (let [ports (get-in @modeldb [(cm/model-key model) :ports])]
+  ;; Only deref the model library when there is a model to look up, so built-in
+  ;; devices do not subscribe to every model edit.
+  (let [ports (when (seq model)
+                (get-in @modeldb [(cm/model-key model) :ports]))]
     (if (seq ports) ports (get cm/default-ports type))))
 
 (defn device-dims
@@ -709,11 +713,11 @@
   [dev]
   (let [model-entry (get models (:type dev))
         bg (::bg model-entry)]
-    (cond
-      (and (vector? bg) (= (count bg) 2)) bg
-      :else (if-let [ports (seq (device-ports dev))]
-              (cm/port-perimeter ports (:type dev))
-              [1 1]))))
+    (if (and (vector? bg) (= (count bg) 2))
+      bg
+      (if-let [ports (seq (device-ports dev))]
+        (cm/port-perimeter ports (:type dev))
+        [1 1]))))
 
 (defn centered-artwork-transform
   "Return an SVG transform that applies a six-number matrix around the center
@@ -754,7 +758,7 @@
 
 (defn circuit-conn [k v]
   (let [ports (seq (device-ports v))
-        [width height] (if ports (cm/port-perimeter ports (:type v)) [1 1])
+        [width height] (device-dims v)
         locs (if ports (cm/port-locations ports (:type v)) [])
         size (+ 2 (max width height))]
     [device size k v
@@ -2063,6 +2067,14 @@
                     :variant "d"}
          ::dragging ::wire))
 
+(defn gesture-active?
+  "True while the user is dragging something or placing a staged device, wire
+   or paste. Floating panels use this to stop catching the pointer, so a panel
+   that opens under the cursor (selecting a device selects it into the sidebar)
+   cannot swallow the drop."
+  [uiv]
+  (boolean (or (::dragging uiv) (::staging uiv) (::paste-staging uiv))))
+
 (defn momentary-tool!
   "Enter a momentary tool, saving the tool to return to in the one-shot
    ::prev-tool slot. Shared by the pen eraser, middle-click pan, hold-Space pan,
@@ -2090,9 +2102,7 @@
              (not (pen-eraser? e))
              (= ::cursor (::tool @ui))
              ;; Dropping a pasted ghost can land on one of its own port dots.
-             (not (::paste-staging @ui))
-             (not (::staging @ui))
-             (not (::dragging @ui)))
+             (not (gesture-active? @ui)))
     (momentary-tool! ::wire)))
 
 (defn maybe-restore-tool!
@@ -2848,6 +2858,17 @@
            #(or (:template %) effective-default)
            (fn [st v] (swap! st assoc :template v) (post-action!))]]]))))
 
+(defn- single-cell?
+  "True for devices that render at size 1 through `port-sym` rather than through
+   a tetris rect: plain/ground/supply/text ports, which have connection points
+   (`::conn`) but no `::bg`, no model, and no default ports."
+  [dev]
+  (let [model-entry (get models (:type dev))
+        bg (::bg model-entry)]
+    (and (not (and (vector? bg) (= (count bg) 2)))
+         (not (or (:model dev) (contains? cm/default-ports (:type dev))))
+         (some? (::conn model-entry)))))
+
 (defn doc-center
   "Visual center of a single device doc in grid coordinates — the tetris rect
   center `[:x + 1 + w/2, :y + 1 + h/2]`, which is where `add-device` places a
@@ -2856,47 +2877,27 @@
   render at size 1 via `port-sym`, not through `draw-background`) center on
   their origin tile."
   [dev]
-  (if (= (:type dev) "wire")
+  (cond
+    (= (:type dev) "wire")
     [(+ (:x dev) (/ (:rx dev 0) 2) 0.5)
      (+ (:y dev) (/ (:ry dev 0) 2) 0.5)]
-    (let [model-entry (get models (:type dev))
-          bg (::bg model-entry)]
-      (cond
-        (and (vector? bg) (= (count bg) 2))
-        (let [[w h] bg]
-          [(+ (:x dev) 1 (/ w 2))
-           (+ (:y dev) 1 (/ h 2))])
 
-        (or (:model dev) (contains? cm/default-ports (:type dev)))
-        (let [[w h] (device-dims dev)]
-          [(+ (:x dev) 1 (/ w 2))
-           (+ (:y dev) 1 (/ h 2))])
+    (single-cell? dev)
+    [(+ (:x dev) 0.5) (+ (:y dev) 0.5)]
 
-        (nil? (::conn model-entry))
-        [(+ (:x dev) 1.5) (+ (:y dev) 1.5)]
-
-        :else
-        [(+ (:x dev) 0.5) (+ (:y dev) 0.5)]))))
+    :else
+    (let [[w h] (device-dims dev)]
+      [(+ (:x dev) 1 (/ w 2))
+       (+ (:y dev) 1 (/ h 2))])))
 
 (defn device-tile-size
-  "Square tile edge of a device doc in grid cells, mirroring `doc-center`'s
-   branches. Plain/ground/supply/text ports render at size 1 via `port-sym`,
+  "Square tile edge of a device doc in grid cells, from the same footprint as
+   `doc-center`. Plain/ground/supply/text ports render at size 1 via `port-sym`,
    which `device-dims`' `[1 1]` fallthrough would misreport as 3."
   [dev]
-  (let [model-entry (get models (:type dev))
-        bg (::bg model-entry)]
-    (cond
-      (and (vector? bg) (= (count bg) 2))
-      (let [[w h] bg] (+ 2 (max w h)))
-
-      (or (:model dev) (contains? cm/default-ports (:type dev)))
-      (+ 2 (apply max (device-dims dev)))
-
-      (nil? (::conn model-entry))
-      3
-
-      :else
-      1)))
+  (if (single-cell? dev)
+    1
+    (+ 2 (apply max (device-dims dev)))))
 
 (defn clipboard-centroid
   "Mean of the visual centers (see `doc-center`) of a sequence of device docs.
@@ -3154,7 +3155,7 @@
   ([groups dom]
    (filter #(= dom (:domain %)) groups))
   ([]
-   (visible-tray-groups tray-groups (or @domain ::electrical))))
+   (visible-tray-groups tray-groups @domain)))
 
 (defn tray-slot-deficit
   "How many slots this domain is short of the widest domain. Rendered as filler
@@ -3165,7 +3166,7 @@
                    (count (visible-tray-groups groups id))))
       (count (visible-tray-groups groups dom))))
   ([]
-   (tray-slot-deficit tray-groups (or @domain ::electrical))))
+   (tray-slot-deficit tray-groups @domain)))
 
 (defn domain-switch
   "Domain rocker at the right end of the device tray, rendered from
@@ -3405,9 +3406,13 @@
   (reset! canvas-observer nil)
   (when el
     (let [read! (fn []
-                  (let [^js r (.getBoundingClientRect el)]
-                    (reset! canvas-box {:left (.-left r) :top (.-top r)
-                                        :width (.-width r) :height (.-height r)})))
+                  (let [^js r (.getBoundingClientRect el)
+                        box {:left (.-left r) :top (.-top r)
+                             :width (.-width r) :height (.-height r)}]
+                    ;; skip identical rects so an unchanged resize does not
+                    ;; re-render the selection toolbar
+                    (when-not (= box @canvas-box)
+                      (reset! canvas-box box))))
           observer (js/ResizeObserver. read!)]
       (read!)
       (.observe observer el)
@@ -3450,7 +3455,7 @@
         anchor (when (and tile box)
                  (cm/rect->screen (cm/user->screen @zoom box)
                                   (cm/inset-rect tile (/ grid-size 2))))]
-    (when (and anchor (not (::dragging @ui)))
+    (when (and anchor (not @dragging))
       [:div.selection-anchor
        ;; Inline rather than in CSS: being out of flow is structural, not
        ;; cosmetic. An unstyled anchor would take up layout and shove the
@@ -3485,14 +3490,6 @@
               :on-click #(delete-selected)}
           [cm/delete]]]]])))
 
-(defn gesture-active?
-  "True while the user is dragging something or placing a staged device, wire
-   or paste. Floating panels use this to stop catching the pointer, so a panel
-   that opens under the cursor (selecting a device selects it into the sidebar)
-   cannot swallow the drop."
-  [uiv]
-  (boolean (or (::dragging uiv) (::staging uiv) (::paste-staging uiv))))
-
 (defn schematic-ui []
   [:div.mosaic-container (theme-attrs)
    [:div.menu.chrome.chrome-float
@@ -3501,7 +3498,10 @@
     [:div.content
      [device-tray]
      (when-let [sel (seq @selected)]
-       [:div.sidebar {:class (when (gesture-active? @ui) "passthrough")}
+       [:div.sidebar {:class (when (gesture-active? {::dragging @dragging
+                                                       ::staging @staging
+                                                       ::paste-staging @paste-staging})
+                        "passthrough")}
         (doall (for [key sel]
                  ^{:key key} [deviceprops key]))])
      [:svg.mosaic-canvas (merge (theme-attrs)
