@@ -927,7 +927,8 @@ html {
    text to reflow. */
 .mosaic-container .chrome a,
 .mosaic-container .chrome button,
-.mosaic-container .chrome label {
+.mosaic-container .chrome label,
+.mosaic-container .devicetray-anchor>.tray-filler {
     font-size: inherit;
     padding: 0.5em;
     margin: 0.75em 0.5em;
