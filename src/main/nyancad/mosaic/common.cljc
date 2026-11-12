@@ -1200,6 +1200,8 @@
                "photodiode" (rc/inline "icons/photodiode.svg")
                "modulator" (rc/inline "icons/modulator.svg")
                "grating-coupler" (rc/inline "icons/grating-coupler.svg")
+               "wave" (rc/inline "icons/wave.svg")
+               "bolt" (rc/inline "icons/bolt.svg")
                "")]
     [:span.device-icon {:dangerouslySetInnerHTML (r/unsafe-html icon)}]))
 

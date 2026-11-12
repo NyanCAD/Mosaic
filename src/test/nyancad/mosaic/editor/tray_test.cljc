@@ -43,16 +43,63 @@
         (is (contains? valid-types type) (str "unregistered type: " type))
         (is (vector? icon) (str type " has hiccup icon"))))))
 
+(defn- domain-groups [dom] (e/visible-tray-groups e/tray-groups dom))
+
 (deftest tray-inventory-test
-  (testing "groups appear in the toolbar order"
+  (testing "every item belongs to exactly one known domain"
+    (is (every? #{::e/electrical ::e/photonic} (map :domain e/tray-groups))))
+  (testing "electrical groups appear in the toolbar order"
     (is (= [:ports :resistor :inductor :capacitor :diode :sources :transistors :subcircuits]
-           (map :id e/tray-groups))))
+           (map :id (domain-groups ::e/electrical)))))
   (testing "single-variant items are flat buttons, multi-variant items are flyouts"
-    (is (= [5 1 1 1 1 2 4 2] (map (comp count :variants) e/tray-groups))))
-  (testing "every placeable electronic type is reachable from the tray"
+    (is (= [5 1 1 1 1 2 4 2]
+           (map (comp count :variants) (domain-groups ::e/electrical)))))
+  (testing "every placeable electronic type is reachable from the electrical tray"
     (is (= #{"port" "text" "resistor" "inductor" "capacitor" "diode" "vsource" "isource"
              "nmos" "pmos" "npn" "pnp" "ckt" "amp"}
-           (set (for [g e/tray-groups v (:variants g)] (:type v)))))))
+           (set (for [g (domain-groups ::e/electrical) v (:variants g)] (:type v)))))))
+
+(deftest photonic-inventory-test
+  (testing "photonic groups, in order"
+    (is (= [:photonic-ports :waveguides :couplers :interferometers
+            :opto-electronic :interfaces :library]
+           (map :id (domain-groups ::e/photonic)))))
+  (testing "every photonic symbol type is reachable from the photonic tray"
+    (let [photonic-types #{"straight" "bend" "sbend" "taper" "transition"
+                           "terminator" "crossing" "ring-single" "ring-double" "spiral"
+                           "splitter-1x2" "coupler" "coupler-ring"
+                           "mmi-1x2" "mmi-2x2" "mzi-1x2" "mzi-2x2"
+                           "grating-coupler" "led" "photodiode" "modulator"}
+          tray-types (set (for [g (domain-groups ::e/photonic) v (:variants g)] (:type v)))]
+      (is (every? tray-types photonic-types)
+          (str "missing: " (remove tray-types photonic-types)))))
+  (testing "the library button lists the whole library"
+    (let [lib (first (:variants (first (filter #(= :library (:id %)) e/tray-groups))))]
+      (is (= ::e/any (:picker-type lib))))))
+
+(deftest tray-slot-deficit-test
+  (testing "the narrower domain is padded to the widest one"
+    (is (= 8 (count (domain-groups ::e/electrical))))
+    (is (= 7 (count (domain-groups ::e/photonic))))
+    (is (= 0 (e/tray-slot-deficit e/tray-groups ::e/electrical)))
+    (is (= 1 (e/tray-slot-deficit e/tray-groups ::e/photonic))))
+  (testing "a domain with more items than another is the one with no padding"
+    (let [groups [{:id :a :domain ::e/electrical}
+                  {:id :b :domain ::e/electrical}
+                  {:id :c :domain ::e/electrical}
+                  {:id :d :domain ::e/photonic}]]
+      (is (= 0 (e/tray-slot-deficit groups ::e/electrical)))
+      (is (= 2 (e/tray-slot-deficit groups ::e/photonic))))))
+
+(deftest visible-tray-groups-follows-the-domain-test
+  (try
+    (swap! e/ui assoc ::e/domain ::e/photonic)
+    (is (= (map :id (domain-groups ::e/photonic))
+           (map :id (e/visible-tray-groups))))
+    (swap! e/ui assoc ::e/domain ::e/electrical)
+    (is (= (map :id (domain-groups ::e/electrical))
+           (map :id (e/visible-tray-groups))))
+    (finally (swap! e/ui assoc ::e/domain ::e/electrical))))
 
 (deftest ideal-placement-test
   (testing "passives, sources, ports and text stage ideal directly (no picker)"
@@ -97,6 +144,37 @@
     (testing "tags narrow within the type filter"
       (is (= #{"models:pk.nfet_a" "models:pk.nfet_b"}
              (set (keys (cm/filter-models (of-type "nmos") ["fets"] ""))))))))
+
+(deftest any-picker-and-staged-type-test
+  (testing "::any matches every entry, typed or not"
+    (is (true? (e/picker-type-match? ::e/any "bend")))
+    (is (true? (e/picker-type-match? ::e/any nil))))
+  (testing "a type-scoped picker still filters"
+    (is (false? (e/picker-type-match? "bend" "straight"))))
+  (testing "staged-type prefers the model's own known type"
+    (reset! pform/modeldb {"models:a.bend" {:name "bend" :type "bend"}
+                           "models:a.untyped" {:name "u"}
+                           "models:a.alien" {:name "x" :type "nonsense"}})
+    (try
+      (is (= "bend" (e/staged-type "ckt" "models:a.bend")))
+      (is (= "ckt" (e/staged-type "ckt" "models:a.untyped")))
+      (is (= "ckt" (e/staged-type "ckt" "models:a.alien")))
+      (finally (reset! pform/modeldb {})))))
+
+(deftest library-button-stages-the-picked-models-type-test
+  (ui-reset)
+  (reset! cm/modal-content nil)
+  (reset! pform/modeldb {"models:a.bend" {:name "bend" :type "bend"}})
+  (try
+    (e/arm-device! "ckt" nil [3 4] ::e/any)
+    (let [[_ device-type on-select] @cm/modal-content]
+      (is (= ::e/any device-type))
+      (on-select "models:a.bend")
+      (is (= "bend" (:type @e/staging)) "stages as a bend, not a generic ckt box")
+      (is (= "a.bend" (:model @e/staging))))
+    (finally
+      (reset! cm/modal-content nil)
+      (reset! pform/modeldb {}))))
 
 (deftest arm-device-test
   (ui-reset)

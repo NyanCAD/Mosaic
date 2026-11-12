@@ -861,6 +861,13 @@ html {
     flex-direction: row;
 }
 
+/* The filler occupies a slot without painting one. It shares the slot's box
+   declarations (below) rather than restating them, so its width cannot drift
+   from a real slot's. */
+.mosaic-container .devicetray-anchor>.tray-filler {
+    visibility: hidden;
+}
+
 .mosaic-container .devicetray {
     border-radius: 15px;
     display: flex;
@@ -981,7 +988,8 @@ html {
    because they used to resolve against the UA font-size, not .mosaic-app's
    16px; the numbers moved when the base was unified, the rendered box did not.
    0.6 + 0.4 side padding+margin is exactly 2em, so a slot is 25px + 32px. */
-.mosaic-container .devicetray button {
+.mosaic-container .devicetray button,
+.mosaic-container .devicetray-anchor>.tray-filler {
     padding: 0.6em;
     margin: 0.6em 0.4em;
     width: 25px;
@@ -992,6 +1000,31 @@ html {
 .mosaic-container .devicetray svg {
     width: 25px;
     height: 25px;
+}
+
+/* Domain rocker at the right end of the tray. It stretches to the tray's
+   content height, so border-left is a full-height separator; the gap after that
+   border is padding, not margin, so the tab pair sits evenly inset. */
+.mosaic-container .devicetray .domain-switch {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    border-left: 0.5px solid var(--color-border-light);
+    padding-left: 0.5em;
+}
+
+/* labels, not buttons: cm/radiobuttons renders hidden radio + label pairs.
+   Scaled like the tray buttons above, so a tab is 16px + 2em = 32px wide. */
+.mosaic-container .devicetray .domain-switch label {
+    width: 16px;
+    height: 16px;
+    padding: 0.3em;
+    margin: 0.6em 0.2em;
+}
+
+.mosaic-container .devicetray .domain-switch svg {
+    width: 16px;
+    height: 16px;
 }
 
 /* Split-button flyout group The wrapper

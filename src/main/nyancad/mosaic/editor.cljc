@@ -37,6 +37,7 @@
 (defonce ui (r/atom {::zoom [0 0 500 500]
                       ::theme nil
                       ::tool ::cursor
+                      ::domain ::electrical
                       ::selected #{}
                       ::mouse [0 0]
                       ::mouse-start [0 0]
@@ -61,6 +62,7 @@
 (s/def ::y number?)
 (s/def ::pointer-cache (s/map-of int? (s/keys :req-un [::x ::y])))
 (s/def ::tab-index nat-int?)
+(s/def ::domain #{::photonic ::electrical})
 ;; Ctrl-drag connectivity. ::stretch is {wire-id -> #{:start :end}} of endpoints
 ;; that follow the dragged devices: present (the map) while Ctrl is held during a
 ;; drag, nil otherwise. It is the single gate — the staging preview and the commit
@@ -69,7 +71,7 @@
 (s/def ::stretch (s/nilable (s/map-of string? set?)))
 (s/def ::paste-staging (s/nilable (s/map-of string? map?)))
 (s/def ::ui (s/keys :req [::zoom ::theme ::tool ::selected ::notebook-state ::pointer-cache ::tab-index]
-                    :opt [::dragging ::staging ::stretch ::paste-staging]))
+                    :opt [::dragging ::staging ::stretch ::paste-staging ::domain]))
 
 (set-validator! ui #(or (s/valid? ::ui %) (.log js/console (pr-str %) (s/explain-str ::ui %))))
 
@@ -82,6 +84,7 @@
 (defonce paste-staging (r/cursor ui [::paste-staging]))
 (defonce notebook-state (r/cursor ui [::notebook-state]))
 (defonce tab-index (r/cursor ui [::tab-index]))
+(defonce domain (r/cursor ui [::domain]))
 (defonce pointer-cache (r/cursor ui [::pointer-cache]))
 
 ; Model selector popup state
@@ -2589,12 +2592,13 @@
   "True when a modeldb entry belongs in the picker for device-type. Entries
    without a :type count as ckt (the catch-all for cells without a dedicated
    symbol type). amp is a ckt variant, so its picker lists amp and ckt entries
-   together."
+   together. ::any matches every entry: the library picker."
   [device-type entry-type]
   (let [entry-type (or entry-type "ckt")]
-    (if (= device-type "amp")
-      (contains? #{"amp" "ckt"} entry-type)
-      (= device-type entry-type))))
+    (cond
+      (= device-type ::any) true
+      (= device-type "amp") (contains? #{"amp" "ckt"} entry-type)
+      :else (= device-type entry-type))))
 
 (defn picker-models
   "The modeldb entries a picker for device-type lists, before tags and search."
@@ -2685,7 +2689,7 @@
          ;; Selected tags sit in the heading: compact, and the only affordance
          ;; that reaches tags absent from the type-scoped tree and from every
          ;; visible row
-         [:h3 (str "Select " device-type " model") " "
+         [:h3 (str "Select " (if (= device-type ::any) "a" device-type) " model") " "
           [cm/selected-tag-badges model-popup-category]]
          ;; Search input
          [:input.model-search {:type "text"
@@ -3011,26 +3015,42 @@
     "text" (add-label coord)
     (add-device type coord)))
 
+(defn staged-type
+  "The device type to stage for a picked model: the entry's own :type when this
+   build knows it, else the tray button's type. The library button's picker is
+   unfiltered (::any), so a bend picked there must stage as a bend or it renders
+   as a generic box instead of its symbol. An untyped entry or a type this build
+   does not know falls back to the button's type."
+  [fallback model-id]
+  (let [t (:type (get @modeldb model-id))]
+    (if (contains? cm/device-types t) t fallback)))
+
 (defn arm-device!
   "Single entry point for tray and shortcut activation. Ideal types stage
-   immediately; the rest open the model picker filtered to their type, and
-   confirming arms the staged device with the chosen model (bare id) at the last
-   known canvas mouse position, so the ghost follows the cursor. \"Place without
-   model\" stages the device with no model, as before."
-  [type variant coord]
-  (if (ideal-placement? type variant)
-    (place-ideal! type variant coord)
-    (open-model-picker! type
-                        (fn [model-id]
-                          (add-device type (::mouse @ui)
-                                      :model (cm/bare-id model-id)))
-                        (fn [] (add-device type (::mouse @ui))))))
+   immediately; the rest open the model picker filtered to their type (or to
+   `picker-type` when given, ::any for the whole library), and confirming arms
+   the staged device with the chosen model (bare id) at the last known canvas
+   mouse position, so the ghost follows the cursor. \"Place without model\"
+   stages the device with no model, as before."
+  ([type variant coord] (arm-device! type variant coord nil))
+  ([type variant coord picker-type]
+   (if (ideal-placement? type variant)
+     (place-ideal! type variant coord)
+     (open-model-picker! (or picker-type type)
+                         (fn [model-id]
+                           (add-device (staged-type type model-id) (::mouse @ui)
+                                       :model (cm/bare-id model-id)))
+                         (fn [] (add-device type (::mouse @ui)))))))
 
 (def tray-groups
-  "Data-driven device tray inventory. Single-variant items render as flat
-   buttons, multi-variant items as split-button flyout groups whose first
-   variant is the default."
-  [{:id :ports
+  "Data-driven device tray inventory. Each item belongs to exactly one :domain
+   (::electrical or ::photonic), and the tray shows one domain at a time.
+   Single-variant items render as flat buttons, multi-variant items as
+   split-button flyout groups whose first variant is the default. A variant
+   may override the picker's type filter with :picker-type; ::any lists the
+   whole library."
+  [;; Electrical
+   {:id :ports :domain ::electrical
     :variants [{:title "Add port [p]" :type "port" :icon [cm/device-icon "port"]}
                {:title "Add wire label [shift+t]" :type "port" :variant "text"
                 :icon [cm/device-icon "port-label"]}
@@ -3039,32 +3059,109 @@
                {:title "Add power supply [shift+p]" :type "port" :variant "supply"
                 :icon [cm/device-icon "supply"]}
                {:title "Add text area [t]" :type "text" :icon [cm/text-annotation-icon]}]}
-   {:id :resistor
+   {:id :resistor :domain ::electrical
     :variants [{:title "Add resistor [r]" :type "resistor" :icon [cm/device-icon "resistor"]}]}
-   {:id :inductor
+   {:id :inductor :domain ::electrical
     :variants [{:title "Add inductor [l]" :type "inductor" :icon [cm/device-icon "inductor"]}]}
-   {:id :capacitor
+   {:id :capacitor :domain ::electrical
     :variants [{:title "Add capacitor [c]" :type "capacitor" :icon [cm/device-icon "capacitor"]}]}
-   {:id :diode
+   {:id :diode :domain ::electrical
     :variants [{:title "Add diode [d]" :type "diode" :icon [cm/device-icon "diode"]}]}
-   {:id :sources
+   {:id :sources :domain ::electrical
     :variants [{:title "Add voltage source [v]" :type "vsource" :icon [cm/device-icon "vsource"]}
                {:title "Add current source [i]" :type "isource" :icon [cm/device-icon "isource"]}]}
-   {:id :transistors
+   {:id :transistors :domain ::electrical
     :variants [{:title "Add N-channel mosfet [m]" :type "nmos" :icon [cm/device-icon "nmos"]}
                {:title "Add P-channel mosfet [shift+m]" :type "pmos" :icon [cm/device-icon "pmos"]}
                {:title "Add NPN BJT [b]" :type "npn" :icon [cm/device-icon "npn"]}
                {:title "Add PNP BJT [shift+b]" :type "pnp" :icon [cm/device-icon "pnp"]}]}
-   {:id :subcircuits
+   {:id :subcircuits :domain ::electrical
     :variants [{:title "Add subcircuit [x]" :type "ckt" :icon [cm/chip]}
-               {:title "Add amplifier [a]" :type "amp" :icon [cm/amp-icon]}]}])
+               {:title "Add amplifier [a]" :type "amp" :icon [cm/amp-icon]}]}
+
+   ;; Photonic: every photonic symbol type, grouped by function. The first
+   ;; variant of each group is its default icon. All of these pick a model
+   ;; first, filtered to their type.
+   {:id :photonic-ports :domain ::photonic
+    :variants [{:title "Add port [p]" :type "port" :icon [cm/device-icon "port"]}
+               {:title "Add wire label [shift+t]" :type "port" :variant "text"
+                :icon [cm/device-icon "port-label"]}
+               {:title "Add text area [t]" :type "text" :icon [cm/text-annotation-icon]}]}
+   {:id :waveguides :domain ::photonic
+    :variants [{:title "Add straight waveguide" :type "straight" :icon [cm/device-icon "straight"]}
+               {:title "Add bend" :type "bend" :icon [cm/device-icon "bend"]}
+               {:title "Add s-bend" :type "sbend" :icon [cm/device-icon "sbend"]}
+               {:title "Add taper" :type "taper" :icon [cm/device-icon "taper"]}
+               {:title "Add transition" :type "transition" :icon [cm/device-icon "transition"]}
+               {:title "Add crossing" :type "crossing" :icon [cm/device-icon "crossing"]}]}
+   {:id :couplers :domain ::photonic
+    :variants [{:title "Add directional coupler" :type "coupler" :icon [cm/device-icon "coupler"]}
+               {:title "Add ring coupler" :type "coupler-ring" :icon [cm/device-icon "coupler-ring"]}
+               {:title "Add 1x2 splitter" :type "splitter-1x2" :icon [cm/device-icon "splitter-1x2"]}
+               {:title "Add 1x2 MMI" :type "mmi-1x2" :icon [cm/device-icon "mmi-1x2"]}
+               {:title "Add 2x2 MMI" :type "mmi-2x2" :icon [cm/device-icon "mmi-2x2"]}]}
+   {:id :interferometers :domain ::photonic
+    :variants [{:title "Add 1x2 MZI" :type "mzi-1x2" :icon [cm/device-icon "mzi-1x2"]}
+               {:title "Add 2x2 MZI" :type "mzi-2x2" :icon [cm/device-icon "mzi-2x2"]}
+               {:title "Add single-bus ring resonator" :type "ring-single"
+                :icon [cm/device-icon "ring-single"]}
+               {:title "Add double-bus ring resonator" :type "ring-double"
+                :icon [cm/device-icon "ring-double"]}
+               {:title "Add spiral" :type "spiral" :icon [cm/device-icon "spiral"]}]}
+   {:id :opto-electronic :domain ::photonic
+    :variants [{:title "Add modulator" :type "modulator" :icon [cm/device-icon "modulator"]}
+               {:title "Add photodiode" :type "photodiode" :icon [cm/device-icon "photodiode"]}
+               {:title "Add LED" :type "led" :icon [cm/device-icon "led"]}]}
+   {:id :interfaces :domain ::photonic
+    :variants [{:title "Add grating coupler" :type "grating-coupler"
+                :icon [cm/device-icon "grating-coupler"]}
+               {:title "Add terminator" :type "terminator" :icon [cm/device-icon "terminator"]}]}
+   {:id :library :domain ::photonic
+    :variants [{:title "Add component from the library [x]" :type "ckt" :picker-type ::any
+                :icon [cm/chip]}]}])
+
+(def tray-domains
+  "The rocker's domains, in order. Doubles as the set of domains the tray
+   reserves width for, so adding a domain is one row here."
+  [{:id ::electrical :icon "bolt" :title "Electrical"}
+   {:id ::photonic :icon "wave" :title "Photonic"}])
+
+(defn visible-tray-groups
+  "Tray items for one domain. Every item belongs to exactly one domain;
+   model-backed components remain reachable through the library picker."
+  ([groups dom]
+   (filter #(= dom (:domain %)) groups))
+  ([]
+   (visible-tray-groups tray-groups (or @domain ::electrical))))
+
+(defn tray-slot-deficit
+  "How many slots this domain is short of the widest domain. Rendered as filler
+   outside the bar so every domain's bar keeps the same right edge, which pins
+   the rocker in place while switching."
+  ([groups dom]
+   (- (apply max (for [{:keys [id]} tray-domains]
+                   (count (visible-tray-groups groups id))))
+      (count (visible-tray-groups groups dom))))
+  ([]
+   (tray-slot-deficit tray-groups (or @domain ::electrical))))
+
+(defn domain-switch
+  "Domain rocker at the right end of the device tray, rendered from
+   `tray-domains` through the shared `cm/radiobuttons`. The domain is a
+   visibility filter only."
+  []
+  [:div.domain-switch
+   [cm/radiobuttons "mosaic-tray-domain" domain
+    ;; label, value, tooltip
+    (for [{:keys [id icon title]} tray-domains]
+      [[cm/device-icon icon] id title])]])
 
 (defn tray-button
   "Render one tray variant as a button that arms it on pointer-up."
-  [{:keys [title type variant icon]}]
+  [{:keys [title type variant icon picker-type]}]
   [:button {:title title
             :class (device-active type variant)
-            :on-pointer-up #(arm-device! type variant (cm/viewbox-coord %))}
+            :on-pointer-up #(arm-device! type variant (cm/viewbox-coord %) picker-type)}
    icon])
 
 (defn split-tray
@@ -3099,18 +3196,26 @@
              variants))]])])))
 
 (defn device-tray
-  "The placement bar along the bottom edge: one flat button per single-variant
-   item and one split-button flyout per multi-variant item."
+  "Filler slots, then the bar: the visible domain's items left to right and the
+   domain rocker last, so DOM order is the visual order. The filler makes the
+   centered outer shell the same width in every domain, which pins the bar's
+   right edge, and with it the rocker, while the bar still hugs its content."
   []
   [:div.devicetray-anchor
+   (doall
+    (for [i (range (tray-slot-deficit))]
+      ^{:key i}
+      ;; a button, not a span, so its em-based box matches a real slot's
+      [:button.tray-filler]))
    [:div.devicetray.chrome.chrome-float
     (doall
-     (for [{:keys [id variants]} tray-groups]
+     (for [{:keys [id variants]} (visible-tray-groups)]
        (if (= 1 (count variants))
          ^{:key id}
          [tray-button (first variants)]
          ^{:key id}
-         (into [split-tray] (map tray-button) variants))))]])
+         (into [split-tray] (map tray-button) variants))))
+    [domain-switch]]])
 
 (defn schematic-elements [schem]
   [:<>
