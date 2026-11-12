@@ -598,11 +598,12 @@
 ;; bg [2,1], size 4, 200x200px
 ;; Ports: (0,1)→px(25,75) left  (3,1)→px(175,75) right  (1,0)→px(75,25) and
 ;; (2,0)→px(125,25) top. Matches cspdk's coupler_ring: a bus waveguide along the
-;; bottom with the lower half of a ring just above it, open at the top.
+;; bottom with the lower half of a ring just above it, open at the top. The arc
+;; clears the bus by the same 2.5px as ring-single's circle.
 (def coupler-ring-elements
   {::size 4
    ::elements [[:lines [[[0.5 1.5] [3.5 1.5]]]]
-               [:path {:d "M75,25 V35 A25,25 0 0,0 125,35 V25"}]]})
+               [:path {:d "M75,25 V47.5 A25,25 0 0,0 125,47.5 V25"}]]})
 
 ;; bg [1,3], size 5, 250x250px — ckt-block style rect with port leads
 ;; MMI 1x2: Ports: (0,2)→px(25,125), (2,1)→px(125,75), (2,3)→px(125,175)
