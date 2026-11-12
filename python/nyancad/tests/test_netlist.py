@@ -220,6 +220,17 @@ class TestSelectModelEntry:
         entry = self._select(spice_model_def, "UnknownSim")
         assert entry["name"] == "nmos_3p3"
 
+    def test_null_language_and_implementation_are_tolerated(self):
+        """A JSON null for language/implementation is treated as empty, not a crash."""
+        model_def = {
+            "models": [
+                {"language": None, "implementation": None},
+                {"language": "spice", "implementation": None, "name": "n"},
+            ]
+        }
+        assert self._select(model_def, "NgSpice")["name"] == "n"
+        assert self._select(model_def, "VACASK") is None
+
     def test_single_spice_entry_always_returned(self):
         model_def = {"models": [{"language": "spice", "implementation": "Xyce"}]}
         entry = self._select(model_def, "NgSpice")
