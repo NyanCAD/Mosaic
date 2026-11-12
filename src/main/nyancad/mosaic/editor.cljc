@@ -24,13 +24,12 @@
                      point transform transform-vec
                      mosfet-shape bjt-conn]]))
 
+
 (defn make-names
   "Returns a lazy sequence of available names for a device type (e.g. R1, R2, R3...)"
-  ([base]
-   (make-names base @schematic))
-  ([base sch]
-   (let [names (map #(str (cm/initial base) %) (next (range)))]
-     (remove #(sch (str group sep %)) names))))
+  [base]
+  (let [names (map #(str (cm/initial base) %) (next (range)))]
+    (remove #(@schematic (str group sep %)) names)))
 
 (defn make-name [base]
   (first (make-names base)))
@@ -1368,123 +1367,7 @@
 ;; spec for when to deref this track vs. call the builder directly.
 (def point-index (r/track #(build-point-index @schematic)))
 
-(defn- connection-endpoint-ids
-  [sch pt-idx point]
-  (into #{}
-        (remove #(and (= "port" (get-in sch [% :type]))
-                      (= "text" (get-in sch [% :variant]))))
-        (get-in pt-idx [point :ids])))
-
-(defn unconnected-device-ports
-  [sch pt-idx device-id]
-  (if-let [dev (get sch device-id)]
-    (->> (device-port-types dev)
-         (filter #(#{:left :right :top :bottom} (:side %)))
-         (filter (fn [{:keys [x y]}]
-                   (empty? (disj (connection-endpoint-ids sch pt-idx [x y]) device-id))))
-         (sort-by (juxt :y :x #(str (:name %))))
-         vec)
-    []))
-
-(def ^:private exposure-directions
-  {:left   [[-1 0] cm/IV]
-   :right  [[1 0] [-1 0 0 1 0 0]]
-   :top    [[0 -1] [0 1 -1 0 0 0]]
-   :bottom [[0 1] [0 -1 1 0 0 0]]})
-
-(defn- port-outward-direction
-  [dev port]
-  (let [[sx sy] (first (exposure-directions (:side port)))
-        [a b c d _ _] (or (:transform dev) cm/IV)
-        dx (+ (* a sx) (* c sy))
-        dy (+ (* b sx) (* d sy))]
-    (if (> (abs dx) (abs dy))
-      (if (neg? dx) :left :right)
-      (if (neg? dy) :top :bottom))))
-
-(defn- clear-exposure-corridor?
-  [pt-idx [x y] [dx dy]]
-  (every? #(let [{:keys [ids body-ids]} (get pt-idx %)]
-             (and (empty? ids) (empty? body-ids)))
-          [[(+ x dx) (+ y dy)]
-           [(+ x (* 2 dx)) (+ y (* 2 dy))]]))
-
-(defn build-port-exposure-docs
-  "Build the complete deterministic doc batch for every currently unconnected
-   port on `device-id`, without mutating the schematic.
-
-   Each preferred corridor is checked against a working schematic containing
-   docs staged earlier in this same batch. Occupied corridors fall back to a
-   co-located marker with no wire."
-  [sch pt-idx device-id]
-  (let [dev (get sch device-id)
-        ports (unconnected-device-ports sch pt-idx device-id)]
-    (:docs
-     (reduce
-      (fn [{working-sch :sch docs :docs} {:keys [x y] :as port}]
-        (let [[[dx dy] port-transform]
-              (exposure-directions (port-outward-direction dev port))
-              current-idx (build-point-index working-sch)
-              corridor-clear? (clear-exposure-corridor? current-idx [x y] [dx dy])
-              px (if corridor-clear? (+ x (* 2 dx)) x)
-              py (if corridor-clear? (+ y (* 2 dy)) y)
-              port-name (first (make-names "port" working-sch))
-              port-id (str group sep port-name)
-              port-doc {:type "port"
-                        :x px
-                        :y py
-                        :transform port-transform
-                        :name port-name}
-              wire-name (when corridor-clear?
-                          (first (make-names "wire"
-                                             (assoc working-sch port-id port-doc))))
-              wire-id (when wire-name (str group sep wire-name))
-              wire-doc (when corridor-clear?
-                         {:type "wire"
-                          :x x
-                          :y y
-                          :rx (* 2 dx)
-                          :ry (* 2 dy)
-                          :variant "d"
-                          :name wire-name})
-              additions (cond-> {port-id port-doc}
-                          wire-doc (assoc wire-id wire-doc))]
-          {:sch (merge working-sch additions)
-           :docs (merge docs additions)}))
-      {:sch sch :docs {}}
-      ports))))
-
-(defn expose-unconnected-ports!
-  "Wait for settled state, submit one exposure batch, and checkpoint it.
-   Returns a channel carrying the added docs, or nil for a no-op."
-  [device-id]
-  (go
-    (loop [pending (done? schematic)]
-      (when pending
-        (<! pending)
-        (let [next-pending (done? schematic)]
-          (when-not (identical? pending next-pending)
-            (recur next-pending)))))
-    (let [sch @schematic
-          docs (build-port-exposure-docs sch (build-point-index sch) device-id)]
-      (when (seq docs)
-        (swap! schematic merge docs)
-        (post-action!)
-        docs))))
-
-(defn port-exposure-state
-  "Return toolbar exposure state for device-id, or nil when inapplicable."
-  [sch pt-idx device-id]
-  (let [dev (get sch device-id)
-        ports (:ports (get @modeldb (cm/model-key (:model dev))))]
-    (when (and (= "ckt" (:type dev))
-               (seq (:model dev))
-               (some #(exposure-directions (keyword (:side %))) ports))
-      {:disabled? (empty? (unconnected-device-ports
-                           sch pt-idx device-id))})))
-
 ;; --- Ctrl-drag connectivity: stretch wires attached to dragged devices ----
-
 
 (defn connected-wire-ends
   "{wire-id -> #{:start :end}}: non-selected wires whose endpoint sits on a
@@ -2853,6 +2736,8 @@
         [:<>
          [:h1 (or @name key)]
          [:div.properties
+          (when (and (seq @model) (not (cm/has-code-models? model-def)))
+            [:a {:href "#" :on-click #(do (.preventDefault %) (open-schematic @model))} "Edit"])
           [:label {:for "name" :title "Instance name"} "name"]
           [:input {:id "name"
                    :type "text"
@@ -3402,8 +3287,6 @@
   []
   (let [sch @schematic
         sel (selected-devices sch @selected)
-        single (when (= 1 (count sel)) (first sel))
-        exposure (when single (port-exposure-state sch @point-index single))
         box @canvas-box
         tile (selection-anchor-rect sch sel)
         ;; Half a cell in, off the tile, is the tetris body the bar should
@@ -3444,15 +3327,7 @@
           [cm/copyi]]
          [:a {:title "Delete selected [del]"
               :on-click #(delete-selected)}
-          [cm/delete]]]
-        (when exposure
-          [:div.toolbar-group
-           [:a.expose-unconnected-ports
-            (cond-> {:title "Expose unconnected ports"
-                     :aria-disabled (:disabled? exposure)}
-              (not (:disabled? exposure))
-              (assoc :on-click #(expose-unconnected-ports! single)))
-            [cm/expose-ports]]])]])))
+          [cm/delete]]]]])))
 
 (defn gesture-active?
   "True while the user is dragging something or placing a staged device, wire

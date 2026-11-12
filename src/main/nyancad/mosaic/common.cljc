@@ -680,7 +680,6 @@
 (def edit (r/adapt-react-class icons/PencilSquare))
 (def help (r/adapt-react-class icons/QuestionCircle))
 (def external-link (r/adapt-react-class icons/BoxArrowUpRight))
-(def expose-ports (r/adapt-react-class icons/NodePlus))
 (def simulate (r/adapt-react-class icons/PlayCircle))
 (def amp-icon (r/adapt-react-class icons/CaretRight))
 (def photonic-icon (r/adapt-react-class icons/Lightbulb))

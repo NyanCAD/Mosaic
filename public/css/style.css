@@ -940,12 +940,6 @@ html {
     fill: var(--color-text);
 }
 
-.mosaic-container .chrome [aria-disabled="true"] {
-    cursor: not-allowed;
-    opacity: 0.45;
-    pointer-events: none;
-}
-
 
 /* label too, so radiobuttons-driven controls hover like the rest of the chrome */
 .mosaic-container .chrome a:hover,
