@@ -136,9 +136,7 @@ _SIM_LANGUAGES = {
 
 
 def _foreign_library_language(entry, sim):
-    """Identify an explicitly declared VACASK foreign library dialect.
-
-    """
+    """Identify an explicitly declared VACASK foreign library dialect."""
     if (
         sim.lower() == "vacask"
         and entry.get("library")
@@ -151,9 +149,7 @@ def _foreign_library_language(entry, sim):
 
 
 def _add_library(circuit, library, section, language):
-    """Forward dialect options only when the installed InSpice supports them.
-
-    """
+    """Forward dialect options only when the installed InSpice supports them."""
     method = circuit.lib if section else circuit.include
     args = (library, section) if section else (library,)
     if language:
@@ -746,9 +742,7 @@ class NyanCADMixin:
             self._add_nyancad_element(dev_id, dev, ports, models, corners, sim)
 
     def _add_nyancad_element(self, dev_id, dev, ports, models, corners, sim):
-        """Add a single NyanCAD element to this netlist.
-
-        """
+        """Add a single NyanCAD element to this netlist."""
         device_type = dev["type"]
         name = dev.get("name") or dev_id.replace(
             ":", "_"
@@ -812,9 +806,7 @@ class NyanCADMixin:
         ports_ci = {k.lower(): v for k, v in ports.items()}
 
         def p(port_name):
-            """Resolve terminal names case-insensitively.
-
-            """
+            """Resolve terminal names case-insensitively."""
             return ports_ci[port_name.lower()]
 
         # Map SPICE element type letters to InSpice methods

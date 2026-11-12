@@ -28,7 +28,7 @@ print(bridge.schematic_data)
 # Send simulation data back to the editor
 bridge.simulation_data = {
     "results": [1.2, 3.4, 5.6],
-    "timestamp": "2024-01-01T00:00:00Z"
+    "timestamp": "2024-01-01T00:00:00Z",
 }
 ```
 
