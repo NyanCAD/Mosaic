@@ -679,20 +679,28 @@
                [:path {:d "M75,55 A35,35 0 0,1 75,95"}]
                [:path {:d "M84,49 A45,45 0 0,1 84,101"}]]})
 
+(defn device-ports
+  "The ports a device doc is drawn with: its model's ports, else the built-in
+   symbol's default ports (`cm/default-ports`), else nil. A model that lists no
+   ports counts as no model, so the symbol keeps its shape."
+  [{:keys [model type]}]
+  (let [ports (get-in @modeldb [(cm/model-key model) :ports])]
+    (if (seq ports) ports (get cm/default-ports type))))
+
 (defn device-dims
   "Return [width height] of a device doc's render footprint — the tetris rect
    dimensions, before the 2-tile padding added by the `device` renderer.
-   Electrical builtins read `::bg` from the static `models` map; subcircuit and
-   photonic devices with a `:model` read ports from `@modeldb` via
-   `cm/port-perimeter`; everything else falls back to `[1 1]` (size 3)."
+   Electrical builtins read `::bg` from the static `models` map; everything else
+   measures the ports from `device-ports` (model ports, else a photonic symbol's
+   defaults) via `cm/port-perimeter`, falling back to `[1 1]` (size 3)."
   [dev]
   (let [model-entry (get models (:type dev))
         bg (::bg model-entry)]
     (cond
       (and (vector? bg) (= (count bg) 2)) bg
-      (:model dev) (let [ports (get-in @modeldb [(cm/model-key (:model dev)) :ports])]
-                     (if (seq ports) (cm/port-perimeter ports (:type dev)) [1 1]))
-      :else [1 1])))
+      :else (if-let [ports (seq (device-ports dev))]
+              (cm/port-perimeter ports (:type dev))
+              [1 1]))))
 
 (defn centered-artwork-transform
   "Return an SVG transform that applies a six-number matrix around the center
@@ -732,8 +740,7 @@
   (draw-background (device-dims v) k v))
 
 (defn circuit-conn [k v]
-  (let [model (:model v)
-        ports (get-in @modeldb [(cm/model-key model) :ports])
+  (let [ports (seq (device-ports v))
         [width height] (if ports (cm/port-perimeter ports (:type v)) [1 1])
         locs (if ports (cm/port-locations ports (:type v)) [])
         size (+ 2 (max width height))]
@@ -1214,10 +1221,9 @@
                                         {:x (+ (if w 1 0) bx) :y (+ (if h 1 0) by)})
                                       size transform x y))]))
 
-(defn circuit-locations [{:keys [:x :y :model :transform :type]}]
+(defn circuit-locations [{:keys [:x :y :transform :type] :as dev}]
   (let [transform (or transform cm/IV)
-        mod (get @modeldb (cm/model-key model))
-        ports (:ports mod)
+        ports (seq (device-ports dev))
         conn (if ports (cm/port-locations ports type) [])
         [w h] (if ports (cm/port-perimeter ports type) [1 1])
         size (+ 2 (max w h))]
@@ -1240,7 +1246,7 @@
   "Return typed port maps [{:x :y :type ...}] for a device after rotation."
   [dev]
   (let [cell (:type dev)
-        {:keys [x y model]} dev
+        {:keys [x y]} dev
         transform (or (:transform dev) cm/IV)]
     (cond
       (= cell "wire") nil
@@ -1256,8 +1262,7 @@
                    (cm/pattern-size conn))]
         (rotate-shape conn size transform x y))
       :else
-      (let [mod (get @modeldb (cm/model-key model))
-            ports (:ports mod)
+      (let [ports (seq (device-ports dev))
             conn (if ports (cm/port-locations ports cell) [])
             [w h] (if ports (cm/port-perimeter ports cell) [1 1])
             size (+ 2 (max w h))]
@@ -2845,7 +2850,7 @@
           [(+ (:x dev) 1 (/ w 2))
            (+ (:y dev) 1 (/ h 2))])
 
-        (:model dev)
+        (or (:model dev) (contains? cm/default-ports (:type dev)))
         (let [[w h] (device-dims dev)]
           [(+ (:x dev) 1 (/ w 2))
            (+ (:y dev) 1 (/ h 2))])
@@ -2867,7 +2872,7 @@
       (and (vector? bg) (= (count bg) 2))
       (let [[w h] bg] (+ 2 (max w h)))
 
-      (:model dev)
+      (or (:model dev) (contains? cm/default-ports (:type dev)))
       (+ 2 (apply max (device-dims dev)))
 
       (nil? (::conn model-entry))

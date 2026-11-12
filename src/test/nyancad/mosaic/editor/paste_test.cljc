@@ -83,16 +83,16 @@
 ;; ---------------------------------------------------------------------------
 ;;
 ;; Contract: photonic builtins (straight, bend, ring-single, etc.) have no
-;; ::bg and no :model. photonic-sym computes size from [1 1] fallback →
-;; size 3. Center = [:x + 1.5, :y + 1.5].
+;; ::bg. Without a :model their footprint comes from `cm/default-ports`, which
+;; matches the symbol's artwork. Center = [:x + 1 + w/2, :y + 1 + h/2].
 
 (deftest doc-center-photonic-builtin-straight
   (testing "a straight (photonic builtin, no model) at (0,0) centers on (1.5, 1.5)"
     (is (= [1.5 1.5] (e/doc-center {:type "straight" :x 0 :y 0})))))
 
 (deftest doc-center-photonic-builtin-ring-offset
-  (testing "a ring-single at (10,20) centers on (11.5, 21.5)"
-    (is (= [11.5 21.5] (e/doc-center {:type "ring-single" :x 10 :y 20})))))
+  (testing "a ring-single (default footprint [1 2]) at (10,20) centers on (11.5, 22)"
+    (is (= [11.5 22] (e/doc-center {:type "ring-single" :x 10 :y 20})))))
 
 ;; ---------------------------------------------------------------------------
 ;; doc-center — subcircuit/photonic with :model
@@ -106,8 +106,10 @@
 ;; exercised.
 
 (deftest doc-center-subcircuit-no-model-loaded
-  (testing "a subcircuit with :model not in @modeldb falls back to [1 1], center (1.5, 1.5)"
-    (is (= [1.5 1.5] (e/doc-center {:type "mzi-1x2" :x 0 :y 0 :model "some-uuid"})))))
+  (testing "a photonic symbol whose :model is not loaded keeps its default footprint [1 3], center (1.5, 2.5)"
+    (is (= [1.5 2.5] (e/doc-center {:type "mzi-1x2" :x 0 :y 0 :model "some-uuid"}))))
+  (testing "a ckt whose :model is not loaded falls back to [1 1], center (1.5, 1.5)"
+    (is (= [1.5 1.5] (e/doc-center {:type "ckt" :x 0 :y 0 :model "some-uuid"})))))
 
 ;; ---------------------------------------------------------------------------
 ;; device-dims
@@ -128,12 +130,16 @@
     (is (= [1 1] (e/device-dims {:type "nmos"})))))
 
 (deftest device-dims-photonic-builtin-no-model
-  (testing "a straight (photonic builtin, no model, no ::bg) falls back to [1 1]"
-    (is (= [1 1] (e/device-dims {:type "straight"})))))
+  (testing "a straight (photonic builtin, no model, no ::bg) uses its default ports: [1 1]"
+    (is (= [1 1] (e/device-dims {:type "straight"}))))
+  (testing "an mmi-2x2 uses its default ports: [1 3]"
+    (is (= [1 3] (e/device-dims {:type "mmi-2x2"})))))
 
 (deftest device-dims-subcircuit-model-not-loaded
-  (testing "a subcircuit with :model not in @modeldb falls back to [1 1]"
-    (is (= [1 1] (e/device-dims {:type "mzi-1x2" :model "some-uuid"})))))
+  (testing "a ckt with :model not in @modeldb falls back to [1 1]"
+    (is (= [1 1] (e/device-dims {:type "ckt" :model "some-uuid"}))))
+  (testing "a photonic symbol whose model is not loaded keeps its default footprint"
+    (is (= [1 3] (e/device-dims {:type "mzi-1x2" :model "some-uuid"})))))
 
 (deftest device-dims-port
   (testing "a default port (::bg []) falls back to [1 1]"

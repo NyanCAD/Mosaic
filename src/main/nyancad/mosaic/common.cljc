@@ -582,6 +582,33 @@
    "mmi-2x2"     {:min-dims [1 3]}
    "mzi-2x2"     {:min-dims [1 3]}})
 
+(def default-ports
+  "Ports of the built-in photonic symbols, for devices placed without a model
+   (or whose model lists no ports). Each entry is what a model would declare, so
+   `port-perimeter` / `port-locations` and `shape-opts` turn it into exactly the
+   cells the symbol's artwork draws its port leads at. A model with ports
+   replaces these. Names follow the numbering the symbols originally shipped
+   with: left to right, top to bottom."
+  (let [p (fn [side n] {:name (str n) :side side :type "photonic"})
+        lr (fn [& ports] (vec ports))]
+    {"straight"        (lr (p :left 1) (p :right 2))
+     "taper"           (lr (p :left 1) (p :right 2))
+     "transition"      (lr (p :left 1) (p :right 2))
+     "spiral"          (lr (p :left 1) (p :right 2))
+     "bend"            (lr (p :left 1) (p :top 2))
+     "sbend"           (lr (p :left 1) (p :right 2))
+     "terminator"      (lr (p :left 1))
+     "grating-coupler" (lr (p :left 1))
+     "crossing"        (lr (p :left 1) (p :right 2) (p :top 3) (p :bottom 4))
+     "ring-single"     (lr (p :left 1) (p :right 2))
+     "ring-double"     (lr (p :left 1) (p :left 3) (p :right 2) (p :right 4))
+     "coupler"         (lr (p :left 1) (p :left 3) (p :right 2) (p :right 4))
+     "splitter-1x2"    (lr (p :left 1) (p :right 2) (p :right 3))
+     "mmi-1x2"         (lr (p :left 1) (p :right 2) (p :right 3))
+     "mzi-1x2"         (lr (p :left 1) (p :right 2) (p :right 3))
+     "mmi-2x2"         (lr (p :left 1) (p :left 3) (p :right 2) (p :right 4))
+     "mzi-2x2"         (lr (p :left 1) (p :left 3) (p :right 2) (p :right 4))}))
+
 (defn port-perimeter
   "Calculate device perimeter [width height] based on ports.
    Ports are [{:name :side :type}]. Optional type string looks up min-dims in shape-opts."

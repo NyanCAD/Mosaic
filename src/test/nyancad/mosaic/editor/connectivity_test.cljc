@@ -735,14 +735,14 @@
       (finally
         (reset! pform/modeldb {})))))
 
-(deftest photonic-without-model-uses-default-box
-  (testing "straight without :model field gets no connection points"
+(deftest photonic-without-model-uses-default-ports
+  (testing "straight without :model field gets the symbol's default ports"
     (reset! pform/modeldb {})
     (let [dev {:type "straight" :x 0 :y 0
                :transform [1 0 0 1 0 0] :name "S1"}
           port-types (e/device-port-types dev)]
-      (is (empty? port-types)
-          "no model → no ports (circuit path with empty modeldb)"))))
+      (is (= #{[0 1] [2 1]} (set (map (juxt :x :y) port-types)))
+          "no model, so the defaults from the artwork"))))
 
 (deftest photonic-model-ports-location-alignment
   (testing "device-locations and device-port-types agree for photonic with model ports"
