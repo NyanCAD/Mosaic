@@ -808,12 +808,12 @@
         (.translate (* grid-size ax) (* grid-size ay)))))
 
 (defn circuit-designator [v size width height]
-  (when-let [text (or (:template v)
-                      (when (seq (:model v))
-                        (cm/generate-important-template
-                          (:props (get @modeldb (cm/model-key (:model v))))))
-                      (get-in models [(:type v) ::template])
-                      "{self.name}")]
+  (let [text (or (:template v)
+                 (when (seq (:model v))
+                   (cm/generate-important-template
+                    (:props (get @modeldb (cm/model-key (:model v))))))
+                 (get-in models [(:type v) ::template])
+                 "{self.name}")]
     [:text.identifier
      {:transform (.toString (designator-transform (:transform v cm/IV) size width height))}
      (schem-template v text)]))
