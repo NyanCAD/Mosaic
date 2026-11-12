@@ -691,22 +691,39 @@
                      (if (seq ports) (cm/port-perimeter ports (:type dev)) [1 1]))
       :else [1 1])))
 
+(defn centered-artwork-transform
+  "Return an SVG transform that applies a six-number matrix around the center
+   of a square symbol. The matrix affects artwork coordinates only."
+  [size matrix]
+  (when matrix
+    (let [center (* (/ size 2) grid-size)]
+      (.toString (-> (js/DOMMatrixReadOnly.)
+                     (.translate center center)
+                     (.multiply (cm/transform matrix))
+                     (.translate (- center) (- center)))))))
+
 (defn- photonic-sym
   [builtin-elements k v]
   (let [[width height] (device-dims v)
         new-size (+ 2 (max width height))
         {orig-size ::size, elements ::elements} builtin-elements
         delta (- new-size orig-size)
-        offset (* (/ delta 2) grid-size)]
+        offset (* (/ delta 2) grid-size)
+        artwork-transform (get-in @modeldb [(cm/model-key (:model v))
+                                            :artwork-transform])
+        artwork (if (zero? delta)
+                  (map render-element elements)
+                  [(into [:g {:transform (str "translate(" offset "," offset ")")}]
+                         (map render-element elements))])]
     (into [device new-size k v
            ;; Feed the real port-derived bbox; going through `device-template`
            ;; would fall back to [1 1] (photonic builtins have no ::bg) and place
            ;; the name against the wrong rectangle under rotation/flip.
            (circuit-designator v new-size width height)]
-          (if (zero? delta)
-            (map render-element elements)
-            [(into [:g {:transform (str "translate(" offset "," offset ")")}]
-                   (map render-element elements))]))))
+          (if artwork-transform
+            [[:g {:transform (centered-artwork-transform new-size artwork-transform)}
+              (into [:<>] artwork)]]
+            artwork))))
 
 (defn circuit-shape [k v]
   (draw-background (device-dims v) k v))

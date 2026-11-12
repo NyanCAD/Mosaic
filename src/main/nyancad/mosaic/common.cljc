@@ -426,8 +426,10 @@
 (s/def ::props (s/coll-of ::parameter :kind vector?))
 
 (s/def ::symbol (s/nilable string?))
+(s/def ::artwork-transform ::transform)
 (s/def ::model-def (s/keys :req-un [::name]
-                           :opt-un [::type ::tags ::ports ::models ::props ::symbol]))
+                           :opt-un [::type ::tags ::ports ::models ::props ::symbol
+                                    ::artwork-transform]))
 (s/def ::modeldb (s/map-of string? ::model-def))
 
 (defn model-prop-defaults
