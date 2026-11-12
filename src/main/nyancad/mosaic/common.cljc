@@ -698,15 +698,19 @@
 (def upload (r/adapt-react-class icons/Upload))
 
 (defn radiobuttons
-  ([cursor m] (radiobuttons cursor m nil nil nil))
-  ([cursor m dblclk ctxclk] (radiobuttons cursor m dblclk ctxclk nil))
-  ([cursor m dblclk ctxclk on-change]
+  "Render rows as one named radio group. Each row is [label value tooltip]."
+  ([group-name cursor m] (radiobuttons group-name cursor m nil nil nil))
+  ([group-name cursor m dblclk ctxclk]
+   (radiobuttons group-name cursor m dblclk ctxclk nil))
+  ([group-name cursor m dblclk ctxclk on-change]
    [:<>
     (doall (for [[label name disp] m]
              [:<> {:key name}
               [:input {:type "radio"
                        :id name
+                       :name group-name
                        :value name
+                       :aria-label disp
                        :checked (= name @cursor)
                        :on-change #(if on-change
                                      (on-change name)
@@ -879,17 +883,19 @@
 
 (defn model-list
   "Render a list of models as radio buttons.
+   group-name: unique radio-group name
    selected-atom: atom holding selected model id
    models: seq of [model-id model] pairs
    on-dblclick: optional (fn [model-id] -> event-handler) for double-click
    on-contextmenu: optional (fn [model-id] -> event-handler) for right-click
    on-tag-click: optional (fn [tag] -> nil) called when a tag badge is clicked"
-  ([selected-atom models] (model-list selected-atom models nil nil nil))
-  ([selected-atom models on-dblclick on-contextmenu]
-   (model-list selected-atom models on-dblclick on-contextmenu nil))
-  ([selected-atom models on-dblclick on-contextmenu on-tag-click]
+  ([group-name selected-atom models]
+   (model-list group-name selected-atom models nil nil nil))
+  ([group-name selected-atom models on-dblclick on-contextmenu]
+   (model-list group-name selected-atom models on-dblclick on-contextmenu nil))
+  ([group-name selected-atom models on-dblclick on-contextmenu on-tag-click]
    (if (seq models)
-     [radiobuttons selected-atom
+     [radiobuttons group-name selected-atom
       (doall (for [[model-id model] models]
                [[model-row-content model model-id on-tag-click]
                 model-id

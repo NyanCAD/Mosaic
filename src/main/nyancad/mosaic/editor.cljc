@@ -3040,7 +3040,7 @@
   [:<>
    [:div.primary
     [:div.toolbar-group.tools-group
-     [cm/radiobuttons tool
+     [cm/radiobuttons "mosaic-tools" tool
     ; label, key, title
       [[[cm/cursor] ::cursor "Cursor [esc]"]
        [[cm/wire] ::wire "Wire [w]"]

@@ -642,7 +642,16 @@ html {
 }
 
 .mosaic-libman input[type="radio"] {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.mosaic-libman input[type="radio"]:focus-visible+label {
+    outline: 2px solid SelectedItem;
+    outline-offset: 1px;
 }
 
 .mosaic-libman input[type="radio"]+label,
@@ -959,7 +968,16 @@ html {
 }
 
 .mosaic-container .chrome input[type="radio"] {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.mosaic-container .chrome input[type="radio"]:focus-visible+label {
+    outline: 2px solid SelectedItem;
+    outline-offset: 1px;
 }
 
 /* Tray controls are visually tuned, so these are the em values that reproduce

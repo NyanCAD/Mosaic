@@ -72,7 +72,7 @@
      ;; Installed models section
      [:div.installed-section
       [:h4.section-header "Installed"]
-      [cm/model-list selmodel filtered-models
+      [cm/model-list "mosaic-libman-models" selmodel filtered-models
        (fn [model-id]
          (when (not (cm/has-code-models? (get @db model-id)))
            #(edit-url model-id)))

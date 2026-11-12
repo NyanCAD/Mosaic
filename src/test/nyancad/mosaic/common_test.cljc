@@ -14,6 +14,38 @@
             [nyancad.mosaic.common :as cm]))
 
 ;; ---------------------------------------------------------------------------
+;; Radio groups
+;; ---------------------------------------------------------------------------
+
+(deftest radiobuttons-expose-group-and-accessible-names
+  (let [selected (atom :alpha)
+        view (cm/radiobuttons "test-group" selected
+                              [["Alpha" :alpha "Choose alpha"]
+                               ["Beta" :beta "Choose beta"]])
+        inputs (map #(nth % 2) (second view))
+        attrs (map second inputs)]
+    (testing "every option belongs to the explicit named group"
+      (is (= ["test-group" "test-group"] (map :name attrs))))
+    (testing "tooltips provide concise accessible names"
+      (is (= ["Choose alpha" "Choose beta"] (map :aria-label attrs))))
+    (testing "the selected value controls checked state"
+      (is (= [true false] (map :checked attrs))))
+    (testing "the default handler updates the cursor"
+      ((:on-change (second attrs)) nil)
+      (is (= :beta @selected)))))
+
+(deftest radiobuttons-delegate-custom-change-handler
+  (let [selected (atom :alpha)
+        changed (atom nil)
+        view (cm/radiobuttons "test-group" selected
+                              [["Beta" :beta "Choose beta"]]
+                              nil nil #(reset! changed %))
+        attrs (-> view second first (nth 2) second)]
+    ((:on-change attrs) nil)
+    (is (= :beta @changed))
+    (is (= :alpha @selected) "custom handlers own the state update")))
+
+;; ---------------------------------------------------------------------------
 ;; Sorted coord list — bisect-left, insert, dissjoc, set-coord, remove-coord,
 ;; has-coord
 ;; ---------------------------------------------------------------------------
